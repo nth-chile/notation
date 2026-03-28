@@ -89,11 +89,19 @@ export function measure(
   };
 }
 
-export function part(name: string, abbreviation: string, measures: Measure[]): Part {
+export function part(
+  name: string,
+  abbreviation: string,
+  measures: Measure[],
+  instrumentId = ""
+): Part {
   return {
     id: newId<PartId>("prt"),
     name,
     abbreviation,
+    instrumentId,
+    muted: false,
+    solo: false,
     measures,
   };
 }

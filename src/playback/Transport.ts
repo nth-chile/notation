@@ -61,7 +61,7 @@ function scheduleAhead(): void {
 
     const audioTime = playbackStartTime + evt.time - playbackStartOffset;
     if (audioTime >= currentTime) {
-      AudioEngine.noteOn(evt.midiPitch, audioTime, evt.duration);
+      AudioEngine.noteOn(evt.midiPitch, audioTime, evt.duration, 0.5, evt.instrumentId);
     }
     nextEventIndex++;
   }

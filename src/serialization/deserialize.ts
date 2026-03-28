@@ -4,6 +4,7 @@ import type { Pitch, PitchClass, Accidental, Octave } from "../model/pitch";
 import type { Duration, DurationType } from "../model/duration";
 import type { ClefType, BarlineType } from "../model/time";
 import type { Annotation } from "../model/annotations";
+import type { Stylesheet } from "../model/stylesheet";
 import { newId, type ScoreId, type PartId, type MeasureId, type VoiceId, type NoteEventId } from "../model/ids";
 import { FORMAT_HEADER } from "./format";
 
@@ -191,6 +192,8 @@ export function deserialize(text: string): Score {
   let title = "Untitled";
   let composer = "";
   let tempo = 120;
+  let stylesheet: Partial<Stylesheet> | undefined;
+  let inStylesheet = false;
   const parts: Part[] = [];
   let currentPart: Part | null = null;
   let currentMeasure: Measure | null = null;
@@ -200,7 +203,38 @@ export function deserialize(text: string): Score {
     const line = lines[i];
     const trimmed = line.trim();
 
-    if (!trimmed || trimmed.startsWith("//")) continue;
+    if (!trimmed || trimmed.startsWith("//")) {
+      if (inStylesheet) inStylesheet = false;
+      continue;
+    }
+
+    // Stylesheet block
+    if (trimmed === "stylesheet:") {
+      stylesheet = {};
+      inStylesheet = true;
+      continue;
+    }
+
+    if (inStylesheet && line.startsWith("  ")) {
+      const match = trimmed.match(/^(\w+):\s*(.+)$/);
+      if (match && stylesheet) {
+        const key = match[1] as keyof Stylesheet;
+        let val = match[2];
+        // Strip quotes for string values
+        if (val.startsWith('"') && val.endsWith('"')) {
+          (stylesheet as Record<string, unknown>)[key] = val.slice(1, -1);
+        } else if (val.includes(".")) {
+          (stylesheet as Record<string, unknown>)[key] = parseFloat(val);
+        } else {
+          (stylesheet as Record<string, unknown>)[key] = parseInt(val);
+        }
+      }
+      continue;
+    }
+
+    if (inStylesheet) {
+      inStylesheet = false;
+    }
 
     // Title
     if (trimmed.startsWith("title:")) {
@@ -231,10 +265,32 @@ export function deserialize(text: string): Score {
           id: newId<PartId>("prt"),
           name: match[1],
           abbreviation: match[2],
+          instrumentId: "piano",
+          muted: false,
+          solo: false,
           measures: [],
         };
-        parts.push(currentPart);
+        parts.push(currentPart!);
       }
+      continue;
+    }
+
+    // Part attribute: instrument
+    if (trimmed.startsWith("instrument:") && currentPart) {
+      const match = trimmed.match(/instrument:\s*(\S+)/);
+      if (match) currentPart.instrumentId = match[1];
+      continue;
+    }
+
+    // Part attribute: muted
+    if (trimmed.startsWith("muted:") && currentPart) {
+      currentPart.muted = trimmed.includes("true");
+      continue;
+    }
+
+    // Part attribute: solo
+    if (trimmed.startsWith("solo:") && currentPart) {
+      currentPart.solo = trimmed.includes("true");
       continue;
     }
 
@@ -285,7 +341,7 @@ export function deserialize(text: string): Score {
     }
   }
 
-  return {
+  const score: Score = {
     id: newId<ScoreId>("scr"),
     title,
     composer,
@@ -293,4 +349,8 @@ export function deserialize(text: string): Score {
     tempo,
     parts,
   };
+  if (stylesheet && Object.keys(stylesheet).length > 0) {
+    score.stylesheet = stylesheet;
+  }
+  return score;
 }

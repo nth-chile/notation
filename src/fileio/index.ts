@@ -1,2 +1,2 @@
-export { saveScore } from "./save";
+export { saveScore, exportMusicXML } from "./save";
 export { loadScore } from "./load";

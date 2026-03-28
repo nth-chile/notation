@@ -4,6 +4,8 @@ import type { Pitch } from "../model/pitch";
 import type { Duration } from "../model/duration";
 import type { Accidental } from "../model/pitch";
 import type { Annotation } from "../model/annotations";
+import type { Stylesheet } from "../model/stylesheet";
+import { defaultStylesheet } from "../model/stylesheet";
 import { FORMAT_HEADER } from "./format";
 
 const ACC_MAP: Record<Accidental, string> = {
@@ -109,10 +111,43 @@ function serializeMeasure(m: Measure, index: number): string[] {
 function serializePart(p: Part): string[] {
   const lines: string[] = [];
   lines.push(`=== PART "${p.name}" (${p.abbreviation}) ===`);
+  if (p.instrumentId) {
+    lines.push(`instrument: ${p.instrumentId}`);
+  }
+  if (p.muted) {
+    lines.push(`muted: true`);
+  }
+  if (p.solo) {
+    lines.push(`solo: true`);
+  }
   lines.push("");
   for (let mi = 0; mi < p.measures.length; mi++) {
     lines.push(...serializeMeasure(p.measures[mi], mi));
     lines.push("");
+  }
+  return lines;
+}
+
+function serializeStylesheet(stylesheet: Partial<Stylesheet>): string[] {
+  const defaults = defaultStylesheet();
+  const lines: string[] = [];
+  const keys = Object.keys(defaults) as (keyof Stylesheet)[];
+  const entries: string[] = [];
+
+  for (const key of keys) {
+    if (key in stylesheet && stylesheet[key] !== defaults[key]) {
+      const val = stylesheet[key];
+      if (typeof val === "string") {
+        entries.push(`  ${key}: "${val}"`);
+      } else {
+        entries.push(`  ${key}: ${val}`);
+      }
+    }
+  }
+
+  if (entries.length > 0) {
+    lines.push("stylesheet:");
+    lines.push(...entries);
   }
   return lines;
 }
@@ -125,6 +160,15 @@ export function serialize(score: Score): string {
   if (score.tempo !== 120) {
     lines.push(`tempo: ${score.tempo}`);
   }
+
+  // Serialize stylesheet if present and has non-default values
+  if (score.stylesheet) {
+    const stylesheetLines = serializeStylesheet(score.stylesheet);
+    if (stylesheetLines.length > 0) {
+      lines.push(...stylesheetLines);
+    }
+  }
+
   lines.push("");
 
   for (const part of score.parts) {

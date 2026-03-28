@@ -14,3 +14,6 @@ export { SetChordSymbol } from "./SetChordSymbol";
 export { SetLyric } from "./SetLyric";
 export { SetRehearsalMark } from "./SetRehearsalMark";
 export { SetTempo } from "./SetTempo";
+export { AddPart } from "./AddPart";
+export { RemovePart } from "./RemovePart";
+export { ReorderParts } from "./ReorderParts";

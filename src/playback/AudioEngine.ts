@@ -25,19 +25,50 @@ function midiToFrequency(midi: number): number {
 }
 
 /**
+ * Choose an oscillator type based on instrument ID.
+ */
+function getOscillatorType(instrumentId: string, midiPitch: number): OscillatorType {
+  switch (instrumentId) {
+    case "piano":
+      return "triangle";
+    case "guitar":
+      return "sawtooth";
+    case "bass":
+      return "sine";
+    case "violin":
+    case "viola":
+    case "cello":
+      return "sawtooth";
+    case "flute":
+      return "sine";
+    case "clarinet":
+      return "square";
+    case "trumpet":
+      return "square";
+    case "alto-sax":
+    case "tenor-sax":
+      return "sawtooth";
+    case "drums":
+      return "triangle";
+    default:
+      return midiPitch < 48 ? "sine" : "triangle";
+  }
+}
+
+/**
  * Schedule a note to play at a specific audio-context time.
  */
 export function noteOn(
   midiPitch: number,
   startTime: number,
   durationSec: number,
-  velocity = 0.5
+  velocity = 0.5,
+  instrumentId = ""
 ): void {
   const ctx = getAudioContext();
   const freq = midiToFrequency(midiPitch);
 
-  // Use triangle wave for higher pitches, sine for bass
-  const waveType: OscillatorType = midiPitch < 48 ? "sine" : "triangle";
+  const waveType = getOscillatorType(instrumentId, midiPitch);
 
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
