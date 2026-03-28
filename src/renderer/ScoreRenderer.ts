@@ -1,6 +1,7 @@
 import type { Score, NoteEventId } from "../model";
 import { TICKS_PER_QUARTER } from "../model/duration";
-import { renderMeasure, clearCanvas, type RenderContext, type NoteBox } from "./vexBridge";
+import { renderMeasure, renderSystemBarline, clearCanvas, type RenderContext, type NoteBox } from "./vexBridge";
+import { computeLayout, totalContentHeight, partStaveCount, DEFAULT_LAYOUT, type LayoutConfig } from "./SystemLayout";
 import type { CursorPosition } from "../input/InputState";
 
 export interface ScoreRenderResult {
@@ -9,22 +10,15 @@ export interface ScoreRenderResult {
   contentHeight: number;
 }
 
-const MEASURE_WIDTH = 250;
-const STAFF_HEIGHT = 160;
-const LEFT_MARGIN = 20;
-const TOP_MARGIN = 40;
-const MEASURES_PER_LINE = 4;
-const BOTTOM_MARGIN = 60;
+// Keep old constants exported for backward compatibility
+const MEASURE_WIDTH = DEFAULT_LAYOUT.measureWidth;
+const STAFF_HEIGHT = DEFAULT_LAYOUT.staffHeight + DEFAULT_LAYOUT.staffSpacing;
+const LEFT_MARGIN = DEFAULT_LAYOUT.leftMargin;
+const TOP_MARGIN = DEFAULT_LAYOUT.topMargin;
+const MEASURES_PER_LINE = DEFAULT_LAYOUT.measuresPerLine;
 
 export function calculateContentHeight(score: Score): number {
-  let maxLine = 0;
-  for (let pi = 0; pi < score.parts.length; pi++) {
-    const part = score.parts[pi];
-    const lines = Math.ceil(part.measures.length / MEASURES_PER_LINE);
-    const totalLines = lines * score.parts.length;
-    maxLine = Math.max(maxLine, totalLines);
-  }
-  return TOP_MARGIN + maxLine * STAFF_HEIGHT + BOTTOM_MARGIN;
+  return totalContentHeight(score, DEFAULT_LAYOUT);
 }
 
 export function renderScore(
@@ -36,52 +30,133 @@ export function renderScore(
 ): ScoreRenderResult {
   clearCanvas(ctx, canvas);
 
+  const config: LayoutConfig = DEFAULT_LAYOUT;
+  const systems = computeLayout(score, config);
+
   const allNoteBoxes = new Map<NoteEventId, NoteBox>();
   const measurePositions: ScoreRenderResult["measurePositions"] = [];
 
-  for (let pi = 0; pi < score.parts.length; pi++) {
-    const part = score.parts[pi];
+  const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
 
-    for (let mi = 0; mi < part.measures.length; mi++) {
-      const m = part.measures[mi];
-      const lineIndex = Math.floor(mi / MEASURES_PER_LINE);
-      const posInLine = mi % MEASURES_PER_LINE;
+  for (const system of systems) {
+    const isFirstSystem = system.lineIndex === 0;
 
-      const x = LEFT_MARGIN + posInLine * MEASURE_WIDTH;
-      const y = TOP_MARGIN + (pi + lineIndex * score.parts.length) * STAFF_HEIGHT;
+    // Render each part's measures in this system
+    for (let pi = 0; pi < score.parts.length; pi++) {
+      const part = score.parts[pi];
+      const staveCount = partStaveCount(score, pi);
 
-      const isFirstInLine = posInLine === 0;
+      for (let si = 0; si < staveCount; si++) {
+        for (let mi = system.startMeasure; mi < system.endMeasure; mi++) {
+          const m = part.measures[mi];
+          if (!m) continue;
 
-      const result = renderMeasure(
-        ctx,
-        m,
-        x,
-        y,
-        MEASURE_WIDTH,
-        isFirstInLine,
-        mi === 0,
-        isFirstInLine
-      );
+          const posInLine = mi - system.startMeasure;
+          const isFirstInLine = posInLine === 0;
 
-      measurePositions.push({ partIndex: pi, measureIndex: mi, x, y, width: MEASURE_WIDTH });
+          // Calculate position from stave layouts
+          const staveLayouts = system.staves.filter(
+            (s) => s.partIndex === pi && s.staveIndex === si
+          );
+          const layout = staveLayouts[posInLine];
+          if (!layout) continue;
 
-      for (const nb of result.noteBoxes) {
-        allNoteBoxes.set(nb.id, nb);
+          // For grand staff, determine the clef for this stave
+          let measureToRender = m;
+          if (staveCount === 2 && si === 1) {
+            // Bass staff of grand staff - override clef to bass
+            measureToRender = { ...m, clef: { type: "bass" as const } };
+          }
+
+          const result = renderMeasure(
+            ctx,
+            measureToRender,
+            layout.x,
+            layout.y,
+            layout.width,
+            isFirstInLine,
+            mi === 0,
+            isFirstInLine,
+            score.stylesheet
+          );
+
+          // Only add to measurePositions for the primary stave (staveIndex 0)
+          if (si === 0) {
+            measurePositions.push({
+              partIndex: pi,
+              measureIndex: mi,
+              x: layout.x,
+              y: layout.y,
+              width: layout.width,
+            });
+          }
+
+          for (const nb of result.noteBoxes) {
+            allNoteBoxes.set(nb.id, nb);
+          }
+        }
+      }
+    }
+
+    // Draw part names on the left
+    if (rawCtx.save) {
+      for (let pi = 0; pi < score.parts.length; pi++) {
+        const part = score.parts[pi];
+        const staveLayouts = system.staves.filter(
+          (s) => s.partIndex === pi && s.staveIndex === 0
+        );
+        if (staveLayouts.length === 0) continue;
+
+        const firstStave = staveLayouts[0];
+        const labelX = config.leftMargin;
+        const labelY = firstStave.y + config.staffHeight / 2 + 4;
+
+        rawCtx.save();
+        rawCtx.font = isFirstSystem ? "bold 11px sans-serif" : "10px sans-serif";
+        rawCtx.fillStyle = "#333";
+        rawCtx.textAlign = "left";
+        rawCtx.fillText(
+          isFirstSystem ? part.name : part.abbreviation,
+          labelX,
+          labelY
+        );
+        rawCtx.textAlign = "start";
+        rawCtx.restore();
+      }
+
+      // Draw system barlines (vertical line connecting all staves at the start of each system)
+      if (score.parts.length > 1) {
+        const firstPartStaves = system.staves.filter(
+          (s) => s.partIndex === 0 && s.staveIndex === 0
+        );
+        const lastPartIndex = score.parts.length - 1;
+        const lastStaveIdx = partStaveCount(score, lastPartIndex) - 1;
+        const lastPartStaves = system.staves.filter(
+          (s) => s.partIndex === lastPartIndex && s.staveIndex === lastStaveIdx
+        );
+
+        if (firstPartStaves.length > 0 && lastPartStaves.length > 0) {
+          const topY = firstPartStaves[0].y;
+          const bottomY = lastPartStaves[0].y + config.staffHeight;
+          const barlineX = firstPartStaves[0].x;
+
+          renderSystemBarline(ctx, barlineX, topY, bottomY);
+        }
       }
     }
   }
 
   // Draw cursor
   if (cursor) {
-    drawCursor(ctx, score, cursor, measurePositions);
+    drawCursor(ctx, score, cursor, measurePositions, config);
   }
 
   // Draw playback cursor
   if (playbackTick != null && playbackTick >= 0) {
-    drawPlaybackCursor(ctx, score, playbackTick, measurePositions);
+    drawPlaybackCursor(ctx, score, playbackTick, measurePositions, config);
   }
 
-  const contentHeight = calculateContentHeight(score);
+  const contentHeight = totalContentHeight(score, config);
 
   return { noteBoxes: allNoteBoxes, measurePositions, contentHeight };
 }
@@ -90,7 +165,8 @@ function drawCursor(
   ctx: RenderContext,
   score: Score,
   cursor: CursorPosition,
-  measurePositions: ScoreRenderResult["measurePositions"]
+  measurePositions: ScoreRenderResult["measurePositions"],
+  config: LayoutConfig
 ): void {
   const mp = measurePositions.find(
     (p) => p.partIndex === cursor.partIndex && p.measureIndex === cursor.measureIndex
@@ -100,9 +176,8 @@ function drawCursor(
   const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
   if (!voice) return;
 
-  // Simple cursor: vertical line at event position
   const eventCount = voice.events.length;
-  const usableWidth = mp.width - 60; // account for clef/key/time sig space
+  const usableWidth = mp.width - 60;
   const eventSpacing = eventCount > 0 ? usableWidth / (eventCount + 1) : usableWidth / 2;
   const cursorX = mp.x + 60 + cursor.eventIndex * eventSpacing;
 
@@ -114,7 +189,7 @@ function drawCursor(
     rawCtx.setLineDash([4, 4]);
     rawCtx.beginPath();
     rawCtx.moveTo(cursorX, mp.y + 10);
-    rawCtx.lineTo(cursorX, mp.y + STAFF_HEIGHT - 20);
+    rawCtx.lineTo(cursorX, mp.y + config.staffHeight - 10);
     rawCtx.stroke();
     rawCtx.restore();
   }
@@ -124,9 +199,9 @@ function drawPlaybackCursor(
   ctx: RenderContext,
   score: Score,
   playbackTick: number,
-  measurePositions: ScoreRenderResult["measurePositions"]
+  measurePositions: ScoreRenderResult["measurePositions"],
+  config: LayoutConfig
 ): void {
-  // Determine which measure and position within it
   const part = score.parts[0];
   if (!part) return;
 
@@ -155,7 +230,6 @@ function drawPlaybackCursor(
   );
   if (!mp) return;
 
-  // Calculate x position within the measure based on tick fraction
   const ts = part.measures[targetMeasureIndex].timeSignature;
   const measureTicks =
     (TICKS_PER_QUARTER * 4 * ts.numerator) / ts.denominator;
@@ -166,13 +240,13 @@ function drawPlaybackCursor(
   const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
   if (rawCtx.strokeStyle !== undefined) {
     rawCtx.save();
-    rawCtx.strokeStyle = "#10b981"; // green
+    rawCtx.strokeStyle = "#10b981";
     rawCtx.lineWidth = 2.5;
     rawCtx.setLineDash([]);
     rawCtx.globalAlpha = 0.8;
     rawCtx.beginPath();
     rawCtx.moveTo(cursorX, mp.y + 10);
-    rawCtx.lineTo(cursorX, mp.y + STAFF_HEIGHT - 20);
+    rawCtx.lineTo(cursorX, mp.y + config.staffHeight - 10);
     rawCtx.stroke();
     rawCtx.restore();
   }

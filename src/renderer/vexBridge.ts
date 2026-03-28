@@ -1,7 +1,10 @@
-import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot } from "vexflow";
+import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector } from "vexflow";
 import type { Measure, NoteEvent, NoteEventId } from "../model";
 import type { Annotation } from "../model/annotations";
+import type { Stylesheet } from "../model/stylesheet";
+import { resolveStylesheet } from "../model/stylesheet";
 import { durationToTicks as durationToTicksFn, measureCapacity } from "../model/duration";
+import { getBeamGroups } from "./beaming";
 
 export interface RenderContext {
   renderer: Renderer;
@@ -147,8 +150,11 @@ export function renderMeasure(
   width: number,
   showClef: boolean,
   showTimeSig: boolean,
-  showKeySig: boolean
+  showKeySig: boolean,
+  stylesheet?: Partial<Stylesheet>
 ): MeasureRenderResult {
+  const style = resolveStylesheet(stylesheet);
+
   const stave = new Stave(x, y, width);
   if (showClef) stave.addClef(CLEF_VEX[m.clef.type] || "treble");
   if (showKeySig) {
@@ -162,6 +168,7 @@ export function renderMeasure(
 
   const noteBoxes: NoteBox[] = [];
   const vfVoices: Voice[] = [];
+  const allBeams: Beam[] = [];
 
   // Build VexFlow voices for all model voices that have events
   for (let vi = 0; vi < m.voices.length; vi++) {
@@ -193,6 +200,19 @@ export function renderMeasure(
       vfVoice.addTickables(staveNotes);
       vfVoices.push(vfVoice);
 
+      // Compute beam groups for this voice
+      const beamGroups = getBeamGroups(modelVoice.events, m.timeSignature);
+      for (const group of beamGroups) {
+        const beamNotes = group.map((idx) => staveNotes[idx]);
+        if (beamNotes.length >= 2) {
+          try {
+            allBeams.push(new Beam(beamNotes));
+          } catch {
+            // If VexFlow rejects the beam (e.g. incompatible notes), skip it
+          }
+        }
+      }
+
       // Store staveNotes + eventIds for bounding box collection after draw
       (vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] }).__staveNotes = staveNotes;
       (vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] }).__eventIds = eventIds;
@@ -203,7 +223,10 @@ export function renderMeasure(
   if (vfVoices.length > 0) {
     const formatter = new Formatter();
     formatter.joinVoices(vfVoices);
-    formatter.format(vfVoices, width - (stave.getNoteStartX() - x) - 10);
+
+    // Use proportional spacing via softmax factor scaled by stylesheet spacingFactor
+    const formattingWidth = width - (stave.getNoteStartX() - x) - 10;
+    formatter.format(vfVoices, formattingWidth * style.spacingFactor);
 
     for (const vfVoice of vfVoices) {
       vfVoice.draw(ctx.context, stave);
@@ -223,6 +246,11 @@ export function renderMeasure(
         }
       });
     }
+
+    // Draw beams after voices
+    for (const beam of allBeams) {
+      beam.setContext(ctx.context).draw();
+    }
   }
 
   // Render annotations (chord symbols above, lyrics below, rehearsal marks, tempo marks)
@@ -240,7 +268,7 @@ export function renderMeasure(
             const usableWidth = width - (noteStartX - x) - 10;
             const chordX = noteStartX + proportion * usableWidth;
             rawCtx.save();
-            rawCtx.font = "bold 12px sans-serif";
+            rawCtx.font = `bold ${style.chordSymbolSize}px sans-serif`;
             rawCtx.fillStyle = "#333";
             rawCtx.fillText(annotation.text, chordX, y + 10);
             rawCtx.restore();
@@ -251,7 +279,7 @@ export function renderMeasure(
             const box = noteBoxes.find((nb) => nb.id === annotation.noteEventId);
             if (box) {
               rawCtx.save();
-              rawCtx.font = "italic 11px serif";
+              rawCtx.font = `italic ${style.lyricSize}px ${style.fontFamily}`;
               rawCtx.fillStyle = "#555";
               rawCtx.textAlign = "center";
               const lyricText =
@@ -304,6 +332,54 @@ export function renderMeasure(
     staveX: x,
     width,
   };
+}
+
+/**
+ * Render a system barline connecting all staves vertically.
+ */
+export function renderSystemBarline(
+  ctx: RenderContext,
+  x: number,
+  topY: number,
+  bottomY: number
+): void {
+  const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+  if (rawCtx.save) {
+    rawCtx.save();
+    rawCtx.strokeStyle = "#000";
+    rawCtx.lineWidth = 1.5;
+    rawCtx.beginPath();
+    rawCtx.moveTo(x, topY);
+    rawCtx.lineTo(x, bottomY);
+    rawCtx.stroke();
+    rawCtx.restore();
+  }
+}
+
+/**
+ * Render a brace for grand staff instruments (e.g., piano).
+ */
+export function renderBrace(
+  ctx: RenderContext,
+  x: number,
+  topY: number,
+  bottomY: number
+): void {
+  const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+  if (rawCtx.save) {
+    rawCtx.save();
+    rawCtx.strokeStyle = "#000";
+    rawCtx.lineWidth = 2;
+    const midY = (topY + bottomY) / 2;
+    const height = bottomY - topY;
+    // Draw a simple curly brace using bezier curves
+    rawCtx.beginPath();
+    rawCtx.moveTo(x, topY);
+    rawCtx.bezierCurveTo(x - 8, topY + height * 0.25, x - 8, midY - 5, x - 3, midY);
+    rawCtx.bezierCurveTo(x - 8, midY + 5, x - 8, topY + height * 0.75, x, bottomY);
+    rawCtx.stroke();
+    rawCtx.restore();
+  }
 }
 
 export function clearCanvas(ctx: RenderContext, canvas: HTMLCanvasElement): void {

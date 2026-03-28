@@ -4,6 +4,7 @@ import { TransportBar } from "./components/TransportBar";
 import { StatusBar } from "./components/StatusBar";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { TextInput } from "./components/TextInput";
+import { PartPanel } from "./components/PartPanel";
 import { useEditorStore } from "./state";
 import { saveScore } from "./fileio/save";
 import { loadScore } from "./fileio/load";
@@ -57,7 +58,10 @@ export function App() {
       <KeyboardShortcuts />
       <Toolbar />
       <TransportBar />
-      <ScoreCanvas />
+      <div style={styles.mainContent}>
+        <PartPanel />
+        <ScoreCanvas />
+      </div>
       <StatusBar />
       <TextInput />
     </div>
@@ -73,5 +77,10 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  },
+  mainContent: {
+    display: "flex",
+    flex: 1,
+    overflow: "hidden",
   },
 };

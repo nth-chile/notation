@@ -2,3 +2,6 @@ export { renderScore, calculateContentHeight, MEASURE_WIDTH, STAFF_HEIGHT, LEFT_
 export type { ScoreRenderResult } from "./ScoreRenderer";
 export { initRenderer, clearCanvas, renderMeasure } from "./vexBridge";
 export type { RenderContext, NoteBox, MeasureRenderResult } from "./vexBridge";
+export { calculateNoteSpacing } from "./spacing";
+export { getBeamGroups } from "./beaming";
+export { calculateMeasureWidth } from "./measureWidth";

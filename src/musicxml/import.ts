@@ -1,0 +1,480 @@
+import type { Score, Part, Measure, Voice } from "../model/score";
+import type { NoteEvent, NoteHead, Note, Chord, Rest } from "../model/note";
+import type { Pitch, PitchClass, Accidental, Octave } from "../model/pitch";
+import type { Duration, DurationType } from "../model/duration";
+import type { Clef, ClefType, TimeSignature, KeySignature, BarlineType } from "../model/time";
+import type { Annotation, ChordSymbol, Lyric } from "../model/annotations";
+import { newId, type ScoreId, type PartId, type MeasureId, type VoiceId, type NoteEventId } from "../model/ids";
+import {
+  XML_TO_DURATION_TYPE,
+  ALTER_TO_ACCIDENTAL,
+  XML_CLEF_MAP,
+  MUSICXML_DIVISIONS,
+  DURATION_DIVISIONS,
+} from "./types";
+
+function getTextContent(parent: Element, tagName: string): string | null {
+  const el = parent.getElementsByTagName(tagName)[0];
+  return el ? el.textContent?.trim() ?? null : null;
+}
+
+function getNumberContent(parent: Element, tagName: string): number | null {
+  const text = getTextContent(parent, tagName);
+  if (text === null) return null;
+  const num = Number(text);
+  return isNaN(num) ? null : num;
+}
+
+function getDirectChild(parent: Element, tagName: string): Element | null {
+  for (let i = 0; i < parent.childNodes.length; i++) {
+    const child = parent.childNodes[i];
+    if (child.nodeType === 1 && (child as Element).tagName === tagName) {
+      return child as Element;
+    }
+  }
+  return null;
+}
+
+function getDirectChildren(parent: Element, tagName: string): Element[] {
+  const result: Element[] = [];
+  for (let i = 0; i < parent.childNodes.length; i++) {
+    const child = parent.childNodes[i];
+    if (child.nodeType === 1 && (child as Element).tagName === tagName) {
+      result.push(child as Element);
+    }
+  }
+  return result;
+}
+
+function parsePitch(noteEl: Element): Pitch | null {
+  const pitchEl = getDirectChild(noteEl, "pitch");
+  if (!pitchEl) return null;
+
+  const step = getTextContent(pitchEl, "step") as PitchClass | null;
+  if (!step) return null;
+
+  const octaveNum = getNumberContent(pitchEl, "octave");
+  if (octaveNum === null) return null;
+  const octave = Math.max(0, Math.min(9, octaveNum)) as Octave;
+
+  const alter = getNumberContent(pitchEl, "alter") ?? 0;
+  const accidental: Accidental = ALTER_TO_ACCIDENTAL[alter] ?? "natural";
+
+  return { pitchClass: step, accidental, octave };
+}
+
+function parseDuration(noteEl: Element, divisions: number): Duration {
+  const typeText = getTextContent(noteEl, "type");
+  const durationType: DurationType = typeText
+    ? XML_TO_DURATION_TYPE[typeText] ?? "quarter"
+    : "quarter";
+
+  const dotEls = getDirectChildren(noteEl, "dot");
+  const dots = Math.min(3, dotEls.length) as 0 | 1 | 2 | 3;
+
+  return { type: durationType, dots };
+}
+
+function parseClef(attrEl: Element): Clef | null {
+  const clefEl = getDirectChild(attrEl, "clef");
+  if (!clefEl) return null;
+
+  const sign = getTextContent(clefEl, "sign") ?? "G";
+  const line = getNumberContent(clefEl, "line") ?? 2;
+  const key = `${sign}${line}`;
+  const clefType: ClefType = XML_CLEF_MAP[key] ?? "treble";
+
+  return { type: clefType };
+}
+
+function parseKeySignature(attrEl: Element): KeySignature | null {
+  const keyEl = getDirectChild(attrEl, "key");
+  if (!keyEl) return null;
+
+  const fifths = getNumberContent(keyEl, "fifths") ?? 0;
+  const mode = getTextContent(keyEl, "mode") as "major" | "minor" | undefined;
+
+  return { fifths, mode: mode || undefined };
+}
+
+function parseTimeSignature(attrEl: Element): TimeSignature | null {
+  const timeEl = getDirectChild(attrEl, "time");
+  if (!timeEl) return null;
+
+  const beats = getNumberContent(timeEl, "beats") ?? 4;
+  const beatType = getNumberContent(timeEl, "beat-type") ?? 4;
+
+  return { numerator: beats, denominator: beatType };
+}
+
+function parseHarmony(harmonyEl: Element, currentTick: number): ChordSymbol | null {
+  const rootEl = getDirectChild(harmonyEl, "root");
+  if (!rootEl) return null;
+
+  const rootStep = getTextContent(rootEl, "root-step") ?? "C";
+  const rootAlter = getNumberContent(rootEl, "root-alter");
+
+  let text = rootStep;
+  if (rootAlter === 1) text += "#";
+  else if (rootAlter === -1) text += "b";
+
+  const kindEl = getDirectChild(harmonyEl, "kind");
+  if (kindEl) {
+    const kindText = kindEl.getAttribute("text");
+    if (kindText) {
+      text += kindText;
+    }
+  }
+
+  return {
+    kind: "chord-symbol",
+    text,
+    beatOffset: currentTick,
+  };
+}
+
+function parseLyric(noteEl: Element, eventId: NoteEventId): Lyric[] {
+  const lyricEls = getDirectChildren(noteEl, "lyric");
+  const lyrics: Lyric[] = [];
+
+  for (const lyricEl of lyricEls) {
+    const numberAttr = lyricEl.getAttribute("number");
+    const verseNumber = numberAttr ? parseInt(numberAttr, 10) : 1;
+    const syllabic = getTextContent(lyricEl, "syllabic") ?? "single";
+    const text = getTextContent(lyricEl, "text") ?? "";
+
+    const syllableType = (
+      ["begin", "middle", "end", "single"].includes(syllabic)
+        ? syllabic
+        : "single"
+    ) as "begin" | "middle" | "end" | "single";
+
+    lyrics.push({
+      kind: "lyric",
+      text,
+      noteEventId: eventId,
+      syllableType,
+      verseNumber: isNaN(verseNumber) ? 1 : verseNumber,
+    });
+  }
+
+  return lyrics;
+}
+
+function parseBarline(measureEl: Element): BarlineType {
+  const barlineEl = getDirectChild(measureEl, "barline");
+  if (!barlineEl) return "single";
+
+  const barStyle = getTextContent(barlineEl, "bar-style");
+  const repeatEl = getDirectChild(barlineEl, "repeat");
+
+  if (repeatEl) {
+    const direction = repeatEl.getAttribute("direction");
+    if (direction === "forward") return "repeat-start";
+    if (direction === "backward") return "repeat-end";
+  }
+
+  switch (barStyle) {
+    case "light-light":
+      return "double";
+    case "light-heavy":
+      return "final";
+    default:
+      return "single";
+  }
+}
+
+function parseMeasure(
+  measureEl: Element,
+  currentClef: Clef,
+  currentTimeSig: TimeSignature,
+  currentKeySig: KeySignature,
+  currentDivisions: number
+): { measure: Measure; clef: Clef; timeSig: TimeSignature; keySig: KeySignature; divisions: number } {
+  let clef = { ...currentClef };
+  let timeSig = { ...currentTimeSig };
+  let keySig = { ...currentKeySig };
+  let divisions = currentDivisions;
+  const annotations: Annotation[] = [];
+
+  // Group note events by voice
+  const voiceEvents = new Map<number, NoteEvent[]>();
+  let currentTick = 0;
+
+  // Track pending chord notes to merge
+  let pendingChordHeads: NoteHead[] = [];
+  let pendingChordDuration: Duration | null = null;
+  let pendingChordEventId: NoteEventId | null = null;
+  let pendingChordLyrics: Lyric[] = [];
+  let pendingVoiceNum = 1;
+
+  function flushPendingChord() {
+    if (pendingChordHeads.length > 0 && pendingChordDuration) {
+      const voiceNum = pendingVoiceNum;
+      if (!voiceEvents.has(voiceNum)) voiceEvents.set(voiceNum, []);
+
+      if (pendingChordHeads.length === 1) {
+        const note: Note = {
+          kind: "note",
+          id: pendingChordEventId!,
+          duration: pendingChordDuration,
+          head: pendingChordHeads[0],
+        };
+        voiceEvents.get(voiceNum)!.push(note);
+      } else {
+        const chord: Chord = {
+          kind: "chord",
+          id: pendingChordEventId!,
+          duration: pendingChordDuration,
+          heads: pendingChordHeads,
+        };
+        voiceEvents.get(voiceNum)!.push(chord);
+      }
+
+      // Add lyrics as annotations
+      for (const lyric of pendingChordLyrics) {
+        annotations.push(lyric);
+      }
+
+      pendingChordHeads = [];
+      pendingChordDuration = null;
+      pendingChordEventId = null;
+      pendingChordLyrics = [];
+    }
+  }
+
+  const children = measureEl.childNodes;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    if (child.nodeType !== 1) continue;
+    const el = child as Element;
+
+    switch (el.tagName) {
+      case "attributes": {
+        const newDivisions = getNumberContent(el, "divisions");
+        if (newDivisions !== null) divisions = newDivisions;
+
+        const newClef = parseClef(el);
+        if (newClef) clef = newClef;
+
+        const newKeySig = parseKeySignature(el);
+        if (newKeySig) keySig = newKeySig;
+
+        const newTimeSig = parseTimeSignature(el);
+        if (newTimeSig) timeSig = newTimeSig;
+        break;
+      }
+
+      case "harmony": {
+        const cs = parseHarmony(el, currentTick);
+        if (cs) annotations.push(cs);
+        break;
+      }
+
+      case "note": {
+        const isChord = getDirectChild(el, "chord") !== null;
+        const isRest = getDirectChild(el, "rest") !== null;
+        const voiceText = getTextContent(el, "voice");
+        const voiceNum = voiceText ? parseInt(voiceText, 10) : 1;
+
+        if (!isChord) {
+          // Flush any pending chord from previous note
+          flushPendingChord();
+        }
+
+        const duration = parseDuration(el, divisions);
+        const durationDivs = getNumberContent(el, "duration") ?? 0;
+
+        if (isRest) {
+          if (!voiceEvents.has(voiceNum)) voiceEvents.set(voiceNum, []);
+          const rest: Rest = {
+            kind: "rest",
+            id: newId<NoteEventId>("evt"),
+            duration,
+          };
+          voiceEvents.get(voiceNum)!.push(rest);
+          currentTick += durationDivs;
+        } else {
+          const pitch = parsePitch(el);
+          if (!pitch) break;
+
+          // Check for tie
+          const tieEls = getDirectChildren(el, "tie");
+          const isTiedStart = tieEls.some(
+            (t) => t.getAttribute("type") === "start"
+          );
+
+          const head: NoteHead = {
+            pitch,
+            tied: isTiedStart || undefined,
+          };
+
+          const eventId = newId<NoteEventId>("evt");
+          const lyrics = parseLyric(el, eventId);
+
+          if (isChord) {
+            // Add to pending chord
+            pendingChordHeads.push(head);
+            // Lyrics from first note of chord were already captured
+          } else {
+            pendingChordHeads = [head];
+            pendingChordDuration = duration;
+            pendingChordEventId = eventId;
+            pendingChordLyrics = lyrics;
+            pendingVoiceNum = voiceNum;
+            currentTick += durationDivs;
+          }
+        }
+        break;
+      }
+
+      case "forward": {
+        flushPendingChord();
+        const forwardDur = getNumberContent(el, "duration") ?? 0;
+        currentTick += forwardDur;
+        break;
+      }
+
+      case "backup": {
+        flushPendingChord();
+        const backupDur = getNumberContent(el, "duration") ?? 0;
+        currentTick -= backupDur;
+        break;
+      }
+
+      // Skip unknown elements gracefully
+      default:
+        break;
+    }
+  }
+
+  // Flush any remaining pending chord
+  flushPendingChord();
+
+  // Build voices
+  const voices: Voice[] = [];
+  const sortedVoiceNums = Array.from(voiceEvents.keys()).sort((a, b) => a - b);
+
+  for (const voiceNum of sortedVoiceNums) {
+    voices.push({
+      id: newId<VoiceId>("vce"),
+      events: voiceEvents.get(voiceNum)!,
+    });
+  }
+
+  // Ensure at least one voice
+  if (voices.length === 0) {
+    voices.push({ id: newId<VoiceId>("vce"), events: [] });
+  }
+
+  const barlineEnd = parseBarline(measureEl);
+
+  const measure: Measure = {
+    id: newId<MeasureId>("msr"),
+    clef,
+    timeSignature: timeSig,
+    keySignature: keySig,
+    barlineEnd,
+    annotations,
+    voices,
+  };
+
+  return { measure, clef, timeSig, keySig, divisions };
+}
+
+export function importFromMusicXML(xml: string): Score {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, "application/xml");
+
+  const scoreEl = doc.getElementsByTagName("score-partwise")[0];
+  if (!scoreEl) {
+    throw new Error("Invalid MusicXML: missing <score-partwise> element");
+  }
+
+  // Parse title
+  const title = getTextContent(scoreEl, "work-title") ?? "Untitled";
+
+  // Parse composer
+  const identEl = scoreEl.getElementsByTagName("identification")[0];
+  let composer = "";
+  if (identEl) {
+    const creators = identEl.getElementsByTagName("creator");
+    for (let i = 0; i < creators.length; i++) {
+      if (creators[i].getAttribute("type") === "composer") {
+        composer = creators[i].textContent?.trim() ?? "";
+        break;
+      }
+    }
+  }
+
+  // Parse part list for names
+  const partNames = new Map<string, { name: string; abbreviation: string }>();
+  const partListEl = scoreEl.getElementsByTagName("part-list")[0];
+  if (partListEl) {
+    const scoreParts = partListEl.getElementsByTagName("score-part");
+    for (let i = 0; i < scoreParts.length; i++) {
+      const sp = scoreParts[i];
+      const id = sp.getAttribute("id") ?? "";
+      const name = getTextContent(sp, "part-name") ?? `Part ${i + 1}`;
+      const displayEl = getDirectChild(sp, "part-name-display");
+      const abbreviation = displayEl
+        ? getTextContent(displayEl, "display-text") ?? ""
+        : "";
+      partNames.set(id, { name, abbreviation });
+    }
+  }
+
+  // Parse parts
+  const parts: Part[] = [];
+  const partEls = getDirectChildren(scoreEl, "part");
+
+  for (const partEl of partEls) {
+    const partId = partEl.getAttribute("id") ?? "";
+    const partInfo = partNames.get(partId) ?? {
+      name: `Part ${parts.length + 1}`,
+      abbreviation: "",
+    };
+
+    let currentClef: Clef = { type: "treble" };
+    let currentTimeSig: TimeSignature = { numerator: 4, denominator: 4 };
+    let currentKeySig: KeySignature = { fifths: 0 };
+    let divisions = MUSICXML_DIVISIONS;
+
+    const measures: Measure[] = [];
+    const measureEls = getDirectChildren(partEl, "measure");
+
+    for (const measureEl of measureEls) {
+      const result = parseMeasure(
+        measureEl,
+        currentClef,
+        currentTimeSig,
+        currentKeySig,
+        divisions
+      );
+      measures.push(result.measure);
+      currentClef = result.clef;
+      currentTimeSig = result.timeSig;
+      currentKeySig = result.keySig;
+      divisions = result.divisions;
+    }
+
+    parts.push({
+      id: newId<PartId>("prt"),
+      name: partInfo.name,
+      abbreviation: partInfo.abbreviation,
+      instrumentId: "piano",
+      muted: false,
+      solo: false,
+      measures,
+    });
+  }
+
+  return {
+    id: newId<ScoreId>("scr"),
+    title,
+    composer,
+    formatVersion: 1,
+    tempo: 120,
+    parts,
+  };
+}

@@ -43,6 +43,7 @@ export function KeyboardShortcuts() {
   const play = useEditorStore((s) => s.play);
   const pause = useEditorStore((s) => s.pause);
   const stopPlayback = useEditorStore((s) => s.stopPlayback);
+  const moveCursorPart = useEditorStore((s) => s.moveCursorPart);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -163,6 +164,18 @@ export function KeyboardShortcuts() {
         return;
       }
 
+      // Alt+Up/Down: move cursor between parts
+      if (e.altKey && !e.metaKey && !e.ctrlKey && key === "arrowup") {
+        e.preventDefault();
+        moveCursorPart("up");
+        return;
+      }
+      if (e.altKey && !e.metaKey && !e.ctrlKey && key === "arrowdown") {
+        e.preventDefault();
+        moveCursorPart("down");
+        return;
+      }
+
       // Octave
       if (key === "arrowup") {
         e.preventDefault();
@@ -206,6 +219,7 @@ export function KeyboardShortcuts() {
     play,
     pause,
     stopPlayback,
+    moveCursorPart,
   ]);
 
   return null;

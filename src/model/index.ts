@@ -5,8 +5,12 @@ export type { Duration, DurationType } from "./duration";
 export type { Clef, ClefType, TimeSignature, KeySignature, BarlineType } from "./time";
 export type { ScoreId, PartId, MeasureId, VoiceId, NoteEventId } from "./ids";
 export type { Annotation, ChordSymbol, Lyric, RehearsalMark, TempoMark } from "./annotations";
+export type { Stylesheet } from "./stylesheet";
+export { defaultStylesheet, resolveStylesheet } from "./stylesheet";
 
 export { pitchToMidi, midiToPitch, stepUp, stepDown } from "./pitch";
 export { durationToTicks, measureCapacity, voiceTicksUsed, TICKS_PER_QUARTER, DURATION_TYPES_ORDERED } from "./duration";
 export { newId } from "./ids";
 export * as factory from "./factory";
+export { INSTRUMENTS, getInstrument } from "./instruments";
+export type { InstrumentDef } from "./instruments";

@@ -2,6 +2,7 @@ import type { NoteEvent } from "./note";
 import type { Clef, TimeSignature, KeySignature, BarlineType } from "./time";
 import type { ScoreId, PartId, MeasureId, VoiceId } from "./ids";
 import type { Annotation } from "./annotations";
+import type { Stylesheet } from "./stylesheet";
 
 export interface Score {
   id: ScoreId;
@@ -10,12 +11,16 @@ export interface Score {
   formatVersion: number;
   tempo: number;
   parts: Part[];
+  stylesheet?: Partial<Stylesheet>;
 }
 
 export interface Part {
   id: PartId;
   name: string;
   abbreviation: string;
+  instrumentId: string;
+  muted: boolean;
+  solo: boolean;
   measures: Measure[];
 }
 

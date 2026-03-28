@@ -29,6 +29,9 @@ import { SetChordSymbol } from "../commands/SetChordSymbol";
 import { SetLyric } from "../commands/SetLyric";
 import { SetRehearsalMark } from "../commands/SetRehearsalMark";
 import { SetTempo } from "../commands/SetTempo";
+import { AddPart } from "../commands/AddPart";
+import { RemovePart } from "../commands/RemovePart";
+import { ReorderParts } from "../commands/ReorderParts";
 import type { NoteBox } from "../renderer/vexBridge";
 import { newId, type VoiceId } from "../model/ids";
 import * as Transport from "../playback/Transport";
@@ -90,6 +93,15 @@ interface EditorStore {
   setTempo(bpm: number): void;
   setPlaybackTick(tick: number | null): void;
   toggleMetronome(): void;
+
+  // Phase 5: Multi-track/Part management
+  addPart(instrumentId: string): void;
+  removePart(partIndex: number): void;
+  reorderPart(partIndex: number, direction: "up" | "down"): void;
+  toggleSolo(partIndex: number): void;
+  toggleMute(partIndex: number): void;
+  moveCursorToPart(partIndex: number): void;
+  moveCursorPart(direction: "up" | "down"): void;
 }
 
 /** Returns true if the cursor is on an existing event (not past the end) */
@@ -592,6 +604,94 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const next = !s.metronomeOn;
       Transport.setMetronome(next);
       return { metronomeOn: next };
+    });
+  },
+
+  // Phase 5: Multi-track/Part management
+
+  addPart(instrumentId: string) {
+    const state = get();
+    const cmd = new AddPart(instrumentId);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({
+      score: result.score,
+      inputState: result.inputState,
+      isDirty: true,
+    });
+  },
+
+  removePart(partIndex: number) {
+    const state = get();
+    const cmd = new RemovePart(partIndex);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({
+      score: result.score,
+      inputState: result.inputState,
+      isDirty: true,
+    });
+  },
+
+  reorderPart(partIndex: number, direction: "up" | "down") {
+    const state = get();
+    const cmd = new ReorderParts(partIndex, direction);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({
+      score: result.score,
+      inputState: result.inputState,
+      isDirty: true,
+    });
+  },
+
+  toggleSolo(partIndex: number) {
+    set((s) => {
+      const score = structuredClone(s.score);
+      const part = score.parts[partIndex];
+      if (!part) return s;
+      part.solo = !part.solo;
+      return { score, isDirty: true };
+    });
+  },
+
+  toggleMute(partIndex: number) {
+    set((s) => {
+      const score = structuredClone(s.score);
+      const part = score.parts[partIndex];
+      if (!part) return s;
+      part.muted = !part.muted;
+      return { score, isDirty: true };
+    });
+  },
+
+  moveCursorToPart(partIndex: number) {
+    set((s) => {
+      if (partIndex < 0 || partIndex >= s.score.parts.length) return s;
+      const cursor = { ...s.inputState.cursor };
+      cursor.partIndex = partIndex;
+      cursor.eventIndex = 0;
+      cursor.voiceIndex = 0;
+      return { inputState: { ...s.inputState, cursor } };
+    });
+  },
+
+  moveCursorPart(direction: "up" | "down") {
+    set((s) => {
+      const cursor = { ...s.inputState.cursor };
+      const newPartIndex =
+        direction === "up" ? cursor.partIndex - 1 : cursor.partIndex + 1;
+      if (newPartIndex < 0 || newPartIndex >= s.score.parts.length) return s;
+      cursor.partIndex = newPartIndex;
+      cursor.eventIndex = 0;
+      cursor.voiceIndex = 0;
+      return { inputState: { ...s.inputState, cursor } };
     });
   },
 }));

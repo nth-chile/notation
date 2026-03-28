@@ -17,6 +17,10 @@ export interface ScheduledEvent {
   duration: number;
   /** Start tick position in the score */
   tick: number;
+  /** Part index for solo/mute filtering */
+  partIndex: number;
+  /** Instrument ID for sound selection */
+  instrumentId: string;
 }
 
 /**
@@ -48,10 +52,31 @@ function ticksToSeconds(ticks: number, bpm: number): number {
 /**
  * Schedule the entire score into a flat list of audio events.
  */
+/**
+ * Determine which parts should be audible based on solo/mute flags.
+ */
+function getAudibleParts(score: Score): Set<number> {
+  const hasSolo = score.parts.some((p) => p.solo);
+  const audible = new Set<number>();
+  for (let i = 0; i < score.parts.length; i++) {
+    const part = score.parts[i];
+    if (hasSolo) {
+      if (part.solo && !part.muted) audible.add(i);
+    } else {
+      if (!part.muted) audible.add(i);
+    }
+  }
+  return audible;
+}
+
 export function scheduleScore(score: Score): ScheduledEvent[] {
   const events: ScheduledEvent[] = [];
+  const audibleParts = getAudibleParts(score);
 
-  for (const part of score.parts) {
+  for (let pi = 0; pi < score.parts.length; pi++) {
+    const part = score.parts[pi];
+    if (!audibleParts.has(pi)) continue;
+
     let currentTimeSec = 0;
     let currentTick = 0;
 
@@ -75,6 +100,8 @@ export function scheduleScore(score: Score): ScheduledEvent[] {
               midiPitch: midi,
               duration: eventDurSec,
               tick: eventTick,
+              partIndex: pi,
+              instrumentId: part.instrumentId,
             });
           } else if (event.kind === "chord") {
             for (const head of event.heads) {
@@ -84,6 +111,8 @@ export function scheduleScore(score: Score): ScheduledEvent[] {
                 midiPitch: midi,
                 duration: eventDurSec,
                 tick: eventTick,
+                partIndex: pi,
+                instrumentId: part.instrumentId,
               });
             }
           }
