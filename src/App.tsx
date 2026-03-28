@@ -7,6 +7,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { PluginPanel } from "./components/PluginPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { PluginViewSwitcher } from "./components/PluginViewSwitcher";
+import { PanelLayout } from "./components/PanelLayout";
 import { useEditorStore } from "./state";
 import { saveScore } from "./fileio/save";
 import { loadScore } from "./fileio/load";
@@ -137,19 +138,9 @@ export function App() {
       {/* Plugin-registered view switcher */}
       {views.length > 0 && <PluginViewSwitcher views={views} />}
 
-      <div style={styles.mainContent}>
-        {/* Plugin-registered left sidebar panels (e.g. parts) */}
-        {leftPanels.map((panel) => (
-          <div key={panel.id}>{panel.config.component()}</div>
-        ))}
-
+      <PanelLayout leftPanels={leftPanels} rightPanels={rightPanels}>
         <ScoreCanvas />
-
-        {/* Plugin-registered right sidebar panels (e.g. AI chat) */}
-        {rightPanels.map((panel) => (
-          <div key={panel.id}>{panel.config.component()}</div>
-        ))}
-      </div>
+      </PanelLayout>
 
       <StatusBar />
       <TextInput />
@@ -176,10 +167,5 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  },
-  mainContent: {
-    display: "flex",
-    flex: 1,
-    overflow: "hidden",
   },
 };

@@ -1,4 +1,5 @@
 import { useEditorStore } from "../state";
+import { useLayoutStore } from "../state/LayoutState";
 import type { DurationType, Accidental } from "../model";
 
 const DURATIONS: { type: DurationType; label: string; key: string }[] = [
@@ -28,6 +29,12 @@ export function Toolbar({ onToggleSettings, onTogglePlugins }: ToolbarProps) {
   const setAccidental = useEditorStore((s) => s.setAccidental);
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
+
+  const panels = useLayoutStore((s) => s.panels);
+  const sidebarOpen = useLayoutStore((s) => s.sidebarOpen);
+  const toggleSidebar = useLayoutStore((s) => s.toggleSidebar);
+  const hasLeftPanels = panels.left.length > 0;
+  const hasRightPanels = panels.right.length > 0;
 
   return (
     <div style={styles.toolbar}>
@@ -96,6 +103,42 @@ export function Toolbar({ onToggleSettings, onTogglePlugins }: ToolbarProps) {
       </div>
 
       <div style={{ flex: 1 }} />
+
+      {hasLeftPanels && (
+        <button
+          onClick={() => toggleSidebar("left")}
+          style={{
+            ...styles.button,
+            fontSize: 12,
+            padding: "4px 10px",
+            ...(sidebarOpen.left ? styles.active : {}),
+          }}
+          title={sidebarOpen.left ? "Hide left sidebar" : "Show left sidebar"}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <rect x="1" y="2" width="12" height="10" rx="1" />
+            <line x1="5" y1="2" x2="5" y2="12" />
+          </svg>
+        </button>
+      )}
+
+      {hasRightPanels && (
+        <button
+          onClick={() => toggleSidebar("right")}
+          style={{
+            ...styles.button,
+            fontSize: 12,
+            padding: "4px 10px",
+            ...(sidebarOpen.right ? styles.active : {}),
+          }}
+          title={sidebarOpen.right ? "Hide right sidebar" : "Show right sidebar"}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <rect x="1" y="2" width="12" height="10" rx="1" />
+            <line x1="9" y1="2" x2="9" y2="12" />
+          </svg>
+        </button>
+      )}
 
       {onToggleSettings && (
         <button
