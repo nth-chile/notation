@@ -12,6 +12,9 @@ export function ScoreCanvas() {
   const inputState = useEditorStore((s) => s.inputState);
   const setNoteBoxes = useEditorStore((s) => s.setNoteBoxes);
   const playbackTick = useEditorStore((s) => s.playbackTick);
+  const viewConfig = useEditorStore((s) => s.viewConfig);
+  const viewMode = useEditorStore((s) => s.viewMode);
+  const viewScrollPositions = useEditorStore((s) => s.viewScrollPositions);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -20,7 +23,7 @@ export function ScoreCanvas() {
 
     const dpr = window.devicePixelRatio || 1;
     const containerWidth = container.clientWidth;
-    const contentHeight = calculateContentHeight(score);
+    const contentHeight = calculateContentHeight(score, viewConfig);
     const canvasHeight = Math.max(contentHeight, container.clientHeight);
 
     canvas.width = containerWidth * dpr;
@@ -33,7 +36,7 @@ export function ScoreCanvas() {
     if (ctx.scale) {
       ctx.scale(dpr, dpr);
     }
-  }, [score]);
+  }, [score, viewConfig]);
 
   useEffect(() => {
     resizeCanvas();
@@ -45,13 +48,22 @@ export function ScoreCanvas() {
     const canvas = canvasRef.current;
     if (!canvas || !ctxRef.current) return;
 
-    const result = renderScore(ctxRef.current, canvas, score, inputState.cursor, playbackTick);
+    const result = renderScore(ctxRef.current, canvas, score, inputState.cursor, playbackTick, viewConfig);
     setNoteBoxes(result.noteBoxes);
-  }, [score, inputState.cursor, setNoteBoxes, playbackTick]);
+  }, [score, inputState.cursor, setNoteBoxes, playbackTick, viewConfig]);
+
+  // Restore scroll position when view mode changes
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const savedScroll = viewScrollPositions[viewMode] ?? 0;
+    container.scrollTop = savedScroll;
+  }, [viewMode, viewScrollPositions]);
 
   return (
     <div
       ref={containerRef}
+      data-score-container=""
       style={{ flex: 1, overflow: "auto", background: "#fff" }}
     >
       <canvas

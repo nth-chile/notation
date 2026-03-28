@@ -19,4 +19,5 @@ export type BarlineType =
   | "double"
   | "final"
   | "repeat-start"
-  | "repeat-end";
+  | "repeat-end"
+  | "repeat-both";

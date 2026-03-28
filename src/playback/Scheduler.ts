@@ -7,6 +7,7 @@ import type { Score } from "../model/score";
 import type { TempoMark } from "../model/annotations";
 import { durationToTicks, TICKS_PER_QUARTER } from "../model/duration";
 import { pitchToMidi } from "../model/pitch";
+import { computePlaybackOrder } from "./PlaybackOrder";
 
 export interface ScheduledEvent {
   /** Start time in seconds from the beginning of playback */
@@ -77,11 +78,15 @@ export function scheduleScore(score: Score): ScheduledEvent[] {
     const part = score.parts[pi];
     if (!audibleParts.has(pi)) continue;
 
+    // Use PlaybackOrder to determine measure sequence (handles repeats, D.S., D.C., etc.)
+    const measureOrder = computePlaybackOrder(score, pi);
+
     let currentTimeSec = 0;
     let currentTick = 0;
 
-    for (let mi = 0; mi < part.measures.length; mi++) {
+    for (const mi of measureOrder) {
       const measure = part.measures[mi];
+      if (!measure) continue;
       const bpm = getTempoForMeasure(score, mi);
 
       for (const voice of measure.voices) {
@@ -116,7 +121,7 @@ export function scheduleScore(score: Score): ScheduledEvent[] {
               });
             }
           }
-          // Rests produce no sound events
+          // Rests and slashes produce no sound events
 
           voiceTickOffset += eventTicks;
         }

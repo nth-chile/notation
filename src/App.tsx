@@ -5,16 +5,19 @@ import { StatusBar } from "./components/StatusBar";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { TextInput } from "./components/TextInput";
 import { PartPanel } from "./components/PartPanel";
+import { ChatSidebar } from "./components/ChatSidebar";
+import { ViewSwitcher } from "./components/ViewSwitcher";
 import { useEditorStore } from "./state";
 import { saveScore } from "./fileio/save";
 import { loadScore } from "./fileio/load";
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 
 export function App() {
   const score = useEditorStore((s) => s.score);
   const filePath = useEditorStore((s) => s.filePath);
   const setScore = useEditorStore((s) => s.setScore);
   const setFilePath = useEditorStore((s) => s.setFilePath);
+  const [chatVisible, setChatVisible] = useState(false);
 
   const handleSave = useCallback(async () => {
     try {
@@ -37,7 +40,7 @@ export function App() {
     }
   }, [setScore, setFilePath]);
 
-  // Ctrl+S / Ctrl+O
+  // Ctrl+S / Ctrl+O / Ctrl+Shift+A
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
@@ -48,6 +51,10 @@ export function App() {
         e.preventDefault();
         handleOpen();
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        setChatVisible((v) => !v);
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -56,11 +63,13 @@ export function App() {
   return (
     <div style={styles.app}>
       <KeyboardShortcuts />
-      <Toolbar />
+      <Toolbar onToggleChat={() => setChatVisible((v) => !v)} chatVisible={chatVisible} />
       <TransportBar />
+      <ViewSwitcher />
       <div style={styles.mainContent}>
         <PartPanel />
         <ScoreCanvas />
+        <ChatSidebar visible={chatVisible} />
       </div>
       <StatusBar />
       <TextInput />

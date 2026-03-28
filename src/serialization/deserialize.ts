@@ -1,10 +1,12 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
-import type { NoteEvent, Note, Chord, Rest, NoteHead } from "../model/note";
+import type { NoteEvent, Note, Chord, Rest, Slash, NoteHead, Articulation } from "../model/note";
+import type { NavigationMarks } from "../model/navigation";
 import type { Pitch, PitchClass, Accidental, Octave } from "../model/pitch";
 import type { Duration, DurationType } from "../model/duration";
 import type { ClefType, BarlineType } from "../model/time";
 import type { Annotation } from "../model/annotations";
 import type { Stylesheet } from "../model/stylesheet";
+import type { TabInfo } from "../model/guitar";
 import { newId, type ScoreId, type PartId, type MeasureId, type VoiceId, type NoteEventId } from "../model/ids";
 import { FORMAT_HEADER } from "./format";
 
@@ -46,19 +48,75 @@ function parseDuration(token: string): Duration {
   return { type, dots: dots as 0 | 1 | 2 | 3 };
 }
 
-function parseModifiers(tokens: string[]): { tied: boolean; stemDirection?: "up" | "down" | null } {
+function parseTabInfo(token: string): TabInfo | undefined {
+  if (!token.startsWith("tab:")) return undefined;
+  const parts = token.split(":");
+  if (parts.length !== 3) return undefined;
+  return { string: parseInt(parts[1]), fret: parseInt(parts[2]) };
+}
+
+function parseArticulation(token: string): Articulation | undefined {
+  if (token.startsWith("bend:")) {
+    const semitones = parseInt(token.split(":")[1]);
+    return { kind: "bend", semitones };
+  }
+  switch (token) {
+    case "slide-up": return { kind: "slide-up" };
+    case "slide-down": return { kind: "slide-down" };
+    case "hammer-on": return { kind: "hammer-on" };
+    case "pull-off": return { kind: "pull-off" };
+    case "vibrato": return { kind: "vibrato" };
+    case "palm-mute": return { kind: "palm-mute" };
+    case "harmonic": return { kind: "harmonic" };
+    default: return undefined;
+  }
+}
+
+interface ParsedModifiers {
+  tied: boolean;
+  stemDirection?: "up" | "down" | null;
+  tabInfo?: TabInfo;
+  articulations?: Articulation[];
+}
+
+function parseModifiers(tokens: string[]): ParsedModifiers {
   let tied = false;
   let stemDirection: "up" | "down" | null | undefined;
+  let tabInfo: TabInfo | undefined;
+  const articulations: Articulation[] = [];
+
   for (const t of tokens) {
-    if (t === "~") tied = true;
-    if (t === "^up") stemDirection = "up";
-    if (t === "^dn") stemDirection = "down";
+    if (t === "~") { tied = true; continue; }
+    if (t === "^up") { stemDirection = "up"; continue; }
+    if (t === "^dn") { stemDirection = "down"; continue; }
+
+    const tab = parseTabInfo(t);
+    if (tab) { tabInfo = tab; continue; }
+
+    const art = parseArticulation(t);
+    if (art) { articulations.push(art); continue; }
   }
-  return { tied, stemDirection };
+
+  return {
+    tied,
+    stemDirection,
+    tabInfo,
+    articulations: articulations.length > 0 ? articulations : undefined,
+  };
 }
 
 function parseEvent(line: string): NoteEvent {
   const trimmed = line.trim();
+
+  // Slash note
+  if (trimmed.startsWith("/ ")) {
+    const parts = trimmed.split(/\s+/);
+    return {
+      kind: "slash",
+      id: newId<NoteEventId>("evt"),
+      duration: parseDuration(parts[1]),
+    } satisfies Slash;
+  }
 
   // Rest
   if (trimmed.startsWith("r ")) {
@@ -83,13 +141,16 @@ function parseEvent(line: string): NoteEvent {
       tied: mods.tied || undefined,
     }));
 
-    return {
+    const chord: Chord = {
       kind: "chord",
       id: newId<NoteEventId>("evt"),
       duration,
       heads,
       stemDirection: mods.stemDirection,
-    } satisfies Chord;
+    };
+    if (mods.tabInfo) chord.tabInfo = mods.tabInfo;
+    if (mods.articulations) chord.articulations = mods.articulations;
+    return chord;
   }
 
   // Note
@@ -98,13 +159,16 @@ function parseEvent(line: string): NoteEvent {
   const duration = parseDuration(parts[1]);
   const mods = parseModifiers(parts.slice(2));
 
-  return {
+  const note: Note = {
     kind: "note",
     id: newId<NoteEventId>("evt"),
     duration,
     head: { pitch, tied: mods.tied || undefined },
     stemDirection: mods.stemDirection,
-  } satisfies Note;
+  };
+  if (mods.tabInfo) note.tabInfo = mods.tabInfo;
+  if (mods.articulations) note.articulations = mods.articulations;
+  return note;
 }
 
 function parseMeasureHeader(line: string): {
@@ -180,6 +244,62 @@ function parseAnnotationLine(line: string): Annotation | null {
   }
 
   return null;
+}
+
+/**
+ * Parse navigation mark lines (@volta, @coda, @segno, @ds, @dc, @toCoda, @fine).
+ * Returns true if the line was a navigation mark, false otherwise.
+ */
+function parseNavigationLine(line: string, measure: Measure): boolean {
+  const trimmed = line.trim();
+
+  if (trimmed.startsWith("@volta ")) {
+    if (!measure.navigation) measure.navigation = {};
+    const endingsStr = trimmed.slice(7).trim();
+    const endings = endingsStr.split(",").map((s) => parseInt(s.trim()));
+    measure.navigation.volta = { endings };
+    return true;
+  }
+
+  if (trimmed === "@coda") {
+    if (!measure.navigation) measure.navigation = {};
+    measure.navigation.coda = true;
+    return true;
+  }
+
+  if (trimmed === "@segno") {
+    if (!measure.navigation) measure.navigation = {};
+    measure.navigation.segno = true;
+    return true;
+  }
+
+  if (trimmed === "@toCoda") {
+    if (!measure.navigation) measure.navigation = {};
+    measure.navigation.toCoda = true;
+    return true;
+  }
+
+  if (trimmed === "@fine") {
+    if (!measure.navigation) measure.navigation = {};
+    measure.navigation.fine = true;
+    return true;
+  }
+
+  if (trimmed.startsWith("@ds ")) {
+    if (!measure.navigation) measure.navigation = {};
+    const match = trimmed.match(/@ds\s+"([^"]*)"/);
+    measure.navigation.dsText = match ? match[1] : trimmed.slice(4).trim();
+    return true;
+  }
+
+  if (trimmed.startsWith("@dc ")) {
+    if (!measure.navigation) measure.navigation = {};
+    const match = trimmed.match(/@dc\s+"([^"]*)"/);
+    measure.navigation.dcText = match ? match[1] : trimmed.slice(4).trim();
+    return true;
+  }
+
+  return false;
 }
 
 export function deserialize(text: string): Score {
@@ -311,8 +431,14 @@ export function deserialize(text: string): Score {
       continue;
     }
 
-    // Annotation lines
+    // Navigation mark lines
     if (trimmed.startsWith("@") && currentMeasure) {
+      // Check navigation marks first
+      const navResult = parseNavigationLine(trimmed, currentMeasure);
+      if (navResult) {
+        continue;
+      }
+      // Otherwise try annotation
       const annotation = parseAnnotationLine(trimmed);
       if (annotation) {
         currentMeasure.annotations.push(annotation);

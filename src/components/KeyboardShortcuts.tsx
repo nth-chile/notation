@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useEditorStore } from "../state";
 import type { PitchClass, DurationType } from "../model";
+import type { ViewModeType } from "../views/ViewMode";
 
 const NOTE_KEYS: Record<string, PitchClass> = {
   a: "A",
@@ -44,6 +45,7 @@ export function KeyboardShortcuts() {
   const pause = useEditorStore((s) => s.pause);
   const stopPlayback = useEditorStore((s) => s.stopPlayback);
   const moveCursorPart = useEditorStore((s) => s.moveCursorPart);
+  const setViewMode = useEditorStore((s) => s.setViewMode);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -62,6 +64,17 @@ export function KeyboardShortcuts() {
           redo();
         } else {
           undo();
+        }
+        return;
+      }
+
+      // View mode switching: Ctrl+Shift+1/2/3/4
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && key >= "1" && key <= "4") {
+        e.preventDefault();
+        const viewModes: ViewModeType[] = ["songwriter", "lead-sheet", "tab", "full-score"];
+        const idx = parseInt(key) - 1;
+        if (idx >= 0 && idx < viewModes.length) {
+          setViewMode(viewModes[idx]);
         }
         return;
       }
@@ -220,6 +233,7 @@ export function KeyboardShortcuts() {
     pause,
     stopPlayback,
     moveCursorPart,
+    setViewMode,
   ]);
 
   return null;

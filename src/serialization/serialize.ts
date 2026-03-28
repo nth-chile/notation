@@ -1,10 +1,11 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
-import type { NoteEvent, NoteHead } from "../model/note";
+import type { NoteEvent, NoteHead, Articulation } from "../model/note";
 import type { Pitch } from "../model/pitch";
 import type { Duration } from "../model/duration";
 import type { Accidental } from "../model/pitch";
 import type { Annotation } from "../model/annotations";
 import type { Stylesheet } from "../model/stylesheet";
+import type { TabInfo } from "../model/guitar";
 import { defaultStylesheet } from "../model/stylesheet";
 import { FORMAT_HEADER } from "./format";
 
@@ -38,6 +39,31 @@ function serializeNoteHead(h: NoteHead): string {
   return serializePitch(h.pitch);
 }
 
+function serializeTabInfo(tab: TabInfo): string {
+  return `tab:${tab.string}:${tab.fret}`;
+}
+
+function serializeArticulation(art: Articulation): string {
+  switch (art.kind) {
+    case "bend":
+      return `bend:${art.semitones}`;
+    case "slide-up":
+      return "slide-up";
+    case "slide-down":
+      return "slide-down";
+    case "hammer-on":
+      return "hammer-on";
+    case "pull-off":
+      return "pull-off";
+    case "vibrato":
+      return "vibrato";
+    case "palm-mute":
+      return "palm-mute";
+    case "harmonic":
+      return "harmonic";
+  }
+}
+
 function serializeEvent(event: NoteEvent): string {
   const mods: string[] = [];
 
@@ -48,6 +74,12 @@ function serializeEvent(event: NoteEvent): string {
       if (event.head.tied) mods.push("~");
       if (event.stemDirection === "up") mods.push("^up");
       if (event.stemDirection === "down") mods.push("^dn");
+      if (event.tabInfo) mods.push(serializeTabInfo(event.tabInfo));
+      if (event.articulations) {
+        for (const art of event.articulations) {
+          mods.push(serializeArticulation(art));
+        }
+      }
       return `  ${p} ${d}${mods.length ? " " + mods.join(" ") : ""}`;
     }
     case "chord": {
@@ -57,11 +89,21 @@ function serializeEvent(event: NoteEvent): string {
       if (tiedHeads.length > 0) mods.push("~");
       if (event.stemDirection === "up") mods.push("^up");
       if (event.stemDirection === "down") mods.push("^dn");
+      if (event.tabInfo) mods.push(serializeTabInfo(event.tabInfo));
+      if (event.articulations) {
+        for (const art of event.articulations) {
+          mods.push(serializeArticulation(art));
+        }
+      }
       return `  [${heads}] ${d}${mods.length ? " " + mods.join(" ") : ""}`;
     }
     case "rest": {
       const d = serializeDuration(event.duration);
       return `  r ${d}`;
+    }
+    case "slash": {
+      const d = serializeDuration(event.duration);
+      return `  / ${d}`;
     }
   }
 }
@@ -99,6 +141,19 @@ function serializeMeasure(m: Measure, index: number): string[] {
     `barline:${m.barlineEnd}`,
   ].join(" | ");
   lines.push(`--- MEASURE ${index + 1} | ${attrs} ---`);
+  // Serialize navigation marks
+  if (m.navigation) {
+    const nav = m.navigation;
+    if (nav.volta) {
+      lines.push(`@volta ${nav.volta.endings.join(",")}`);
+    }
+    if (nav.coda) lines.push(`@coda`);
+    if (nav.segno) lines.push(`@segno`);
+    if (nav.toCoda) lines.push(`@toCoda`);
+    if (nav.fine) lines.push(`@fine`);
+    if (nav.dsText) lines.push(`@ds "${nav.dsText}"`);
+    if (nav.dcText) lines.push(`@dc "${nav.dcText}"`);
+  }
   for (const annotation of m.annotations) {
     lines.push(serializeAnnotation(annotation));
   }
