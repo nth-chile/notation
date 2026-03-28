@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicholasxjy/tauri-v2-schema/main/tauri.conf.json",
+  "productName": "Noteflow",
+  "version": "0.1.0",
+  "identifier": "com.noteflow.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Noteflow",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "dialog": {},
+    "fs": {
+      "scope": {
+        "allow": ["**"],
+        "deny": []
+      }
+    }
+  }
+}

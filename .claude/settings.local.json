@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo --version)",
+      "Bash(npm --version)",
+      "Bash(npm view:*)",
+      "Bash(npm create:*)",
+      "Bash(yes \"\")",
+      "Bash(npm install:*)",
+      "Bash(npx vitest:*)",
+      "Bash(node:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(cargo check:*)",
+      "Bash(rustup update:*)",
+      "Bash(brew upgrade:*)",
+      "Bash(python3:*)"
+    ]
+  }
+}
