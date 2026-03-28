@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ChatMessage } from "../ai/ChatProvider";
 import { AnthropicProvider } from "../ai/providers/anthropic";
 import { OpenAIProvider } from "../ai/providers/openai";
+import { GeminiProvider } from "../ai/providers/gemini";
 import {
   buildSystemPrompt,
   buildScoreContext,
@@ -11,7 +12,7 @@ import { applyAIEdit } from "../ai/DiffApply";
 import { expandPreset } from "../ai/presets";
 import { useEditorStore } from "./EditorState";
 
-export type ProviderType = "anthropic" | "openai";
+export type ProviderType = "anthropic" | "openai" | "gemini";
 
 interface ChatStore {
   messages: ChatMessage[];
@@ -91,7 +92,9 @@ export const useChatStore = create<ChatStore>((set, get) => {
         const provider =
           state.provider === "anthropic"
             ? new AnthropicProvider(state.apiKey)
-            : new OpenAIProvider(state.apiKey);
+            : state.provider === "gemini"
+              ? new GeminiProvider(state.apiKey)
+              : new OpenAIProvider(state.apiKey);
 
         // Build context
         const score = useEditorStore.getState().score;
