@@ -3,6 +3,7 @@ import type { NoteEvent, Note, Chord, Rest, NoteHead } from "../model/note";
 import type { Pitch, PitchClass, Accidental, Octave } from "../model/pitch";
 import type { Duration, DurationType } from "../model/duration";
 import type { ClefType, BarlineType } from "../model/time";
+import type { Annotation } from "../model/annotations";
 import { newId, type ScoreId, type PartId, type MeasureId, type VoiceId, type NoteEventId } from "../model/ids";
 import { FORMAT_HEADER } from "./format";
 
@@ -131,6 +132,55 @@ function parseMeasureHeader(line: string): {
   };
 }
 
+function parseAnnotationLine(line: string): Annotation | null {
+  const trimmed = line.trim();
+
+  // @chord <beatOffset> <text>
+  if (trimmed.startsWith("@chord ")) {
+    const parts = trimmed.slice(7).split(/\s+/);
+    const beatOffset = parseInt(parts[0]);
+    const text = parts.slice(1).join(" ");
+    return { kind: "chord-symbol", text, beatOffset };
+  }
+
+  // @lyric <noteEventId> "<text>" <syllableType> <verseNumber>
+  if (trimmed.startsWith("@lyric ")) {
+    const match = trimmed.match(/@lyric\s+(\S+)\s+"([^"]*)"\s+(\S+)\s+(\d+)/);
+    if (match) {
+      return {
+        kind: "lyric",
+        noteEventId: match[1] as NoteEventId,
+        text: match[2],
+        syllableType: match[3] as "begin" | "middle" | "end" | "single",
+        verseNumber: parseInt(match[4]),
+      };
+    }
+  }
+
+  // @rehearsal "<text>"
+  if (trimmed.startsWith("@rehearsal ")) {
+    const match = trimmed.match(/@rehearsal\s+"([^"]*)"/);
+    if (match) {
+      return { kind: "rehearsal-mark", text: match[1] };
+    }
+  }
+
+  // @tempo <bpm> <beatUnit> ["text"]
+  if (trimmed.startsWith("@tempo ")) {
+    const match = trimmed.match(/@tempo\s+(\d+)\s+(\S+)(?:\s+"([^"]*)")?/);
+    if (match) {
+      return {
+        kind: "tempo-mark",
+        bpm: parseInt(match[1]),
+        beatUnit: match[2] as DurationType,
+        text: match[3] || undefined,
+      };
+    }
+  }
+
+  return null;
+}
+
 export function deserialize(text: string): Score {
   const lines = text.split("\n");
 
@@ -140,6 +190,7 @@ export function deserialize(text: string): Score {
 
   let title = "Untitled";
   let composer = "";
+  let tempo = 120;
   const parts: Part[] = [];
   let currentPart: Part | null = null;
   let currentMeasure: Measure | null = null;
@@ -162,6 +213,13 @@ export function deserialize(text: string): Score {
     if (trimmed.startsWith("composer:")) {
       const match = trimmed.match(/composer:\s*"(.*)"/);
       if (match) composer = match[1];
+      continue;
+    }
+
+    // Tempo
+    if (trimmed.startsWith("tempo:")) {
+      const match = trimmed.match(/tempo:\s*(\d+)/);
+      if (match) tempo = parseInt(match[1]);
       continue;
     }
 
@@ -189,10 +247,20 @@ export function deserialize(text: string): Score {
         timeSignature: { numerator: header.timeNum, denominator: header.timeDen },
         keySignature: { fifths: header.key },
         barlineEnd: header.barline,
+        annotations: [],
         voices: [],
       };
       currentVoice = null;
       currentPart?.measures.push(currentMeasure);
+      continue;
+    }
+
+    // Annotation lines
+    if (trimmed.startsWith("@") && currentMeasure) {
+      const annotation = parseAnnotationLine(trimmed);
+      if (annotation) {
+        currentMeasure.annotations.push(annotation);
+      }
       continue;
     }
 
@@ -222,6 +290,7 @@ export function deserialize(text: string): Score {
     title,
     composer,
     formatVersion: 1,
+    tempo,
     parts,
   };
 }

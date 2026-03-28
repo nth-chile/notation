@@ -21,6 +21,7 @@ export class InsertMeasure implements Command {
       timeSignature: { ...currentMeasure.timeSignature },
       keySignature: { ...currentMeasure.keySignature },
       barlineEnd: "single",
+      annotations: [],
       voices: [{ id: newId<VoiceId>("vce"), events: [] }],
     };
 

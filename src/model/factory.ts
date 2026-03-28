@@ -3,6 +3,7 @@ import type { Note, Chord, Rest, NoteHead } from "./note";
 import type { Pitch, PitchClass, Accidental, Octave } from "./pitch";
 import type { Duration, DurationType } from "./duration";
 import type { Clef, TimeSignature, KeySignature } from "./time";
+import type { Annotation } from "./annotations";
 import {
   newId,
   type ScoreId,
@@ -74,6 +75,7 @@ export function measure(
     clef?: Clef;
     timeSignature?: TimeSignature;
     keySignature?: KeySignature;
+    annotations?: Annotation[];
   } = {}
 ): Measure {
   return {
@@ -82,6 +84,7 @@ export function measure(
     timeSignature: options.timeSignature ?? { numerator: 4, denominator: 4 },
     keySignature: options.keySignature ?? { fifths: 0 },
     barlineEnd: "single",
+    annotations: options.annotations ?? [],
     voices,
   };
 }
@@ -95,12 +98,13 @@ export function part(name: string, abbreviation: string, measures: Measure[]): P
   };
 }
 
-export function score(title: string, composer: string, parts: Part[]): Score {
+export function score(title: string, composer: string, parts: Part[], tempo = 120): Score {
   return {
     id: newId<ScoreId>("scr"),
     title,
     composer,
     formatVersion: 1,
+    tempo,
     parts,
   };
 }

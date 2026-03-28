@@ -10,3 +10,7 @@ export { DeleteMeasure } from "./DeleteMeasure";
 export { ChangeTimeSig } from "./ChangeTimeSig";
 export { ChangeKeySig } from "./ChangeKeySig";
 export { ChangeClef } from "./ChangeClef";
+export { SetChordSymbol } from "./SetChordSymbol";
+export { SetLyric } from "./SetLyric";
+export { SetRehearsalMark } from "./SetRehearsalMark";
+export { SetTempo } from "./SetTempo";

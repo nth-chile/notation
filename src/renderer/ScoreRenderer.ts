@@ -1,4 +1,5 @@
 import type { Score, NoteEventId } from "../model";
+import { TICKS_PER_QUARTER } from "../model/duration";
 import { renderMeasure, clearCanvas, type RenderContext, type NoteBox } from "./vexBridge";
 import type { CursorPosition } from "../input/InputState";
 
@@ -9,7 +10,7 @@ export interface ScoreRenderResult {
 }
 
 const MEASURE_WIDTH = 250;
-const STAFF_HEIGHT = 120;
+const STAFF_HEIGHT = 160;
 const LEFT_MARGIN = 20;
 const TOP_MARGIN = 40;
 const MEASURES_PER_LINE = 4;
@@ -30,7 +31,8 @@ export function renderScore(
   ctx: RenderContext,
   canvas: HTMLCanvasElement,
   score: Score,
-  cursor?: CursorPosition
+  cursor?: CursorPosition,
+  playbackTick?: number | null
 ): ScoreRenderResult {
   clearCanvas(ctx, canvas);
 
@@ -74,6 +76,11 @@ export function renderScore(
     drawCursor(ctx, score, cursor, measurePositions);
   }
 
+  // Draw playback cursor
+  if (playbackTick != null && playbackTick >= 0) {
+    drawPlaybackCursor(ctx, score, playbackTick, measurePositions);
+  }
+
   const contentHeight = calculateContentHeight(score);
 
   return { noteBoxes: allNoteBoxes, measurePositions, contentHeight };
@@ -105,6 +112,64 @@ function drawCursor(
     rawCtx.strokeStyle = "#2563eb";
     rawCtx.lineWidth = 2;
     rawCtx.setLineDash([4, 4]);
+    rawCtx.beginPath();
+    rawCtx.moveTo(cursorX, mp.y + 10);
+    rawCtx.lineTo(cursorX, mp.y + STAFF_HEIGHT - 20);
+    rawCtx.stroke();
+    rawCtx.restore();
+  }
+}
+
+function drawPlaybackCursor(
+  ctx: RenderContext,
+  score: Score,
+  playbackTick: number,
+  measurePositions: ScoreRenderResult["measurePositions"]
+): void {
+  // Determine which measure and position within it
+  const part = score.parts[0];
+  if (!part) return;
+
+  let accumulated = 0;
+  let targetMeasureIndex = 0;
+  let tickInMeasure = 0;
+
+  for (let mi = 0; mi < part.measures.length; mi++) {
+    const ts = part.measures[mi].timeSignature;
+    const measureTicks =
+      (TICKS_PER_QUARTER * 4 * ts.numerator) / ts.denominator;
+    if (accumulated + measureTicks > playbackTick) {
+      targetMeasureIndex = mi;
+      tickInMeasure = playbackTick - accumulated;
+      break;
+    }
+    accumulated += measureTicks;
+    if (mi === part.measures.length - 1) {
+      targetMeasureIndex = mi;
+      tickInMeasure = measureTicks;
+    }
+  }
+
+  const mp = measurePositions.find(
+    (p) => p.partIndex === 0 && p.measureIndex === targetMeasureIndex
+  );
+  if (!mp) return;
+
+  // Calculate x position within the measure based on tick fraction
+  const ts = part.measures[targetMeasureIndex].timeSignature;
+  const measureTicks =
+    (TICKS_PER_QUARTER * 4 * ts.numerator) / ts.denominator;
+  const fraction = Math.min(tickInMeasure / measureTicks, 1);
+  const usableWidth = mp.width - 60;
+  const cursorX = mp.x + 60 + fraction * usableWidth;
+
+  const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+  if (rawCtx.strokeStyle !== undefined) {
+    rawCtx.save();
+    rawCtx.strokeStyle = "#10b981"; // green
+    rawCtx.lineWidth = 2.5;
+    rawCtx.setLineDash([]);
+    rawCtx.globalAlpha = 0.8;
     rawCtx.beginPath();
     rawCtx.moveTo(cursorX, mp.y + 10);
     rawCtx.lineTo(cursorX, mp.y + STAFF_HEIGHT - 20);

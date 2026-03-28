@@ -4,6 +4,7 @@ export type { Pitch, PitchClass, Accidental, Octave } from "./pitch";
 export type { Duration, DurationType } from "./duration";
 export type { Clef, ClefType, TimeSignature, KeySignature, BarlineType } from "./time";
 export type { ScoreId, PartId, MeasureId, VoiceId, NoteEventId } from "./ids";
+export type { Annotation, ChordSymbol, Lyric, RehearsalMark, TempoMark } from "./annotations";
 
 export { pitchToMidi, midiToPitch, stepUp, stepDown } from "./pitch";
 export { durationToTicks, measureCapacity, voiceTicksUsed, TICKS_PER_QUARTER, DURATION_TYPES_ORDERED } from "./duration";

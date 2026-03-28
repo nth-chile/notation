@@ -1,7 +1,9 @@
 import { ScoreCanvas } from "./components/ScoreCanvas";
 import { Toolbar } from "./components/Toolbar";
+import { TransportBar } from "./components/TransportBar";
 import { StatusBar } from "./components/StatusBar";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
+import { TextInput } from "./components/TextInput";
 import { useEditorStore } from "./state";
 import { saveScore } from "./fileio/save";
 import { loadScore } from "./fileio/load";
@@ -54,8 +56,10 @@ export function App() {
     <div style={styles.app}>
       <KeyboardShortcuts />
       <Toolbar />
+      <TransportBar />
       <ScoreCanvas />
       <StatusBar />
+      <TextInput />
     </div>
   );
 }
