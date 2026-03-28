@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { serialize } from "../serialize";
-import { deserialize } from "../deserialize";
+import { serialize, deserialize } from "../index";
 import { factory } from "../../model";
 import { durationToTicks, voiceTicksUsed, measureCapacity } from "../../model/duration";
 
@@ -136,6 +135,25 @@ describe("serialization round-trip", () => {
     expect(parsed.parts[0].measures).toHaveLength(2);
     expect(parsed.parts[0].measures[0].voices).toHaveLength(2);
     expect(parsed.parts[0].measures[1].voices).toHaveLength(1);
+  });
+
+  it("produces valid JSON", () => {
+    const s = factory.score("JSON Test", "", [
+      factory.part("Piano", "Pno.", [
+        factory.measure([
+          factory.voice([factory.note("C", 4, factory.dur("quarter"))]),
+        ]),
+      ]),
+    ]);
+
+    const text = serialize(s);
+    expect(() => JSON.parse(text)).not.toThrow();
+
+    const json = JSON.parse(text);
+    expect(json.formatVersion).toBe(1);
+    expect(json.title).toBe("JSON Test");
+    expect(json.parts).toHaveLength(1);
+    expect(json.parts[0].measures).toHaveLength(1);
   });
 });
 

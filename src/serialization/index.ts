@@ -1,3 +1,2 @@
-export { serialize } from "./serialize";
-export { deserialize } from "./deserialize";
-export { FORMAT_VERSION, FORMAT_HEADER } from "./format";
+export { serializeToJson as serialize, deserializeFromJson as deserialize } from "./json";
+export { serializeToJson, deserializeFromJson, jsonToScore, parseMeasure, scoreToAIJson } from "./json";

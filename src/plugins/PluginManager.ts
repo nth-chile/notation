@@ -1,8 +1,7 @@
 import type { Score } from "../model";
 import type { CursorPosition } from "../input/InputState";
 import type { NotationPlugin, PluginAPI, Selection } from "./PluginAPI";
-import { serialize } from "../serialization/serialize";
-import { deserialize } from "../serialization/deserialize";
+import { serialize, deserialize } from "../serialization";
 
 export interface PluginCommand {
   id: string;
