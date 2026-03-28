@@ -18,6 +18,7 @@ export function AISettings() {
           value={provider}
           onChange={(e) => setProvider(e.target.value as ProviderType)}
         >
+          <option value="gemini">Google Gemini (Free)</option>
           <option value="anthropic">Anthropic (Claude)</option>
           <option value="openai">OpenAI (GPT-4o)</option>
         </select>
@@ -31,7 +32,9 @@ export function AISettings() {
           placeholder={
             provider === "anthropic"
               ? "sk-ant-..."
-              : "sk-..."
+              : provider === "gemini"
+                ? "AIza..."
+                : "sk-..."
           }
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
@@ -39,9 +42,11 @@ export function AISettings() {
       </label>
 
       <div style={styles.hint}>
-        {provider === "anthropic"
-          ? "Uses Claude claude-sonnet-4-20250514 via the Messages API."
-          : "Uses GPT-4o via the Chat Completions API."}
+        {provider === "gemini"
+          ? "Uses Gemini 2.0 Flash. Free tier — get key at aistudio.google.com"
+          : provider === "anthropic"
+            ? "Uses Claude claude-sonnet-4-20250514 via the Messages API."
+            : "Uses GPT-4o via the Chat Completions API."}
       </div>
     </div>
   );
