@@ -45,7 +45,7 @@ export async function saveScore(score: Score, filePath?: string): Promise<string
     const path =
       filePath ??
       (await save({
-        filters: [{ name: "Notation", extensions: ["notation"] }],
+        filters: [{ name: "Notation Score", extensions: ["notation"] }],
         defaultPath: `${score.title || "Untitled"}.notation`,
       }));
 
@@ -55,7 +55,7 @@ export async function saveScore(score: Score, filePath?: string): Promise<string
     return path;
   } catch {
     // Fallback: browser download
-    const blob = new Blob([content], { type: "text/plain" });
+    const blob = new Blob([content], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

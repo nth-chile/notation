@@ -112,28 +112,77 @@ export const useChatStore = create<ChatStore>((set, get) => {
 
         const responseText = await provider.sendMessage(allMessages);
 
-        const assistantMessage: ChatMessage = {
-          role: "assistant",
-          content: responseText,
-        };
-
-        // Check if response contains a .notation code block
+        // Try to extract and apply JSON patch from response
         const notationText = extractScoreFromResponse(responseText);
         if (notationText) {
           const result = applyAIEdit(score, notationText);
           if (result.ok) {
-            // Apply to editor state — setScore triggers re-render
+            // Apply to editor state
             useEditorStore.getState().setScore(result.score);
-            // Mark as dirty since AI made edits
             useEditorStore.setState({ isDirty: true });
-          } else {
+
+            // Build a display message: strip code block, add status
+            const displayText = stripCodeBlock(responseText);
+            const summary = buildApplySummary(notationText);
+            const content = displayText.trim()
+              ? `${displayText.trim()}\n\n${summary}`
+              : summary;
+
             set((s) => ({
               messages: [
                 ...s.messages,
-                assistantMessage,
+                { role: "assistant" as const, content },
+              ],
+              isLoading: false,
+            }));
+            return;
+          } else {
+            // First failure — auto-retry once
+            const retryMessages: ChatMessage[] = [
+              ...allMessages,
+              { role: "assistant", content: responseText },
+              {
+                role: "user",
+                content: `That JSON patch failed to apply with error: ${result.error}\nPlease fix the issue and return a corrected JSON patch.`,
+              },
+            ];
+
+            try {
+              const retryText = await provider.sendMessage(retryMessages);
+              const retryJson = extractScoreFromResponse(retryText);
+              if (retryJson) {
+                const retryResult = applyAIEdit(score, retryJson);
+                if (retryResult.ok) {
+                  useEditorStore.getState().setScore(retryResult.score);
+                  useEditorStore.setState({ isDirty: true });
+
+                  const displayText = stripCodeBlock(retryText);
+                  const summary = buildApplySummary(retryJson);
+                  const content = displayText.trim()
+                    ? `${displayText.trim()}\n\n${summary}`
+                    : summary;
+
+                  set((s) => ({
+                    messages: [
+                      ...s.messages,
+                      { role: "assistant" as const, content },
+                    ],
+                    isLoading: false,
+                  }));
+                  return;
+                }
+              }
+            } catch {
+              // retry failed, fall through to show error
+            }
+
+            // Both attempts failed
+            set((s) => ({
+              messages: [
+                ...s.messages,
                 {
                   role: "assistant" as const,
-                  content: `⚠ Could not apply edit: ${result.error}`,
+                  content: `I couldn't apply that edit: ${result.error}`,
                 },
               ],
               isLoading: false,
@@ -142,8 +191,12 @@ export const useChatStore = create<ChatStore>((set, get) => {
           }
         }
 
+        // No code block — plain conversational response
         set((s) => ({
-          messages: [...s.messages, assistantMessage],
+          messages: [
+            ...s.messages,
+            { role: "assistant" as const, content: responseText },
+          ],
           isLoading: false,
         }));
       } catch (err) {
@@ -172,3 +225,42 @@ export const useChatStore = create<ChatStore>((set, get) => {
     },
   };
 });
+
+/** Strip JSON code blocks from AI response text, keeping everything else. */
+function stripCodeBlock(text: string): string {
+  return text.replace(/```json\s*\n[\s\S]*?```/g, "").replace(/```\s*\n\{[\s\S]*?\}\s*```/g, "").trim();
+}
+
+/** Build a human-readable summary of what was applied. */
+function buildApplySummary(jsonText: string): string {
+  try {
+    const parsed = JSON.parse(jsonText) as Record<string, unknown>;
+    const parts: string[] = [];
+
+    if (parsed.score && typeof parsed.score === "object") {
+      const s = parsed.score as Record<string, unknown>;
+      const fields = Object.keys(s).join(", ");
+      parts.push(`Updated ${fields}`);
+    }
+
+    if (Array.isArray(parsed.patch) && parsed.patch.length > 0) {
+      const measures = (parsed.patch as Record<string, unknown>[]).map(
+        (e) => e.measure as number
+      );
+      const unique = [...new Set(measures)].sort((a, b) => a - b);
+      parts.push(`Applied changes to measure${unique.length === 1 ? "" : "s"} ${unique.join(", ")}`);
+    }
+
+    if (Array.isArray(parsed.addParts) && parsed.addParts.length > 0) {
+      const names = (parsed.addParts as Record<string, unknown>[]).map(
+        (p) => (p.name as string) || "new part"
+      );
+      parts.push(`Added ${names.join(", ")} part${names.length === 1 ? "" : "s"}`);
+    }
+
+    if (parts.length === 0) return "\u2713 Changes applied";
+    return "\u2713 " + parts.join("; ");
+  } catch {
+    return "\u2713 Changes applied";
+  }
+}

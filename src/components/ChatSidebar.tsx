@@ -121,22 +121,28 @@ export function ChatSidebar({ visible }: { visible: boolean }) {
           </div>
         )}
 
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            style={{
-              ...styles.message,
-              ...(msg.role === "user" ? styles.userMessage : styles.assistantMessage),
-            }}
-          >
-            <div style={styles.messageRole}>
-              {msg.role === "user" ? "You" : "AI"}
+        {messages.map((msg, i) => {
+          const hasApplyStatus = msg.role === "assistant" && msg.content.startsWith("\u2713 ");
+          const isError = msg.role === "assistant" && msg.content.startsWith("I couldn't apply that edit:");
+          return (
+            <div
+              key={i}
+              style={{
+                ...styles.message,
+                ...(msg.role === "user" ? styles.userMessage : styles.assistantMessage),
+                ...(hasApplyStatus ? styles.appliedMessage : {}),
+                ...(isError ? styles.errorMessage : {}),
+              }}
+            >
+              <div style={styles.messageRole}>
+                {msg.role === "user" ? "You" : "AI"}
+              </div>
+              <div style={styles.messageContent}>
+                {formatMessageContent(msg.content)}
+              </div>
             </div>
-            <div style={styles.messageContent}>
-              {formatMessageContent(msg.content)}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {isLoading && (
           <div style={{ ...styles.message, ...styles.assistantMessage }}>
@@ -296,6 +302,14 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#2a2a2a",
     color: "#e2e8f0",
     alignSelf: "flex-start",
+  },
+  appliedMessage: {
+    background: "#1a2e1a",
+    borderLeft: "3px solid #4ade80",
+  },
+  errorMessage: {
+    background: "#2e1a1a",
+    borderLeft: "3px solid #f87171",
   },
   messageRole: {
     fontSize: 10,

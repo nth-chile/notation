@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { serialize } from "../serialize";
-import { deserialize } from "../deserialize";
+import { serialize, deserialize } from "../index";
 import { factory } from "../../model";
 import type { Annotation } from "../../model/annotations";
 import type { NoteEventId } from "../../model/ids";
@@ -22,8 +21,11 @@ describe("annotation serialization round-trip", () => {
     ]);
 
     const text = serialize(s);
-    expect(text).toContain("@chord 0 Cmaj7");
-    expect(text).toContain("@chord 960 Dm7");
+    const json = JSON.parse(text);
+    const measureAnnotations = json.parts[0].measures[0].annotations;
+    expect(measureAnnotations).toHaveLength(2);
+    expect(measureAnnotations[0].symbol).toBe("Cmaj7");
+    expect(measureAnnotations[1].symbol).toBe("Dm7");
 
     const parsed = deserialize(text);
     const m = parsed.parts[0].measures[0];
@@ -59,8 +61,6 @@ describe("annotation serialization round-trip", () => {
     ]);
 
     const text = serialize(s);
-    expect(text).toContain(`@lyric ${noteId} "hel" begin 1`);
-
     const parsed = deserialize(text);
     const m = parsed.parts[0].measures[0];
     const lyrics = m.annotations.filter((a) => a.kind === "lyric");
@@ -88,7 +88,8 @@ describe("annotation serialization round-trip", () => {
     ]);
 
     const text = serialize(s);
-    expect(text).toContain('@rehearsal "A"');
+    const json = JSON.parse(text);
+    expect(json.parts[0].measures[0].annotations[0].label).toBe("A");
 
     const parsed = deserialize(text);
     const m = parsed.parts[0].measures[0];
@@ -114,7 +115,10 @@ describe("annotation serialization round-trip", () => {
     ]);
 
     const text = serialize(s);
-    expect(text).toContain('@tempo 120 quarter "Allegro"');
+    const json = JSON.parse(text);
+    const tempoAnno = json.parts[0].measures[0].annotations[0];
+    expect(tempoAnno.bpm).toBe(120);
+    expect(tempoAnno.text).toBe("Allegro");
 
     const parsed = deserialize(text);
     const m = parsed.parts[0].measures[0];
@@ -142,11 +146,6 @@ describe("annotation serialization round-trip", () => {
     ]);
 
     const text = serialize(s);
-    expect(text).toContain("@tempo 80 half");
-    // The @tempo line itself should have no quotes
-    const tempoLine = text.split("\n").find((l) => l.startsWith("@tempo"));
-    expect(tempoLine).toBe("@tempo 80 half");
-
     const parsed = deserialize(text);
     const m = parsed.parts[0].measures[0];
     const tempos = m.annotations.filter((a) => a.kind === "tempo-mark");

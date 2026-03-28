@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { serialize } from "../serialize";
-import { deserialize } from "../deserialize";
+import { serialize, deserialize } from "../index";
 import { factory } from "../../model";
 import type { Measure } from "../../model";
 
@@ -66,17 +65,21 @@ describe("Navigation mark serialization", () => {
     ]);
 
     const text = serialize(score);
-    expect(text).toContain("/ q");
-    expect(text).toContain("/ h");
+    const json = JSON.parse(text);
+    const events = json.parts[0].measures[0].voices[0].events;
+    expect(events[0].type).toBe("slash");
+    expect(events[0].duration).toBe("quarter");
+    expect(events[2].type).toBe("slash");
+    expect(events[2].duration).toBe("half");
 
     const restored = deserialize(text);
-    const events = restored.parts[0].measures[0].voices[0].events;
-    expect(events).toHaveLength(3);
-    expect(events[0].kind).toBe("slash");
-    expect(events[0].duration.type).toBe("quarter");
-    expect(events[1].kind).toBe("slash");
-    expect(events[2].kind).toBe("slash");
-    expect(events[2].duration.type).toBe("half");
+    const revents = restored.parts[0].measures[0].voices[0].events;
+    expect(revents).toHaveLength(3);
+    expect(revents[0].kind).toBe("slash");
+    expect(revents[0].duration.type).toBe("quarter");
+    expect(revents[1].kind).toBe("slash");
+    expect(revents[2].kind).toBe("slash");
+    expect(revents[2].duration.type).toBe("half");
   });
 
   it("round-trips dotted slash notes", () => {
@@ -91,7 +94,8 @@ describe("Navigation mark serialization", () => {
     ]);
 
     const text = serialize(score);
-    expect(text).toContain("/ q.");
+    const json = JSON.parse(text);
+    expect(json.parts[0].measures[0].voices[0].events[0].duration).toBe("quarter.");
 
     const restored = deserialize(text);
     const event = restored.parts[0].measures[0].voices[0].events[0];
@@ -108,7 +112,8 @@ describe("Navigation mark serialization", () => {
     ]);
 
     const text = serialize(score);
-    expect(text).toContain("barline:repeat-both");
+    const json = JSON.parse(text);
+    expect(json.parts[0].measures[0].barline).toBe("repeat-both");
 
     const restored = deserialize(text);
     expect(restored.parts[0].measures[0].barlineEnd).toBe("repeat-both");

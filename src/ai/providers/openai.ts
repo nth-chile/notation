@@ -2,11 +2,11 @@ import type { ChatMessage, ChatProvider } from "../ChatProvider";
 
 export class OpenAIProvider implements ChatProvider {
   id = "openai";
-  name = "OpenAI (GPT-4o)";
+  name = "OpenAI (GPT-4o-mini)";
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model = "gpt-4o") {
+  constructor(apiKey: string, model = "gpt-4o-mini") {
     this.apiKey = apiKey;
     this.model = model;
   }

@@ -20,7 +20,7 @@ export function AISettings() {
         >
           <option value="gemini">Google Gemini (Free)</option>
           <option value="anthropic">Anthropic (Claude)</option>
-          <option value="openai">OpenAI (GPT-4o)</option>
+          <option value="openai">OpenAI (GPT-4o-mini)</option>
         </select>
       </label>
 
@@ -43,10 +43,10 @@ export function AISettings() {
 
       <div style={styles.hint}>
         {provider === "gemini"
-          ? "Uses Gemini 2.0 Flash. Free tier — get key at aistudio.google.com"
+          ? "Uses Gemini 2.5 Flash. Free tier — get key at aistudio.google.com"
           : provider === "anthropic"
             ? "Uses Claude claude-sonnet-4-20250514 via the Messages API."
-            : "Uses GPT-4o via the Chat Completions API."}
+            : "Uses GPT-4o-mini — very cheap (~$0.15/M tokens)."}
       </div>
     </div>
   );
