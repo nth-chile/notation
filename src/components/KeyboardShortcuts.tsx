@@ -36,11 +36,21 @@ export function KeyboardShortcuts() {
   const setVoice = useEditorStore((s) => s.setVoice);
   const insertMeasure = useEditorStore((s) => s.insertMeasure);
   const deleteMeasure = useEditorStore((s) => s.deleteMeasure);
+  const enterChordMode = useEditorStore((s) => s.enterChordMode);
+  const enterLyricMode = useEditorStore((s) => s.enterLyricMode);
+  const textInputMode = useEditorStore((s) => s.inputState.textInputMode);
+  const isPlaying = useEditorStore((s) => s.isPlaying);
+  const play = useEditorStore((s) => s.play);
+  const pause = useEditorStore((s) => s.pause);
+  const stopPlayback = useEditorStore((s) => s.stopPlayback);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       // Don't capture when typing in input fields
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // Don't capture when in text input mode
+      if (textInputMode) return;
 
       const key = e.key.toLowerCase();
 
@@ -73,6 +83,31 @@ export function KeyboardShortcuts() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && key === "backspace") {
         e.preventDefault();
         deleteMeasure();
+        return;
+      }
+
+      // Space: play/pause toggle
+      if (key === " " && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+        e.preventDefault();
+        if (isPlaying) {
+          pause();
+        } else {
+          play();
+        }
+        return;
+      }
+
+      // Shift+C: enter chord input mode
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && key === "c") {
+        e.preventDefault();
+        enterChordMode();
+        return;
+      }
+
+      // Shift+L: enter lyric input mode
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && key === "l") {
+        e.preventDefault();
+        enterLyricMode();
         return;
       }
 
@@ -164,6 +199,13 @@ export function KeyboardShortcuts() {
     setVoice,
     insertMeasure,
     deleteMeasure,
+    enterChordMode,
+    enterLyricMode,
+    textInputMode,
+    isPlaying,
+    play,
+    pause,
+    stopPlayback,
   ]);
 
   return null;

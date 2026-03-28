@@ -1,0 +1,206 @@
+import { describe, it, expect } from "vitest";
+import { serialize } from "../serialize";
+import { deserialize } from "../deserialize";
+import { factory } from "../../model";
+import type { Annotation } from "../../model/annotations";
+import type { NoteEventId } from "../../model/ids";
+
+describe("annotation serialization round-trip", () => {
+  it("round-trips chord symbols", () => {
+    const annotations: Annotation[] = [
+      { kind: "chord-symbol", text: "Cmaj7", beatOffset: 0 },
+      { kind: "chord-symbol", text: "Dm7", beatOffset: 960 },
+    ];
+
+    const s = factory.score("Chords Test", "", [
+      factory.part("Piano", "Pno.", [
+        factory.measure(
+          [factory.voice([factory.note("C", 4, factory.dur("whole"))])],
+          { annotations }
+        ),
+      ]),
+    ]);
+
+    const text = serialize(s);
+    expect(text).toContain("@chord 0 Cmaj7");
+    expect(text).toContain("@chord 960 Dm7");
+
+    const parsed = deserialize(text);
+    const m = parsed.parts[0].measures[0];
+    expect(m.annotations).toHaveLength(2);
+
+    const chords = m.annotations.filter((a) => a.kind === "chord-symbol");
+    expect(chords).toHaveLength(2);
+    expect(chords[0].kind === "chord-symbol" && chords[0].text).toBe("Cmaj7");
+    expect(chords[0].kind === "chord-symbol" && chords[0].beatOffset).toBe(0);
+    expect(chords[1].kind === "chord-symbol" && chords[1].text).toBe("Dm7");
+    expect(chords[1].kind === "chord-symbol" && chords[1].beatOffset).toBe(960);
+  });
+
+  it("round-trips lyrics", () => {
+    const noteId = "evt_testlyric1" as NoteEventId;
+    const annotations: Annotation[] = [
+      {
+        kind: "lyric",
+        text: "hel",
+        noteEventId: noteId,
+        syllableType: "begin",
+        verseNumber: 1,
+      },
+    ];
+
+    const s = factory.score("Lyrics Test", "", [
+      factory.part("Voice", "Vox", [
+        factory.measure(
+          [factory.voice([factory.note("C", 4, factory.dur("quarter"))])],
+          { annotations }
+        ),
+      ]),
+    ]);
+
+    const text = serialize(s);
+    expect(text).toContain(`@lyric ${noteId} "hel" begin 1`);
+
+    const parsed = deserialize(text);
+    const m = parsed.parts[0].measures[0];
+    const lyrics = m.annotations.filter((a) => a.kind === "lyric");
+    expect(lyrics).toHaveLength(1);
+    if (lyrics[0].kind === "lyric") {
+      expect(lyrics[0].text).toBe("hel");
+      expect(lyrics[0].noteEventId).toBe(noteId);
+      expect(lyrics[0].syllableType).toBe("begin");
+      expect(lyrics[0].verseNumber).toBe(1);
+    }
+  });
+
+  it("round-trips rehearsal marks", () => {
+    const annotations: Annotation[] = [
+      { kind: "rehearsal-mark", text: "A" },
+    ];
+
+    const s = factory.score("Rehearsal Test", "", [
+      factory.part("Piano", "Pno.", [
+        factory.measure(
+          [factory.voice([factory.note("C", 4, factory.dur("whole"))])],
+          { annotations }
+        ),
+      ]),
+    ]);
+
+    const text = serialize(s);
+    expect(text).toContain('@rehearsal "A"');
+
+    const parsed = deserialize(text);
+    const m = parsed.parts[0].measures[0];
+    const marks = m.annotations.filter((a) => a.kind === "rehearsal-mark");
+    expect(marks).toHaveLength(1);
+    if (marks[0].kind === "rehearsal-mark") {
+      expect(marks[0].text).toBe("A");
+    }
+  });
+
+  it("round-trips tempo marks", () => {
+    const annotations: Annotation[] = [
+      { kind: "tempo-mark", bpm: 120, beatUnit: "quarter", text: "Allegro" },
+    ];
+
+    const s = factory.score("Tempo Test", "", [
+      factory.part("Piano", "Pno.", [
+        factory.measure(
+          [factory.voice([factory.note("C", 4, factory.dur("whole"))])],
+          { annotations }
+        ),
+      ]),
+    ]);
+
+    const text = serialize(s);
+    expect(text).toContain('@tempo 120 quarter "Allegro"');
+
+    const parsed = deserialize(text);
+    const m = parsed.parts[0].measures[0];
+    const tempos = m.annotations.filter((a) => a.kind === "tempo-mark");
+    expect(tempos).toHaveLength(1);
+    if (tempos[0].kind === "tempo-mark") {
+      expect(tempos[0].bpm).toBe(120);
+      expect(tempos[0].beatUnit).toBe("quarter");
+      expect(tempos[0].text).toBe("Allegro");
+    }
+  });
+
+  it("round-trips tempo marks without text", () => {
+    const annotations: Annotation[] = [
+      { kind: "tempo-mark", bpm: 80, beatUnit: "half" },
+    ];
+
+    const s = factory.score("Tempo Test 2", "", [
+      factory.part("Piano", "Pno.", [
+        factory.measure(
+          [factory.voice([factory.note("C", 4, factory.dur("whole"))])],
+          { annotations }
+        ),
+      ]),
+    ]);
+
+    const text = serialize(s);
+    expect(text).toContain("@tempo 80 half");
+    // The @tempo line itself should have no quotes
+    const tempoLine = text.split("\n").find((l) => l.startsWith("@tempo"));
+    expect(tempoLine).toBe("@tempo 80 half");
+
+    const parsed = deserialize(text);
+    const m = parsed.parts[0].measures[0];
+    const tempos = m.annotations.filter((a) => a.kind === "tempo-mark");
+    expect(tempos).toHaveLength(1);
+    if (tempos[0].kind === "tempo-mark") {
+      expect(tempos[0].bpm).toBe(80);
+      expect(tempos[0].beatUnit).toBe("half");
+      expect(tempos[0].text).toBeUndefined();
+    }
+  });
+
+  it("round-trips measures with mixed annotations", () => {
+    const annotations: Annotation[] = [
+      { kind: "chord-symbol", text: "Am7", beatOffset: 0 },
+      { kind: "rehearsal-mark", text: "Intro" },
+      { kind: "tempo-mark", bpm: 140, beatUnit: "quarter", text: "Vivace" },
+    ];
+
+    const s = factory.score("Mixed Test", "", [
+      factory.part("Piano", "Pno.", [
+        factory.measure(
+          [factory.voice([factory.note("A", 4, factory.dur("whole"))])],
+          { annotations }
+        ),
+      ]),
+    ]);
+
+    const text = serialize(s);
+    const parsed = deserialize(text);
+    const m = parsed.parts[0].measures[0];
+    expect(m.annotations).toHaveLength(3);
+    expect(m.annotations.map((a) => a.kind).sort()).toEqual([
+      "chord-symbol",
+      "rehearsal-mark",
+      "tempo-mark",
+    ]);
+  });
+
+  it("preserves annotations across empty measures", () => {
+    const s = factory.score("Empty Measure Test", "", [
+      factory.part("Piano", "Pno.", [
+        factory.measure(
+          [factory.voice([])],
+          { annotations: [{ kind: "rehearsal-mark", text: "B" }] }
+        ),
+      ]),
+    ]);
+
+    const text = serialize(s);
+    const parsed = deserialize(text);
+    const m = parsed.parts[0].measures[0];
+    expect(m.annotations).toHaveLength(1);
+    if (m.annotations[0].kind === "rehearsal-mark") {
+      expect(m.annotations[0].text).toBe("B");
+    }
+  });
+});

@@ -3,6 +3,7 @@ import type { NoteEvent, NoteHead } from "../model/note";
 import type { Pitch } from "../model/pitch";
 import type { Duration } from "../model/duration";
 import type { Accidental } from "../model/pitch";
+import type { Annotation } from "../model/annotations";
 import { FORMAT_HEADER } from "./format";
 
 const ACC_MAP: Record<Accidental, string> = {
@@ -72,6 +73,21 @@ function serializeVoice(v: Voice, index: number): string[] {
   return lines;
 }
 
+function serializeAnnotation(a: Annotation): string {
+  switch (a.kind) {
+    case "chord-symbol":
+      return `@chord ${a.beatOffset} ${a.text}`;
+    case "lyric":
+      return `@lyric ${a.noteEventId} "${a.text}" ${a.syllableType} ${a.verseNumber}`;
+    case "rehearsal-mark":
+      return `@rehearsal "${a.text}"`;
+    case "tempo-mark": {
+      const textPart = a.text ? ` "${a.text}"` : "";
+      return `@tempo ${a.bpm} ${a.beatUnit}${textPart}`;
+    }
+  }
+}
+
 function serializeMeasure(m: Measure, index: number): string[] {
   const lines: string[] = [];
   const attrs = [
@@ -81,6 +97,9 @@ function serializeMeasure(m: Measure, index: number): string[] {
     `barline:${m.barlineEnd}`,
   ].join(" | ");
   lines.push(`--- MEASURE ${index + 1} | ${attrs} ---`);
+  for (const annotation of m.annotations) {
+    lines.push(serializeAnnotation(annotation));
+  }
   for (let vi = 0; vi < m.voices.length; vi++) {
     lines.push(...serializeVoice(m.voices[vi], vi));
   }
@@ -103,6 +122,9 @@ export function serialize(score: Score): string {
   lines.push(FORMAT_HEADER);
   lines.push(`title: "${score.title}"`);
   lines.push(`composer: "${score.composer}"`);
+  if (score.tempo !== 120) {
+    lines.push(`tempo: ${score.tempo}`);
+  }
   lines.push("");
 
   for (const part of score.parts) {

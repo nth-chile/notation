@@ -11,6 +11,7 @@ import type {
   KeySignature,
 } from "../model";
 import { DURATION_TYPES_ORDERED } from "../model";
+import { durationToTicks as durationToTicksFn } from "../model/duration";
 import { factory } from "../model";
 import { defaultInputState, type InputState, type CursorPosition } from "../input/InputState";
 import { CommandHistory } from "../commands/CommandHistory";
@@ -24,8 +25,13 @@ import { DeleteMeasure } from "../commands/DeleteMeasure";
 import { ChangeTimeSig } from "../commands/ChangeTimeSig";
 import { ChangeKeySig } from "../commands/ChangeKeySig";
 import { ChangeClef } from "../commands/ChangeClef";
+import { SetChordSymbol } from "../commands/SetChordSymbol";
+import { SetLyric } from "../commands/SetLyric";
+import { SetRehearsalMark } from "../commands/SetRehearsalMark";
+import { SetTempo } from "../commands/SetTempo";
 import type { NoteBox } from "../renderer/vexBridge";
 import { newId, type VoiceId } from "../model/ids";
+import * as Transport from "../playback/Transport";
 
 const history = new CommandHistory();
 
@@ -66,6 +72,24 @@ interface EditorStore {
   changeTimeSig(timeSig: TimeSignature): void;
   changeKeySig(keySig: KeySignature): void;
   changeClef(clef: Clef): void;
+
+  // Phase 3 actions
+  enterChordMode(): void;
+  enterLyricMode(): void;
+  commitTextInput(text: string): void;
+  cancelTextInput(): void;
+
+  // Phase 4: Playback
+  isPlaying: boolean;
+  playbackTick: number | null;
+  tempo: number;
+  metronomeOn: boolean;
+  play(): void;
+  pause(): void;
+  stopPlayback(): void;
+  setTempo(bpm: number): void;
+  setPlaybackTick(tick: number | null): void;
+  toggleMetronome(): void;
 }
 
 /** Returns true if the cursor is on an existing event (not past the end) */
@@ -82,6 +106,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   isDirty: false,
   inputState: defaultInputState(),
   noteBoxes: new Map(),
+  isPlaying: false,
+  playbackTick: null,
+  tempo: 120,
+  metronomeOn: false,
 
   insertNote(pitchClass: PitchClass) {
     const state = get();
@@ -407,6 +435,163 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       score: result.score,
       inputState: result.inputState,
       isDirty: true,
+    });
+  },
+
+  // Phase 3 actions
+
+  enterChordMode() {
+    set((s) => ({
+      inputState: {
+        ...s.inputState,
+        textInputMode: "chord",
+        textInputBuffer: "",
+      },
+    }));
+  },
+
+  enterLyricMode() {
+    set((s) => ({
+      inputState: {
+        ...s.inputState,
+        textInputMode: "lyric",
+        textInputBuffer: "",
+      },
+    }));
+  },
+
+  commitTextInput(text: string) {
+    const state = get();
+    const { textInputMode } = state.inputState;
+    if (!textInputMode || !text.trim()) {
+      // Just cancel if empty
+      set((s) => ({
+        inputState: {
+          ...s.inputState,
+          textInputMode: null,
+          textInputBuffer: "",
+        },
+      }));
+      return;
+    }
+
+    if (textInputMode === "chord") {
+      // Calculate beat offset from cursor position
+      const { partIndex, measureIndex, voiceIndex, eventIndex } = state.inputState.cursor;
+      const voice =
+        state.score.parts[partIndex]?.measures[measureIndex]?.voices[voiceIndex];
+      let beatOffset = 0;
+      if (voice) {
+        for (let i = 0; i < eventIndex && i < voice.events.length; i++) {
+          beatOffset += durationToTicksFn(voice.events[i].duration);
+        }
+      }
+      const cmd = new SetChordSymbol(text, beatOffset);
+      const result = history.execute(cmd, {
+        score: state.score,
+        inputState: state.inputState,
+      });
+      set({
+        score: result.score,
+        inputState: {
+          ...result.inputState,
+          textInputMode: null,
+          textInputBuffer: "",
+        },
+        isDirty: true,
+      });
+    } else if (textInputMode === "lyric") {
+      // Parse syllable: "hel-" means begin, "-lo" means end, "-mid-" means middle
+      let syllableType: "begin" | "middle" | "end" | "single" = "single";
+      let cleanText = text;
+      const startsDash = text.startsWith("-");
+      const endsDash = text.endsWith("-");
+      if (startsDash && endsDash) {
+        syllableType = "middle";
+        cleanText = text.slice(1, -1);
+      } else if (endsDash) {
+        syllableType = "begin";
+        cleanText = text.slice(0, -1);
+      } else if (startsDash) {
+        syllableType = "end";
+        cleanText = text.slice(1);
+      }
+
+      const cmd = new SetLyric(cleanText, syllableType, 1);
+      const result = history.execute(cmd, {
+        score: state.score,
+        inputState: state.inputState,
+      });
+      set({
+        score: result.score,
+        inputState: {
+          ...result.inputState,
+          // Stay in lyric mode to allow advancing through notes
+          textInputMode: "lyric",
+          textInputBuffer: "",
+        },
+        isDirty: true,
+      });
+    }
+  },
+
+  cancelTextInput() {
+    set((s) => ({
+      inputState: {
+        ...s.inputState,
+        textInputMode: null,
+        textInputBuffer: "",
+      },
+    }));
+  },
+
+  // Phase 4: Playback
+
+  play() {
+    const state = get();
+    Transport.setCallbacks({
+      onTick: (tick: number) => {
+        set({ playbackTick: tick });
+      },
+      onStateChange: (transportState) => {
+        set({
+          isPlaying: transportState === "playing",
+          playbackTick: transportState === "stopped" ? null : get().playbackTick,
+        });
+      },
+    });
+    Transport.setMetronome(state.metronomeOn);
+    Transport.play(state.score);
+    set({ isPlaying: true });
+  },
+
+  pause() {
+    Transport.pause();
+    set({ isPlaying: false });
+  },
+
+  stopPlayback() {
+    Transport.stop();
+    set({ isPlaying: false, playbackTick: null });
+  },
+
+  setTempo(bpm: number) {
+    Transport.setTempo(bpm);
+    set((s) => {
+      const score = { ...s.score, tempo: bpm };
+      return { score, tempo: bpm, isDirty: true };
+    });
+  },
+
+  setPlaybackTick(tick: number | null) {
+    set({ playbackTick: tick });
+  },
+
+  toggleMetronome() {
+    set((s) => {
+      const next = !s.metronomeOn;
+      Transport.setMetronome(next);
+      return { metronomeOn: next };
     });
   },
 }));

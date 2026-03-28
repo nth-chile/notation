@@ -11,6 +11,7 @@ export function ScoreCanvas() {
   const score = useEditorStore((s) => s.score);
   const inputState = useEditorStore((s) => s.inputState);
   const setNoteBoxes = useEditorStore((s) => s.setNoteBoxes);
+  const playbackTick = useEditorStore((s) => s.playbackTick);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -44,9 +45,9 @@ export function ScoreCanvas() {
     const canvas = canvasRef.current;
     if (!canvas || !ctxRef.current) return;
 
-    const result = renderScore(ctxRef.current, canvas, score, inputState.cursor);
+    const result = renderScore(ctxRef.current, canvas, score, inputState.cursor, playbackTick);
     setNoteBoxes(result.noteBoxes);
-  }, [score, inputState.cursor, setNoteBoxes]);
+  }, [score, inputState.cursor, setNoteBoxes, playbackTick]);
 
   return (
     <div

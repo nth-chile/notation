@@ -1,6 +1,7 @@
 import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot } from "vexflow";
 import type { Measure, NoteEvent, NoteEventId } from "../model";
-import { durationToTicks as durationToTicksFn } from "../model/duration";
+import type { Annotation } from "../model/annotations";
+import { durationToTicks as durationToTicksFn, measureCapacity } from "../model/duration";
 
 export interface RenderContext {
   renderer: Renderer;
@@ -221,6 +222,79 @@ export function renderMeasure(
           });
         }
       });
+    }
+  }
+
+  // Render annotations (chord symbols above, lyrics below, rehearsal marks, tempo marks)
+  if (m.annotations.length > 0) {
+    const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+    if (rawCtx.save) {
+      const noteStartX = stave.getNoteStartX();
+      const totalCapacity = measureCapacity(m.timeSignature.numerator, m.timeSignature.denominator);
+
+      for (const annotation of m.annotations) {
+        switch (annotation.kind) {
+          case "chord-symbol": {
+            // Position based on beat offset proportion within the measure
+            const proportion = totalCapacity > 0 ? annotation.beatOffset / totalCapacity : 0;
+            const usableWidth = width - (noteStartX - x) - 10;
+            const chordX = noteStartX + proportion * usableWidth;
+            rawCtx.save();
+            rawCtx.font = "bold 12px sans-serif";
+            rawCtx.fillStyle = "#333";
+            rawCtx.fillText(annotation.text, chordX, y + 10);
+            rawCtx.restore();
+            break;
+          }
+          case "lyric": {
+            // Find matching noteBox by noteEventId
+            const box = noteBoxes.find((nb) => nb.id === annotation.noteEventId);
+            if (box) {
+              rawCtx.save();
+              rawCtx.font = "italic 11px serif";
+              rawCtx.fillStyle = "#555";
+              rawCtx.textAlign = "center";
+              const lyricText =
+                annotation.syllableType === "begin" || annotation.syllableType === "middle"
+                  ? annotation.text + "-"
+                  : annotation.text;
+              rawCtx.fillText(lyricText, box.x + box.width / 2, y + 90);
+              rawCtx.textAlign = "start";
+              rawCtx.restore();
+            }
+            break;
+          }
+          case "rehearsal-mark": {
+            rawCtx.save();
+            rawCtx.font = "bold 14px sans-serif";
+            rawCtx.fillStyle = "#000";
+            const textWidth = rawCtx.measureText(annotation.text).width;
+            const boxPadding = 4;
+            rawCtx.strokeStyle = "#000";
+            rawCtx.lineWidth = 1.5;
+            rawCtx.strokeRect(
+              x + 2 - boxPadding,
+              y - 6 - boxPadding,
+              textWidth + boxPadding * 2,
+              14 + boxPadding * 2
+            );
+            rawCtx.fillText(annotation.text, x + 2, y + 6);
+            rawCtx.restore();
+            break;
+          }
+          case "tempo-mark": {
+            rawCtx.save();
+            rawCtx.font = "bold 12px sans-serif";
+            rawCtx.fillStyle = "#000";
+            const label = annotation.text
+              ? `${annotation.text} (${annotation.beatUnit} = ${annotation.bpm})`
+              : `${annotation.beatUnit} = ${annotation.bpm}`;
+            rawCtx.fillText(label, x + 2, y - 4);
+            rawCtx.restore();
+            break;
+          }
+        }
+      }
     }
   }
 
