@@ -17,3 +17,7 @@ export { SetTempo } from "./SetTempo";
 export { AddPart } from "./AddPart";
 export { RemovePart } from "./RemovePart";
 export { ReorderParts } from "./ReorderParts";
+export { SetRepeatBarline } from "./SetRepeatBarline";
+export { SetVolta } from "./SetVolta";
+export { SetNavigationMark } from "./SetNavigationMark";
+export type { NavigationMarkType } from "./SetNavigationMark";

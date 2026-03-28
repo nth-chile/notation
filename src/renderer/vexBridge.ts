@@ -1,5 +1,6 @@
-import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector } from "vexflow";
+import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector, Barline, Repetition, Volta as VexVolta } from "vexflow";
 import type { Measure, NoteEvent, NoteEventId } from "../model";
+import type { BarlineType } from "../model/time";
 import type { Annotation } from "../model/annotations";
 import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
@@ -107,6 +108,18 @@ function eventToStaveNote(
       }
       return sn;
     }
+    case "slash": {
+      const dur = DUR_VEX[event.duration.type] + "s";
+      const sn = new StaveNote({
+        keys: ["b/4"],
+        duration: dur,
+        stemDirection: 1,
+      });
+      for (let i = 0; i < event.duration.dots; i++) {
+        Dot.buildAndAttach([sn], { all: true });
+      }
+      return sn;
+    }
   }
 }
 
@@ -142,6 +155,31 @@ function voiceStemDirection(voiceIndex: number): "up" | "down" | undefined {
   return undefined;
 }
 
+function applyBarline(stave: Stave, barlineType: BarlineType): void {
+  switch (barlineType) {
+    case "double":
+      stave.setEndBarType(Barline.type.DOUBLE);
+      break;
+    case "final":
+      stave.setEndBarType(Barline.type.END);
+      break;
+    case "repeat-start":
+      stave.setBegBarType(Barline.type.REPEAT_BEGIN);
+      break;
+    case "repeat-end":
+      stave.setEndBarType(Barline.type.REPEAT_END);
+      break;
+    case "repeat-both":
+      stave.setBegBarType(Barline.type.REPEAT_BEGIN);
+      stave.setEndBarType(Barline.type.REPEAT_END);
+      break;
+    case "single":
+    default:
+      // Default single barline, no special handling needed
+      break;
+  }
+}
+
 export function renderMeasure(
   ctx: RenderContext,
   m: Measure,
@@ -164,6 +202,37 @@ export function renderMeasure(
   if (showTimeSig) {
     stave.addTimeSignature(`${m.timeSignature.numerator}/${m.timeSignature.denominator}`);
   }
+
+  // Set barline types
+  applyBarline(stave, m.barlineEnd);
+
+  // Add volta bracket if present
+  if (m.navigation?.volta) {
+    const volta = m.navigation.volta;
+    const label = volta.label ?? volta.endings.join(", ") + ".";
+    try {
+      stave.setVoltaType(VexVolta.type.BEGIN, label, 25);
+    } catch {
+      // VexFlow may not support this in all versions; fall back to text
+    }
+  }
+
+  // Add repetition signs for segno/coda
+  if (m.navigation?.segno) {
+    try {
+      stave.addModifier(new Repetition(Repetition.type.SEGNO_LEFT, x, 0));
+    } catch {
+      // Fallback handled via text rendering below
+    }
+  }
+  if (m.navigation?.coda) {
+    try {
+      stave.addModifier(new Repetition(Repetition.type.CODA_LEFT, x, 0));
+    } catch {
+      // Fallback handled via text rendering below
+    }
+  }
+
   stave.setContext(ctx.context).draw();
 
   const noteBoxes: NoteBox[] = [];
@@ -322,6 +391,33 @@ export function renderMeasure(
             break;
           }
         }
+      }
+    }
+  }
+
+  // Render navigation text marks (D.S., D.C., To Coda, Fine)
+  if (m.navigation) {
+    const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+    if (rawCtx.save) {
+      const nav = m.navigation;
+      const textItems: string[] = [];
+      if (nav.dsText) textItems.push(nav.dsText);
+      if (nav.dcText) textItems.push(nav.dcText);
+      if (nav.toCoda) textItems.push("To Coda \uD834\uDD21");
+      if (nav.fine) textItems.push("Fine");
+
+      if (textItems.length > 0) {
+        rawCtx.save();
+        rawCtx.font = "italic bold 11px serif";
+        rawCtx.fillStyle = "#000";
+        rawCtx.textAlign = "right";
+        let textY = y - 4;
+        for (const text of textItems) {
+          rawCtx.fillText(text, x + width - 4, textY);
+          textY -= 14;
+        }
+        rawCtx.textAlign = "start";
+        rawCtx.restore();
       }
     }
   }

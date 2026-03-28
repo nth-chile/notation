@@ -3,6 +3,7 @@ import type { Clef, TimeSignature, KeySignature, BarlineType } from "./time";
 import type { ScoreId, PartId, MeasureId, VoiceId } from "./ids";
 import type { Annotation } from "./annotations";
 import type { Stylesheet } from "./stylesheet";
+import type { NavigationMarks } from "./navigation";
 
 export interface Score {
   id: ScoreId;
@@ -30,6 +31,7 @@ export interface Measure {
   timeSignature: TimeSignature;
   keySignature: KeySignature;
   barlineEnd: BarlineType;
+  navigation?: NavigationMarks;
   annotations: Annotation[];
   voices: Voice[];
 }

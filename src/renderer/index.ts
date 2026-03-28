@@ -5,3 +5,5 @@ export type { RenderContext, NoteBox, MeasureRenderResult } from "./vexBridge";
 export { calculateNoteSpacing } from "./spacing";
 export { getBeamGroups } from "./beaming";
 export { calculateMeasureWidth } from "./measureWidth";
+export { renderTabMeasure } from "./TabRenderer";
+export type { TabMeasureRenderResult } from "./TabRenderer";

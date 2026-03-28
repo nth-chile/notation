@@ -1,5 +1,5 @@
 import type { Score, Part, Measure, Voice } from "./score";
-import type { Note, Chord, Rest, NoteHead } from "./note";
+import type { Note, Chord, Rest, Slash, NoteHead } from "./note";
 import type { Pitch, PitchClass, Accidental, Octave } from "./pitch";
 import type { Duration, DurationType } from "./duration";
 import type { Clef, TimeSignature, KeySignature } from "./time";
@@ -51,6 +51,14 @@ export function chord(heads: NoteHead[], duration: Duration): Chord {
 export function rest(duration: Duration): Rest {
   return {
     kind: "rest",
+    id: newId<NoteEventId>("evt"),
+    duration,
+  };
+}
+
+export function slash(duration: Duration): Slash {
+  return {
+    kind: "slash",
     id: newId<NoteEventId>("evt"),
     duration,
   };

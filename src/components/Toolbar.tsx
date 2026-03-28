@@ -16,7 +16,12 @@ const ACCIDENTALS: { acc: Accidental; label: string }[] = [
   { acc: "sharp", label: "♯" },
 ];
 
-export function Toolbar() {
+interface ToolbarProps {
+  onToggleChat?: () => void;
+  chatVisible?: boolean;
+}
+
+export function Toolbar({ onToggleChat, chatVisible }: ToolbarProps) {
   const inputState = useEditorStore((s) => s.inputState);
   const setDuration = useEditorStore((s) => s.setDuration);
   const toggleDot = useEditorStore((s) => s.toggleDot);
@@ -89,6 +94,23 @@ export function Toolbar() {
           ↪
         </button>
       </div>
+
+      <div style={{ flex: 1 }} />
+
+      {onToggleChat && (
+        <button
+          onClick={onToggleChat}
+          style={{
+            ...styles.button,
+            ...(chatVisible ? styles.active : {}),
+            fontSize: 12,
+            padding: "4px 12px",
+          }}
+          title="Toggle AI Chat (Ctrl+Shift+A)"
+        >
+          AI Chat
+        </button>
+      )}
     </div>
   );
 }

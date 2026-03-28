@@ -1,5 +1,6 @@
 export type { Score, Part, Measure, Voice } from "./score";
-export type { Note, Chord, Rest, NoteHead, NoteEvent } from "./note";
+export type { Note, Chord, Rest, Slash, NoteHead, NoteEvent } from "./note";
+export type { NavigationMarks, Volta } from "./navigation";
 export type { Pitch, PitchClass, Accidental, Octave } from "./pitch";
 export type { Duration, DurationType } from "./duration";
 export type { Clef, ClefType, TimeSignature, KeySignature, BarlineType } from "./time";
@@ -14,3 +15,6 @@ export { newId } from "./ids";
 export * as factory from "./factory";
 export { INSTRUMENTS, getInstrument } from "./instruments";
 export type { InstrumentDef } from "./instruments";
+export type { TabInfo, Tuning } from "./guitar";
+export { STANDARD_TUNING, DROP_D_TUNING, OPEN_G_TUNING, pitchToTab } from "./guitar";
+export type { Articulation } from "./note";

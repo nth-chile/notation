@@ -10,6 +10,8 @@ import type {
   TimeSignature,
   KeySignature,
 } from "../model";
+import type { ViewModeType } from "../views/ViewMode";
+import { getDefaultViewConfig, type ViewConfig } from "../views/ViewMode";
 import { DURATION_TYPES_ORDERED } from "../model";
 import { durationToTicks as durationToTicksFn } from "../model/duration";
 import { factory } from "../model";
@@ -32,6 +34,11 @@ import { SetTempo } from "../commands/SetTempo";
 import { AddPart } from "../commands/AddPart";
 import { RemovePart } from "../commands/RemovePart";
 import { ReorderParts } from "../commands/ReorderParts";
+import { SetRepeatBarline } from "../commands/SetRepeatBarline";
+import { SetVolta } from "../commands/SetVolta";
+import { SetNavigationMark } from "../commands/SetNavigationMark";
+import type { NavigationMarkType } from "../commands/SetNavigationMark";
+import type { BarlineType, Volta } from "../model";
 import type { NoteBox } from "../renderer/vexBridge";
 import { newId, type VoiceId } from "../model/ids";
 import * as Transport from "../playback/Transport";
@@ -102,6 +109,17 @@ interface EditorStore {
   toggleMute(partIndex: number): void;
   moveCursorToPart(partIndex: number): void;
   moveCursorPart(direction: "up" | "down"): void;
+
+  // Phase 9: View modes
+  viewMode: ViewModeType;
+  viewConfig: ViewConfig;
+  viewScrollPositions: Record<ViewModeType, number>;
+  setViewMode(mode: ViewModeType): void;
+
+  // Phase 10: Navigation marks
+  setRepeatBarline(barlineType: BarlineType): void;
+  setVolta(volta: Volta | null): void;
+  setNavigationMark(markType: NavigationMarkType, value?: string | boolean): void;
 }
 
 /** Returns true if the cursor is on an existing event (not past the end) */
@@ -122,6 +140,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   playbackTick: null,
   tempo: 120,
   metronomeOn: false,
+  viewMode: "full-score" as ViewModeType,
+  viewConfig: getDefaultViewConfig("full-score"),
+  viewScrollPositions: {
+    "full-score": 0,
+    "lead-sheet": 0,
+    "songwriter": 0,
+    "tab": 0,
+  },
 
   insertNote(pitchClass: PitchClass) {
     const state = get();
@@ -692,6 +718,70 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       cursor.eventIndex = 0;
       cursor.voiceIndex = 0;
       return { inputState: { ...s.inputState, cursor } };
+    });
+  },
+
+  // Phase 9: View modes
+
+  setViewMode(mode: ViewModeType) {
+    set((s) => {
+      // Save current scroll position for current view
+      const scrollEl = document.querySelector("[data-score-container]");
+      const currentScroll = scrollEl?.scrollTop ?? 0;
+      const newScrollPositions = {
+        ...s.viewScrollPositions,
+        [s.viewMode]: currentScroll,
+      };
+
+      return {
+        viewMode: mode,
+        viewConfig: getDefaultViewConfig(mode),
+        viewScrollPositions: newScrollPositions,
+      };
+    });
+  },
+
+  // Phase 10: Navigation marks
+
+  setRepeatBarline(barlineType: BarlineType) {
+    const state = get();
+    const cmd = new SetRepeatBarline(barlineType);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({
+      score: result.score,
+      inputState: result.inputState,
+      isDirty: true,
+    });
+  },
+
+  setVolta(volta: Volta | null) {
+    const state = get();
+    const cmd = new SetVolta(volta);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({
+      score: result.score,
+      inputState: result.inputState,
+      isDirty: true,
+    });
+  },
+
+  setNavigationMark(markType: NavigationMarkType, value?: string | boolean) {
+    const state = get();
+    const cmd = new SetNavigationMark(markType, value);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({
+      score: result.score,
+      inputState: result.inputState,
+      isDirty: true,
     });
   },
 }));
