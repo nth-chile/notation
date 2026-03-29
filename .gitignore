@@ -7,3 +7,4 @@ target/
 .env.*
 test-results/
 playwright-report/
+.playwright-mcp/
