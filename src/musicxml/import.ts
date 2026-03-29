@@ -490,6 +490,11 @@ function parseMeasure(
     }
   }
 
+  // Detect pickup measure: check if measure number is "0" or has implicit="yes"
+  const measureNum = measureEl.getAttribute("number");
+  const implicit = measureEl.getAttribute("implicit");
+  const isPickup = measureNum === "0" || implicit === "yes";
+
   const measure: Measure = {
     id: newId<MeasureId>("msr"),
     clef,
@@ -498,6 +503,7 @@ function parseMeasure(
     barlineEnd,
     annotations,
     voices,
+    isPickup: isPickup || undefined,
   };
 
   return { measure, clef, timeSig, keySig, divisions };

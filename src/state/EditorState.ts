@@ -42,6 +42,7 @@ import { SetVolta } from "../commands/SetVolta";
 import { SetNavigationMark } from "../commands/SetNavigationMark";
 import { ToggleArticulation } from "../commands/ToggleArticulation";
 import { SetDynamic } from "../commands/SetDynamic";
+import { TogglePickup } from "../commands/TogglePickup";
 import { OverwriteNote } from "../commands/OverwriteNote";
 import type { NavigationMarkType } from "../commands/SetNavigationMark";
 import type { BarlineType, Volta } from "../model";
@@ -162,6 +163,7 @@ interface EditorStore {
   setDynamic(level: import("../model/annotations").DynamicLevel | null): void;
   setTempoMark(bpm: number, beatUnit?: DurationType, text?: string): void;
   setRehearsalMark(text: string): void;
+  togglePickup(): void;
 
   // Plugin display toggles
   showTitle: boolean;
@@ -238,6 +240,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const cmd = new SetRehearsalMark(text);
     const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
     set({ score: result.score, inputState: result.inputState, popover: null });
+  },
+
+  togglePickup() {
+    const state = get();
+    const cmd = new TogglePickup();
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState });
   },
 
   insertNote(pitchClass: PitchClass) {
