@@ -43,6 +43,7 @@ import { SetNavigationMark } from "../commands/SetNavigationMark";
 import { ToggleArticulation } from "../commands/ToggleArticulation";
 import { SetDynamic } from "../commands/SetDynamic";
 import { TogglePickup } from "../commands/TogglePickup";
+import { InsertGraceNote } from "../commands/InsertGraceNote";
 import { OverwriteNote } from "../commands/OverwriteNote";
 import type { NavigationMarkType } from "../commands/SetNavigationMark";
 import type { BarlineType, Volta } from "../model";
@@ -164,6 +165,7 @@ interface EditorStore {
   setTempoMark(bpm: number, beatUnit?: DurationType, text?: string): void;
   setRehearsalMark(text: string): void;
   togglePickup(): void;
+  toggleGraceNoteMode(): void;
 
   // Plugin display toggles
   showTitle: boolean;
@@ -249,9 +251,27 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({ score: result.score, inputState: result.inputState });
   },
 
+  toggleGraceNoteMode() {
+    set((s) => ({
+      inputState: { ...s.inputState, graceNoteMode: !s.inputState.graceNoteMode },
+    }));
+  },
+
   insertNote(pitchClass: PitchClass) {
     const state = get();
     const { cursor } = state.inputState;
+
+    // Grace note mode: insert a grace note before the current event
+    if (state.inputState.graceNoteMode) {
+      const cmd = new InsertGraceNote(
+        pitchClass,
+        state.inputState.octave as Octave,
+        state.inputState.accidental,
+      );
+      const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+      set({ score: result.score, inputState: result.inputState });
+      return;
+    }
 
     // Step entry mode: overwrite existing events with input duration
     if (state.inputState.stepEntry && cursorOnExistingEvent(state.score, cursor)) {

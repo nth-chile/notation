@@ -1,4 +1,4 @@
-import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector, Barline, Repetition, Volta as VexVolta, StaveTie, MultiMeasureRest, Tuplet as VexTuplet, Articulation as VexArticulation } from "vexflow";
+import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector, Barline, Repetition, Volta as VexVolta, StaveTie, MultiMeasureRest, Tuplet as VexTuplet, Articulation as VexArticulation, GraceNote as VexGraceNote, GraceNoteGroup } from "vexflow";
 import type { Measure, NoteEvent, NoteEventId } from "../model";
 import type { BarlineType } from "../model/time";
 import type { Annotation } from "../model/annotations";
@@ -160,7 +160,21 @@ function eventToStaveNote(
       }
       return sn;
     }
+    case "grace":
+      // Grace notes are handled separately as modifiers
+      return null;
   }
+}
+
+function eventToGraceNote(event: import("../model/note").GraceNote): VexGraceNote {
+  const key = pitchToVexKey(event.head.pitch);
+  const dur = DUR_VEX[event.duration.type];
+  const gn = new VexGraceNote({ keys: [key], duration: dur, slash: event.slash ?? true });
+  const acc = event.head.pitch.accidental;
+  if (acc !== "natural" && ACC_VEX[acc]) {
+    gn.addModifier(new Accidental(ACC_VEX[acc]));
+  }
+  return gn;
 }
 
 const CLEF_VEX: Record<string, string> = {
@@ -290,10 +304,20 @@ export function renderMeasure(
     const stemDir = voiceStemDirection(vi);
     const staveNotes: StaveNote[] = [];
     const eventIds: NoteEventId[] = [];
+    let pendingGraceNotes: VexGraceNote[] = [];
 
     for (const event of modelVoice.events) {
+      if (event.kind === "grace") {
+        pendingGraceNotes.push(eventToGraceNote(event));
+        continue;
+      }
       const sn = eventToStaveNote(event, stemDir);
       if (sn) {
+        if (pendingGraceNotes.length > 0) {
+          const graceGroup = new GraceNoteGroup(pendingGraceNotes, true);
+          sn.addModifier(graceGroup);
+          pendingGraceNotes = [];
+        }
         staveNotes.push(sn);
         eventIds.push(event.id);
       }

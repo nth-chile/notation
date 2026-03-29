@@ -32,7 +32,17 @@ export interface TupletRatio {
   normal: number;
 }
 
-export type NoteEvent = Note | Chord | Rest | Slash;
+export type NoteEvent = Note | Chord | Rest | Slash | GraceNote;
+
+export interface GraceNote {
+  kind: "grace";
+  id: NoteEventId;
+  duration: Duration;
+  head: NoteHead;
+  slash?: boolean; // acciaccatura (slashed) vs appoggiatura
+  articulations?: Articulation[];
+  tuplet?: TupletRatio;
+}
 
 export interface Note {
   kind: "note";
