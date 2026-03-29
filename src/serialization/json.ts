@@ -95,7 +95,7 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
 function annotationToJson(a: Annotation): Record<string, unknown> {
   switch (a.kind) {
     case "chord-symbol":
-      return { type: "chord", beat: a.beatOffset, symbol: a.text };
+      return { type: "chord", beat: a.beatOffset, symbol: a.text, noteEventId: a.noteEventId };
     case "lyric":
       return {
         type: "lyric",
@@ -295,6 +295,7 @@ function parseAnnotation(a: Record<string, unknown>): Annotation | null {
       kind: "chord-symbol",
       text: (a.symbol as string) || "",
       beatOffset: (a.beat as number) ?? 0,
+      noteEventId: a.noteEventId as import("../model/ids").NoteEventId,
     };
   }
   if (type === "lyric") {

@@ -110,6 +110,25 @@ function DroppableSidebar({
   );
 }
 
+/**
+ * Thin drop zone at window edge — appears during drag when a sidebar is empty/hidden.
+ * Dropping a panel here moves it into that sidebar and opens it (VSCode-like behavior).
+ */
+function EdgeDropZone({ side }: { side: "left" | "right" }) {
+  const { setNodeRef, isOver } = useDroppable({ id: side });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "w-3 shrink-0 transition-all",
+        side === "left" ? "border-r" : "border-l",
+        isOver ? "w-48 bg-accent border-primary" : "bg-card/50"
+      )}
+    />
+  );
+}
+
 const HIDE_THRESHOLD = 100;
 
 function ResizeHandle({ side }: { side: "left" | "right" }) {
@@ -238,6 +257,8 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
         if (currentSidebar !== overIdStr) {
           movePanel(activeIdStr, overIdStr, panels[overIdStr].length);
         }
+        // Ensure sidebar is open (handles edge drop zone case)
+        useLayoutStore.getState().setSidebarOpen(overIdStr, true);
         return;
       }
 
@@ -289,6 +310,9 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
       onDragEnd={handleDragEnd}
     >
       <div className="flex flex-1 overflow-hidden">
+        {/* Edge drop zone: appears when dragging and left sidebar is hidden */}
+        {!showLeft && activeId && <EdgeDropZone side="left" />}
+
         <DroppableSidebar
           id="left"
           panelIds={panels.left}
@@ -308,6 +332,9 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
           isOpen={showRight}
           width={sidebarWidth.right}
         />
+
+        {/* Edge drop zone: appears when dragging and right sidebar is hidden */}
+        {!showRight && activeId && <EdgeDropZone side="right" />}
       </div>
 
       <DragOverlay>

@@ -6,9 +6,11 @@ import type { NoteEventId } from "../../model/ids";
 
 describe("annotation serialization round-trip", () => {
   it("round-trips chord symbols", () => {
+    const noteId1 = "evt_chord1" as NoteEventId;
+    const noteId2 = "evt_chord2" as NoteEventId;
     const annotations: Annotation[] = [
-      { kind: "chord-symbol", text: "Cmaj7", beatOffset: 0 },
-      { kind: "chord-symbol", text: "Dm7", beatOffset: 960 },
+      { kind: "chord-symbol", text: "Cmaj7", beatOffset: 0, noteEventId: noteId1 },
+      { kind: "chord-symbol", text: "Dm7", beatOffset: 960, noteEventId: noteId2 },
     ];
 
     const s = factory.score("Chords Test", "", [
@@ -159,7 +161,7 @@ describe("annotation serialization round-trip", () => {
 
   it("round-trips measures with mixed annotations", () => {
     const annotations: Annotation[] = [
-      { kind: "chord-symbol", text: "Am7", beatOffset: 0 },
+      { kind: "chord-symbol", text: "Am7", beatOffset: 0, noteEventId: "evt_mixed1" as NoteEventId },
       { kind: "rehearsal-mark", text: "Intro" },
       { kind: "tempo-mark", bpm: 140, beatUnit: "quarter", text: "Vivace" },
     ];

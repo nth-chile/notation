@@ -6,13 +6,14 @@ import { TextInput } from "./components/TextInput";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { PluginPanel } from "./components/PluginPanel";
 import { CommandPalette } from "./components/CommandPalette";
-import { HistoryModal } from "./components/HistoryModal";
-import { PluginViewSwitcher } from "./components/PluginViewSwitcher";
+import { HistoryModal, showHistoryModal } from "./components/HistoryModal";
 import { PanelLayout } from "./components/PanelLayout";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { useEditorStore } from "./state";
+import { useLayoutStore } from "./state/LayoutState";
 import { saveScore } from "./fileio/save";
 import { loadScore } from "./fileio/load";
+import { getSettings, matchesBinding } from "./settings";
 import { useEffect, useCallback, useState, useSyncExternalStore, useRef } from "react";
 import {
   PluginManager,
@@ -113,16 +114,25 @@ export function App() {
     }
   }, [setScore, setFilePath]);
 
-  // Ctrl+S / Ctrl+O
+  // File & UI shortcuts (uses customizable keybindings)
   useEffect(() => {
+    const handlers: Record<string, () => void> = {
+      "file:save": () => handleSave(),
+      "file:open": () => handleOpen(),
+      "toggle-settings": () => setSettingsVisible((v) => !v),
+      "toggle-left-sidebar": () => useLayoutStore.getState().toggleSidebar("left"),
+      "toggle-right-sidebar": () => useLayoutStore.getState().toggleSidebar("right"),
+      "toggle-plugins": () => setPluginsVisible((v) => !v),
+      "file-history": () => showHistoryModal(),
+    };
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        handleSave();
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === "o") {
-        e.preventDefault();
-        handleOpen();
+      const bindings = getSettings().keyBindings;
+      for (const [actionId, binding] of Object.entries(bindings)) {
+        if (handlers[actionId] && matchesBinding(e, binding)) {
+          e.preventDefault();
+          handlers[actionId]();
+          return;
+        }
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -141,15 +151,9 @@ export function App() {
         onTogglePlugins={() => setPluginsVisible((v) => !v)}
         onOpen={handleOpen}
         onSave={handleSave}
+        toolbarPanels={toolbarPanels}
+        views={views}
       />
-
-      {/* Plugin-registered toolbar panels (e.g. transport bar) */}
-      {toolbarPanels.map((panel) => (
-        <div key={panel.id}>{panel.config.component()}</div>
-      ))}
-
-      {/* Plugin-registered view switcher */}
-      {views.length > 0 && <PluginViewSwitcher views={views} />}
 
       <PanelLayout leftPanels={leftPanels} rightPanels={rightPanels}>
         <ScoreCanvas />

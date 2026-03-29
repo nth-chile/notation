@@ -1,6 +1,7 @@
 /**
- * Tone.js playback — schedules notes at absolute audio times.
- * Does NOT use Tone.Transport BPM (which distorts timing).
+ * Lookahead playback scheduler.
+ * Schedules notes ~100ms ahead in a setInterval loop.
+ * Reads tempo dynamically so changes take effect immediately.
  */
 import * as Tone from "tone";
 import type { Score } from "../model/score";
@@ -20,24 +21,52 @@ export interface NotePlayer {
   stop(): void;
 }
 
-interface ScheduledNote {
-  time: number;  // seconds from start
+interface PlayEvent {
+  tick: number;
   midi: number;
-  duration: number;  // seconds
+  durationTicks: number;
 }
+
+interface MetronomeBeat {
+  tick: number;
+  isDownbeat: boolean;
+}
+
+interface MeasureBoundary {
+  tick: number;
+  measureIndex: number;
+}
+
+const LOOKAHEAD_SEC = 0.1;
+const SCHEDULER_INTERVAL_MS = 25;
+
+// --- State ---
 
 let state: TransportState = "stopped";
 let onTickCallback: ((tick: number) => void) | null = null;
 let onStateChangeCallback: ((state: TransportState) => void) | null = null;
 let metronomeEnabled = false;
-let animationFrame: number | null = null;
-let playbackStartTime = 0;
-let totalDuration = 0;
 let synth: Tone.PolySynth | null = null;
 let metronomeSynth: Tone.PolySynth | null = null;
-let tickBoundaries: { time: number; tick: number }[] = [];
-let currentScore: Score | null = null;
 let customPlayer: NotePlayer | null = null;
+
+let currentScore: Score | null = null;
+let globalBpm = 120;
+let events: PlayEvent[] = [];
+let metronomeBeats: MetronomeBeat[] = [];
+let measureBoundaries: MeasureBoundary[] = [];
+let totalTicks = 0;
+
+let schedulerInterval: ReturnType<typeof setInterval> | null = null;
+let animationFrame: number | null = null;
+let eventCursor = 0;
+let metronomeCursor = 0;
+let anchorAudioTime = 0;
+let anchorTick = 0;
+let currentBpm = 120;
+let scheduledUpToTick = 0;
+
+// --- Helpers ---
 
 function setState(s: TransportState): void {
   state = s;
@@ -72,6 +101,14 @@ function midiToNoteName(midi: number): string {
   return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`;
 }
 
+function ticksToSec(ticks: number, bpm: number): number {
+  return (ticks / TICKS_PER_QUARTER) * (60 / bpm);
+}
+
+function secToTicks(sec: number, bpm: number): number {
+  return (sec * bpm * TICKS_PER_QUARTER) / 60;
+}
+
 function getTempoForMeasure(score: Score, mi: number): number {
   for (const part of score.parts) {
     const m = part.measures[mi];
@@ -80,7 +117,14 @@ function getTempoForMeasure(score: Score, mi: number): number {
       if (ann.kind === "tempo-mark") return (ann as TempoMark).bpm;
     }
   }
-  return score.tempo;
+  return globalBpm;
+}
+
+function getMeasureIndexForTick(tick: number): number {
+  for (let i = measureBoundaries.length - 1; i >= 0; i--) {
+    if (tick >= measureBoundaries[i].tick) return measureBoundaries[i].measureIndex;
+  }
+  return 0;
 }
 
 function findLastContentMeasure(score: Score): number {
@@ -96,41 +140,42 @@ function findLastContentMeasure(score: Score): number {
   return last;
 }
 
-function ticksToSec(ticks: number, bpm: number): number {
-  return (ticks / TICKS_PER_QUARTER) * (60 / bpm);
+function getBpmAtTick(tick: number): number {
+  if (!currentScore) return globalBpm;
+  const mi = getMeasureIndexForTick(tick);
+  return getTempoForMeasure(currentScore, mi);
 }
 
-function buildSchedule(score: Score): {
-  notes: ScheduledNote[];
-  duration: number;
-  boundaries: { time: number; tick: number }[];
-} {
-  const notes: ScheduledNote[] = [];
-  const boundaries: { time: number; tick: number }[] = [{ time: 0, tick: 0 }];
+// --- Build phase ---
+
+function buildEvents(score: Score): void {
+  events = [];
+  metronomeBeats = [];
+  measureBoundaries = [];
+
   const lastMi = findLastContentMeasure(score);
-  let time = 0;
   let tick = 0;
 
   for (let mi = 0; mi <= lastMi; mi++) {
-    const bpm = getTempoForMeasure(score, mi);
+    const m0 = score.parts[0]?.measures[mi];
+    if (!m0) continue;
+
+    const mTicks = (TICKS_PER_QUARTER * 4 * m0.timeSignature.numerator) / m0.timeSignature.denominator;
+    measureBoundaries.push({ tick, measureIndex: mi });
 
     for (const part of score.parts) {
       if (part.muted) continue;
       const m = part.measures[mi];
       if (!m) continue;
-
       for (const voice of m.voices) {
         let offset = 0;
         for (const evt of voice.events) {
           const evtTicks = durationToTicks(evt.duration);
-          const evtTime = time + ticksToSec(offset, bpm);
-          const evtDur = ticksToSec(evtTicks, bpm);
-
           if (evt.kind === "note") {
-            notes.push({ time: evtTime, midi: pitchToMidi(evt.head.pitch), duration: evtDur });
+            events.push({ tick: tick + offset, midi: pitchToMidi(evt.head.pitch), durationTicks: evtTicks });
           } else if (evt.kind === "chord") {
             for (const h of evt.heads) {
-              notes.push({ time: evtTime, midi: pitchToMidi(h.pitch), duration: evtDur });
+              events.push({ tick: tick + offset, midi: pitchToMidi(h.pitch), durationTicks: evtTicks });
             }
           }
           offset += evtTicks;
@@ -138,65 +183,96 @@ function buildSchedule(score: Score): {
       }
     }
 
-    // Advance by full measure duration
-    const m0 = score.parts[0]?.measures[mi];
-    if (m0) {
-      const mTicks = (TICKS_PER_QUARTER * 4 * m0.timeSignature.numerator) / m0.timeSignature.denominator;
-      time += ticksToSec(mTicks, getTempoForMeasure(score, mi));
-      tick += mTicks;
+    const beats = m0.timeSignature.numerator;
+    const beatTicks = (TICKS_PER_QUARTER * 4) / m0.timeSignature.denominator;
+    for (let b = 0; b < beats; b++) {
+      metronomeBeats.push({ tick: tick + b * beatTicks, isDownbeat: b === 0 });
     }
-    boundaries.push({ time, tick });
+
+    tick += mTicks;
   }
 
-  return { notes, duration: time, boundaries };
+  events.sort((a, b) => a.tick - b.tick);
+  totalTicks = tick;
 }
 
-function timeToTick(t: number): number {
-  for (let i = 1; i < tickBoundaries.length; i++) {
-    if (t <= tickBoundaries[i].time) {
-      const prev = tickBoundaries[i - 1];
-      const curr = tickBoundaries[i];
-      const frac = (t - prev.time) / (curr.time - prev.time || 1);
-      return prev.tick + frac * (curr.tick - prev.tick);
+// --- Scheduler ---
+
+function tickToAudioTime(tick: number): number {
+  return anchorAudioTime + ticksToSec(tick - anchorTick, currentBpm);
+}
+
+function schedulerTick(): void {
+  if (state !== "playing" || !currentScore) return;
+
+  const now = Tone.now();
+  const elapsed = now - anchorAudioTime;
+  const currentTick = anchorTick + secToTicks(elapsed, currentBpm);
+
+  // Re-anchor if tempo changed (measure boundary or global BPM change)
+  const newBpm = getBpmAtTick(currentTick);
+  if (newBpm !== currentBpm) {
+    anchorTick = currentTick;
+    anchorAudioTime = now;
+    currentBpm = newBpm;
+  }
+
+  const lookaheadTick = currentTick + secToTicks(LOOKAHEAD_SEC, currentBpm);
+
+  // Schedule notes
+  const s = customPlayer ? null : ensureSynth();
+  while (eventCursor < events.length && events[eventCursor].tick < lookaheadTick) {
+    const e = events[eventCursor];
+    if (e.tick >= scheduledUpToTick) {
+      const audioTime = tickToAudioTime(e.tick);
+      const dur = Math.max(ticksToSec(e.durationTicks, currentBpm) * 0.9, 0.05);
+      if (customPlayer) {
+        customPlayer.play(e.midi, dur, audioTime);
+      } else if (s) {
+        s.triggerAttackRelease(midiToNoteName(e.midi), dur, audioTime);
+      }
+    }
+    eventCursor++;
+  }
+
+  // Schedule metronome
+  if (metronomeEnabled) {
+    const met = ensureMetronomeSynth();
+    while (metronomeCursor < metronomeBeats.length && metronomeBeats[metronomeCursor].tick < lookaheadTick) {
+      const beat = metronomeBeats[metronomeCursor];
+      if (beat.tick >= scheduledUpToTick) {
+        const audioTime = tickToAudioTime(beat.tick);
+        const note = beat.isDownbeat ? "G6" : "C6";
+        const vel = beat.isDownbeat ? 0.7 : 0.4;
+        met.triggerAttackRelease(note, 0.03, audioTime, vel);
+      }
+      metronomeCursor++;
     }
   }
-  return tickBoundaries[tickBoundaries.length - 1]?.tick ?? 0;
+
+  scheduledUpToTick = lookaheadTick;
+
+  if (currentTick >= totalTicks) {
+    stop();
+  }
 }
 
 function updateCursor(): void {
   if (state !== "playing") return;
-  const elapsed = Tone.now() - playbackStartTime;
-  onTickCallback?.(timeToTick(elapsed));
-  if (elapsed >= totalDuration + 0.3) {
-    stop();
-    return;
+  const elapsed = Tone.now() - anchorAudioTime;
+  const currentTick = anchorTick + secToTicks(elapsed, currentBpm);
+  onTickCallback?.(currentTick);
+  if (currentTick < totalTicks) {
+    animationFrame = requestAnimationFrame(updateCursor);
   }
-  animationFrame = requestAnimationFrame(updateCursor);
 }
 
-function scheduleMetronomeClicks(score: Score): void {
-  const met = ensureMetronomeSynth();
-  const lastMi = findLastContentMeasure(score);
-  const elapsed = Tone.now() - playbackStartTime;
-  let beatTime = 0;
-  for (let mi = 0; mi <= lastMi; mi++) {
-    const bpm = getTempoForMeasure(score, mi);
-    const m0 = score.parts[0]?.measures[mi];
-    if (!m0) continue;
-    const beats = m0.timeSignature.numerator;
-    const secPerBeat = 60 / bpm;
-    for (let b = 0; b < beats; b++) {
-      const clickTime = beatTime + b * secPerBeat;
-      // Skip clicks that are already in the past
-      if (clickTime < elapsed - 0.05) continue;
-      const t = playbackStartTime + clickTime;
-      const note = b === 0 ? "G6" : "C6";
-      const vel = b === 0 ? 0.7 : 0.4;
-      met.triggerAttackRelease(note, 0.03, t, vel);
-    }
-    const mTicks = (TICKS_PER_QUARTER * 4 * m0.timeSignature.numerator) / m0.timeSignature.denominator;
-    beatTime += ticksToSec(mTicks, bpm);
-  }
+function resetCursorsToTick(tick: number): void {
+  eventCursor = events.findIndex((e) => e.tick >= tick);
+  if (eventCursor === -1) eventCursor = events.length;
+  metronomeCursor = metronomeBeats.findIndex((b) => b.tick >= tick);
+  if (metronomeCursor === -1) metronomeCursor = metronomeBeats.length;
+  scheduledUpToTick = tick;
 }
 
 // --- Public API ---
@@ -210,49 +286,62 @@ export async function play(score: Score): Promise<void> {
   if (state === "playing") return;
   await Tone.start();
 
-  const s = ensureSynth();
-  const schedule = buildSchedule(score);
-  totalDuration = schedule.duration;
-  tickBoundaries = schedule.boundaries;
-
-  if (schedule.notes.length === 0) return;
-
-  // Schedule every note at an absolute audio-context time
-  playbackStartTime = Tone.now() + 0.05; // tiny buffer
-
-  if (customPlayer) {
-    for (const note of schedule.notes) {
-      const startAt = playbackStartTime + note.time;
-      const dur = Math.max(note.duration * 0.9, 0.05);
-      customPlayer.play(note.midi, dur, startAt);
-    }
-  } else {
-    for (const note of schedule.notes) {
-      const name = midiToNoteName(note.midi);
-      const startAt = playbackStartTime + note.time;
-      const dur = Math.max(note.duration * 0.9, 0.05);
-      s.triggerAttackRelease(name, dur, startAt);
-    }
-  }
-
   currentScore = score;
+  globalBpm = score.tempo;
+  buildEvents(score);
 
-  // Schedule metronome clicks
-  if (metronomeEnabled) {
-    scheduleMetronomeClicks(score);
+  if (events.length === 0 && metronomeBeats.length === 0) return;
+
+  ensureSynth();
+
+  if (state === "paused") {
+    // Resume — anchorTick already holds the paused position
+    anchorAudioTime = Tone.now();
+    currentBpm = getBpmAtTick(anchorTick);
+    resetCursorsToTick(anchorTick);
+  } else {
+    anchorTick = 0;
+    anchorAudioTime = Tone.now();
+    currentBpm = getBpmAtTick(0);
+    resetCursorsToTick(0);
   }
 
+  schedulerInterval = setInterval(schedulerTick, SCHEDULER_INTERVAL_MS);
+  schedulerTick();
   animationFrame = requestAnimationFrame(updateCursor);
   setState("playing");
 }
 
 export function pause(): void {
   if (state !== "playing") return;
-  // Can't truly pause pre-scheduled oscillators — just stop
-  stop();
+
+  // Save current tick position
+  const elapsed = Tone.now() - anchorAudioTime;
+  anchorTick = anchorTick + secToTicks(elapsed, currentBpm);
+
+  if (schedulerInterval !== null) {
+    clearInterval(schedulerInterval);
+    schedulerInterval = null;
+  }
+  if (animationFrame !== null) {
+    cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+  }
+
+  synth?.releaseAll();
+  metronomeSynth?.releaseAll();
+  setState("paused");
 }
 
 export function stop(): void {
+  if (schedulerInterval !== null) {
+    clearInterval(schedulerInterval);
+    schedulerInterval = null;
+  }
+  if (animationFrame !== null) {
+    cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+  }
   if (customPlayer) {
     customPlayer.stop();
   }
@@ -265,29 +354,30 @@ export function stop(): void {
     metronomeSynth.dispose();
     metronomeSynth = null;
   }
-  if (animationFrame !== null) {
-    cancelAnimationFrame(animationFrame);
-    animationFrame = null;
-  }
+
   currentScore = null;
+  anchorTick = 0;
   onTickCallback?.(0);
   setState("stopped");
 }
 
-export function setTempo(_bpm: number): void {
-  // Tempo is read from the score at play time
+export function setTempo(bpm: number): void {
+  if (state === "playing") {
+    // Re-anchor at current position so new tempo takes effect seamlessly
+    const now = Tone.now();
+    anchorTick = anchorTick + secToTicks(now - anchorAudioTime, currentBpm);
+    anchorAudioTime = now;
+  }
+  globalBpm = bpm;
+  if (state === "playing") {
+    currentBpm = getBpmAtTick(anchorTick);
+  }
 }
 
 export function setMetronome(enabled: boolean): void {
   metronomeEnabled = enabled;
-  if (state === "playing" && currentScore) {
-    if (enabled) {
-      scheduleMetronomeClicks(currentScore);
-    } else if (metronomeSynth) {
-      metronomeSynth.releaseAll();
-      metronomeSynth.dispose();
-      metronomeSynth = null;
-    }
+  if (!enabled && metronomeSynth) {
+    metronomeSynth.releaseAll();
   }
 }
 
@@ -300,7 +390,16 @@ export function getTransportState(): TransportState {
 }
 
 export function getScoreDuration(score: Score): number {
-  return buildSchedule(score).duration;
+  const lastMi = findLastContentMeasure(score);
+  let time = 0;
+  for (let mi = 0; mi <= lastMi; mi++) {
+    const m0 = score.parts[0]?.measures[mi];
+    if (!m0) continue;
+    const bpm = getTempoForMeasure(score, mi);
+    const mTicks = (TICKS_PER_QUARTER * 4 * m0.timeSignature.numerator) / m0.timeSignature.denominator;
+    time += ticksToSec(mTicks, bpm);
+  }
+  return time;
 }
 
 export function setNotePlayer(player: NotePlayer | null): void {

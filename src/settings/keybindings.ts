@@ -91,6 +91,20 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
 
   // Playback
   { id: "play-pause", label: "Play / Pause", category: "Playback", defaultBinding: { key: " " } },
+  { id: "stop-playback", label: "Stop playback", category: "Playback", defaultBinding: { key: ".", ctrl: true } },
+  { id: "toggle-metronome", label: "Toggle metronome", category: "Playback", defaultBinding: { key: "m", shift: true } },
+
+  // File
+  { id: "file:open", label: "Open file", category: "File", defaultBinding: { key: "o", ctrl: true } },
+  { id: "file:save", label: "Save file", category: "File", defaultBinding: { key: "s", ctrl: true } },
+
+  // UI
+  { id: "toggle-settings", label: "Settings", category: "UI", defaultBinding: { key: ",", ctrl: true } },
+  { id: "toggle-left-sidebar", label: "Toggle left sidebar", category: "UI", defaultBinding: { key: "b", ctrl: true } },
+  { id: "toggle-right-sidebar", label: "Toggle right sidebar", category: "UI", defaultBinding: { key: "b", ctrl: true, shift: true } },
+  { id: "command-palette", label: "Command palette", category: "UI", defaultBinding: { key: "p", ctrl: true, shift: true } },
+  { id: "toggle-plugins", label: "Toggle plugins", category: "UI", defaultBinding: { key: "e", ctrl: true, shift: true } },
+  { id: "file-history", label: "File history", category: "File", defaultBinding: { key: "h", ctrl: true, shift: true } },
 ];
 
 /** Build default bindings map from action definitions */
@@ -151,6 +165,15 @@ export function matchesBinding(e: KeyboardEvent, binding: KeyBinding): boolean {
   const hasAlt = e.altKey;
 
   return hasCtrl === wantCtrl && hasShift === wantShift && hasAlt === wantAlt;
+}
+
+/** Get the formatted display string for an action's current binding */
+export function getBindingLabel(actionId: string, customBindings?: Record<string, KeyBinding>): string {
+  const custom = customBindings?.[actionId];
+  if (custom) return formatBinding(custom);
+  const action = SHORTCUT_ACTIONS.find((a) => a.id === actionId);
+  if (action) return formatBinding(action.defaultBinding);
+  return "";
 }
 
 /** Parse a keyboard event into a KeyBinding */

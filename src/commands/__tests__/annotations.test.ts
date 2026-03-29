@@ -33,7 +33,8 @@ function makeSnapshot(overrides?: {
 describe("SetChordSymbol", () => {
   it("adds a chord symbol to a measure", () => {
     const snap = makeSnapshot();
-    const cmd = new SetChordSymbol("Cmaj7", 0);
+    const noteId = snap.score.parts[0].measures[0].voices[0].events[0].id;
+    const cmd = new SetChordSymbol("Cmaj7", 0, noteId);
     const result = cmd.execute(snap);
 
     const annotations = result.score.parts[0].measures[0].annotations;
@@ -42,17 +43,19 @@ describe("SetChordSymbol", () => {
     if (annotations[0].kind === "chord-symbol") {
       expect(annotations[0].text).toBe("Cmaj7");
       expect(annotations[0].beatOffset).toBe(0);
+      expect(annotations[0].noteEventId).toBe(noteId);
     }
   });
 
   it("replaces an existing chord at the same beat offset", () => {
+    const note = factory.note("C", 4, factory.dur("quarter"));
     const m = factory.measure(
-      [factory.voice([factory.note("C", 4, factory.dur("quarter"))])],
-      { annotations: [{ kind: "chord-symbol", text: "Dm7", beatOffset: 0 }] }
+      [factory.voice([note])],
+      { annotations: [{ kind: "chord-symbol", text: "Dm7", beatOffset: 0, noteEventId: note.id }] }
     );
     const snap = makeSnapshot({ measures: [m, factory.measure([factory.voice([])])] });
 
-    const cmd = new SetChordSymbol("G7", 0);
+    const cmd = new SetChordSymbol("G7", 0, note.id);
     const result = cmd.execute(snap);
 
     const chords = result.score.parts[0].measures[0].annotations.filter(
@@ -65,13 +68,14 @@ describe("SetChordSymbol", () => {
   });
 
   it("removes chord when text is empty", () => {
+    const note = factory.note("C", 4, factory.dur("quarter"));
     const m = factory.measure(
-      [factory.voice([factory.note("C", 4, factory.dur("quarter"))])],
-      { annotations: [{ kind: "chord-symbol", text: "Am", beatOffset: 0 }] }
+      [factory.voice([note])],
+      { annotations: [{ kind: "chord-symbol", text: "Am", beatOffset: 0, noteEventId: note.id }] }
     );
     const snap = makeSnapshot({ measures: [m, factory.measure([factory.voice([])])] });
 
-    const cmd = new SetChordSymbol("", 0);
+    const cmd = new SetChordSymbol("", 0, note.id);
     const result = cmd.execute(snap);
 
     const chords = result.score.parts[0].measures[0].annotations.filter(
@@ -82,9 +86,10 @@ describe("SetChordSymbol", () => {
 
   it("allows multiple chords at different beat offsets", () => {
     const snap = makeSnapshot();
+    const events = snap.score.parts[0].measures[0].voices[0].events;
 
-    const r1 = new SetChordSymbol("C", 0).execute(snap);
-    const r2 = new SetChordSymbol("G", 480).execute(r1);
+    const r1 = new SetChordSymbol("C", 0, events[0].id).execute(snap);
+    const r2 = new SetChordSymbol("G", 480, events[1].id).execute(r1);
 
     const chords = r2.score.parts[0].measures[0].annotations.filter(
       (a) => a.kind === "chord-symbol"

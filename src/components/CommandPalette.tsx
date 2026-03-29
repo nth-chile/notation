@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { PluginManager, PluginCommand } from "../plugins";
+import { getSettings, matchesBinding } from "../settings";
 
 interface CommandPaletteProps {
   pluginManager: PluginManager | null;
@@ -24,7 +25,8 @@ export function CommandPalette({ pluginManager }: CommandPaletteProps) {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "p" || e.key === "P")) {
+      const binding = getSettings().keyBindings["command-palette"];
+      if (binding && matchesBinding(e, binding)) {
         e.preventDefault();
         visible ? close() : open();
       }

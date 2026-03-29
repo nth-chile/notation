@@ -5,7 +5,7 @@ import type { Annotation } from "../model/annotations";
 import type { ArticulationKind } from "../model/note";
 import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
-import { durationToTicks as durationToTicksFn, measureCapacity } from "../model/duration";
+import { durationToTicks as durationToTicksFn } from "../model/duration";
 import { getBeamGroups } from "./beaming";
 import { useEditorStore } from "../state/EditorState";
 
@@ -26,8 +26,21 @@ export interface NoteBox {
   eventIndex: number;
 }
 
+export interface AnnotationBox {
+  kind: "chord-symbol" | "lyric";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  partIndex: number;
+  measureIndex: number;
+  noteEventId: NoteEventId;
+  text: string;
+}
+
 export interface MeasureRenderResult {
   noteBoxes: NoteBox[];
+  annotationBoxes: AnnotationBox[];
   staveY: number;
   staveX: number;
   width: number;
@@ -461,24 +474,37 @@ export function renderMeasure(
   }
 
   // Render annotations (chord symbols above, lyrics below, rehearsal marks, tempo marks)
+  const annotationBoxes: AnnotationBox[] = [];
   if (m.annotations.length > 0) {
     const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
     if (rawCtx.save) {
-      const noteStartX = stave.getNoteStartX();
-      const totalCapacity = measureCapacity(m.timeSignature.numerator, m.timeSignature.denominator);
-
       for (const annotation of m.annotations) {
         switch (annotation.kind) {
           case "chord-symbol": {
-            // Position based on beat offset proportion within the measure
-            const proportion = totalCapacity > 0 ? annotation.beatOffset / totalCapacity : 0;
-            const usableWidth = width - (noteStartX - x) - 10;
-            const chordX = noteStartX + proportion * usableWidth;
+            const box = annotation.noteEventId
+              ? noteBoxes.find((nb) => nb.id === annotation.noteEventId)
+              : undefined;
+            if (!box) break;
             rawCtx.save();
-            rawCtx.font = `bold ${style.chordSymbolSize}px sans-serif`;
+            const chordFont = `bold ${style.chordSymbolSize}px sans-serif`;
+            rawCtx.font = chordFont;
             rawCtx.fillStyle = "#333";
-            rawCtx.fillText(annotation.text, chordX, y + 10);
+            const textMetrics = rawCtx.measureText(annotation.text);
+            const textX = box.x;
+            const textY = y + 10;
+            rawCtx.fillText(annotation.text, textX, textY);
             rawCtx.restore();
+            annotationBoxes.push({
+              kind: "chord-symbol",
+              x: textX,
+              y: textY - style.chordSymbolSize,
+              width: textMetrics.width,
+              height: style.chordSymbolSize + 4,
+              partIndex,
+              measureIndex,
+              noteEventId: annotation.noteEventId,
+              text: annotation.text,
+            });
             break;
           }
           case "lyric": {
@@ -488,16 +514,31 @@ export function renderMeasure(
             const box = noteBoxes.find((nb) => nb.id === annotation.noteEventId);
             if (box) {
               rawCtx.save();
-              rawCtx.font = `italic ${style.lyricSize}px ${style.fontFamily}`;
+              const lyricFont = `italic ${style.lyricSize}px ${style.fontFamily}`;
+              rawCtx.font = lyricFont;
               rawCtx.fillStyle = "#555";
               rawCtx.textAlign = "center";
               const lyricText =
                 annotation.syllableType === "begin" || annotation.syllableType === "middle"
                   ? annotation.text + "-"
                   : annotation.text;
-              rawCtx.fillText(lyricText, box.x + box.width / 2, y + 90);
+              const lyricX = box.x + box.width / 2;
+              const lyricY = y + 105;
+              const lyricMetrics = rawCtx.measureText(lyricText);
+              rawCtx.fillText(lyricText, lyricX, lyricY);
               rawCtx.textAlign = "start";
               rawCtx.restore();
+              annotationBoxes.push({
+                kind: "lyric",
+                x: lyricX - lyricMetrics.width / 2,
+                y: lyricY - style.lyricSize,
+                width: lyricMetrics.width,
+                height: style.lyricSize + 4,
+                partIndex,
+                measureIndex,
+                noteEventId: annotation.noteEventId,
+                text: annotation.text,
+              });
             }
             break;
           }
@@ -611,6 +652,7 @@ export function renderMeasure(
 
   return {
     noteBoxes,
+    annotationBoxes,
     staveY: y,
     staveX: x,
     width,
@@ -694,7 +736,7 @@ export function renderMultiMeasureRest(
   mmr.setContext(ctx.context as unknown as import("vexflow").RenderContext);
   mmr.draw();
 
-  return { noteBoxes: [], staveY: y, staveX: x, width };
+  return { noteBoxes: [], annotationBoxes: [], staveY: y, staveX: x, width };
 }
 
 export function clearCanvas(ctx: RenderContext, canvas: HTMLCanvasElement): void {

@@ -197,10 +197,21 @@ describe("Undo/Redo for each command type", () => {
     return { history, after, before };
   });
 
-  testUndoResto("SetChordSymbol", (snap) => {
+  testUndoResto("SetChordSymbol", (_snap) => {
     const history = new CommandHistory();
+    // Need a snapshot with at least one note for chord symbol attachment
+    const note = factory.note("C", 4, factory.dur("quarter"));
+    const snap: EditorSnapshot = {
+      score: factory.score("Test", "", [
+        factory.part("Piano", "Pno.", [
+          factory.measure([factory.voice([note])]),
+          factory.measure([factory.voice([])]),
+        ]),
+      ]),
+      inputState: defaultInputState(),
+    };
     const before = structuredClone(snap);
-    const after = history.execute(new SetChordSymbol("Cmaj7", 0), snap);
+    const after = history.execute(new SetChordSymbol("Cmaj7", 0, note.id), snap);
     return { history, after, before };
   });
 

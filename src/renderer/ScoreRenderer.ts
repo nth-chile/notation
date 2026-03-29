@@ -1,6 +1,6 @@
 import type { Score, NoteEventId } from "../model";
 import { TICKS_PER_QUARTER } from "../model/duration";
-import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, clearCanvas, type RenderContext, type NoteBox } from "./vexBridge";
+import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, clearCanvas, type RenderContext, type NoteBox, type AnnotationBox } from "./vexBridge";
 import { renderTabMeasure } from "./TabRenderer";
 import { computeLayout, totalContentHeight, totalPageCount, partStaveCount, DEFAULT_LAYOUT, type LayoutConfig } from "./SystemLayout";
 import type { CursorPosition } from "../input/InputState";
@@ -59,6 +59,7 @@ function detectRestRuns(
 
 export interface ScoreRenderResult {
   noteBoxes: Map<NoteEventId, NoteBox>;
+  annotationBoxes: AnnotationBox[];
   measurePositions: { partIndex: number; measureIndex: number; x: number; y: number; width: number; height: number }[];
   contentHeight: number;
 }
@@ -71,9 +72,10 @@ const TOP_MARGIN = DEFAULT_LAYOUT.topMargin;
 const MEASURES_PER_LINE = DEFAULT_LAYOUT.measuresPerLine;
 
 function titleHeight(score: Score): number {
-  if (!useEditorStore.getState().showTitle) return 0;
+  const state = useEditorStore.getState();
+  if (!state.showTitle) return 0;
   const hasTitle = !!score.title;
-  const hasComposer = !!score.composer;
+  const hasComposer = state.showComposer && !!score.composer;
   return (hasTitle ? 48 : 0) + (hasComposer ? 22 : 0) + (hasTitle || hasComposer ? 16 : 0);
 }
 
@@ -141,13 +143,16 @@ export function renderScore(
   };
   // Add space for title/composer above the first system
   const hasTitle = !!score.title;
-  const hasComposer = !!score.composer;
-  const titleHeight = (hasTitle ? 48 : 0) + (hasComposer ? 22 : 0) + (hasTitle || hasComposer ? 16 : 0);
-  config = { ...config, topMargin: config.topMargin + titleHeight };
+  const showTitle = useEditorStore.getState().showTitle;
+  const showComposer = useEditorStore.getState().showComposer;
+  const hasComposer = showComposer && !!score.composer;
+  const tHeight = showTitle ? (hasTitle ? 48 : 0) + (hasComposer ? 22 : 0) + (hasTitle || hasComposer ? 16 : 0) : 0;
+  config = { ...config, topMargin: config.topMargin + tHeight };
 
   const systems = computeLayout(filteredScore, config);
 
   const allNoteBoxes = new Map<NoteEventId, NoteBox>();
+  const allAnnotationBoxes: AnnotationBox[] = [];
   const measurePositions: ScoreRenderResult["measurePositions"] = [];
 
   const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
@@ -158,7 +163,7 @@ export function renderScore(
     rawCtx.save();
     for (let p = 0; p < pages; p++) {
       const pageTop = p * config.pageHeight;
-      // White page background
+      // Soft off-white page background (less contrast against dark canvas)
       rawCtx.fillStyle = "#ffffff";
       const pageX = pageLayoutEnabled ? (effectiveWidth - config.pageWidth) / 2 : 0;
       rawCtx.fillRect(Math.max(pageX, 0), pageTop, config.pageWidth, config.pageHeight);
@@ -178,28 +183,45 @@ export function renderScore(
     rawCtx.restore();
   }
 
-  // Render title and composer (only on first page)
-  const showTitle = useEditorStore.getState().showTitle;
-  if (showTitle && rawCtx.save && (hasTitle || hasComposer)) {
-    rawCtx.save();
-    rawCtx.textAlign = "center";
+  // Render title and composer using the native canvas context (VexFlow's wrapper doesn't support textAlign)
+  const editorState = useEditorStore.getState();
+  const editingTitle = editorState.editingTitle;
+  const editingComposer = editorState.editingComposer;
+  const titlePositions: { title?: { x: number; y: number; width: number; height: number }; composer?: { x: number; y: number; width: number; height: number } } = {};
+  const nativeCtx = canvas.getContext("2d");
+  if (showTitle && nativeCtx && (hasTitle || hasComposer)) {
     const centerX = pageLayoutEnabled ? config.pageWidth / 2 : effectiveWidth / 2;
     let y = DEFAULT_LAYOUT.topMargin;
 
     if (hasTitle) {
-      rawCtx.font = "bold 32px 'Times New Roman', 'Georgia', serif";
-      rawCtx.fillStyle = getComputedStyle(rawCtx.canvas).getPropertyValue("color") || "#000";
-      rawCtx.fillText(score.title, centerX, y);
-      y += 38;
+      const titleFont = "bold 28px system-ui, -apple-system, 'Segoe UI', sans-serif";
+      nativeCtx.font = titleFont;
+      nativeCtx.fillStyle = "#000";
+      nativeCtx.textAlign = "center";
+      const tm = nativeCtx.measureText(score.title);
+      const tw = Math.max(tm.width, 200);
+      titlePositions.title = { x: centerX - tw / 2, y: y - tm.actualBoundingBoxAscent, width: tw, height: tm.actualBoundingBoxAscent + tm.actualBoundingBoxDescent };
+      if (!editingTitle) {
+        nativeCtx.fillText(score.title, centerX, y);
+      }
+      nativeCtx.textAlign = "start";
+      y += 34;
     }
     if (hasComposer) {
-      rawCtx.font = "italic 15px 'Times New Roman', 'Georgia', serif";
-      rawCtx.fillStyle = getComputedStyle(rawCtx.canvas).getPropertyValue("color") || "#555";
-      rawCtx.fillText(score.composer, centerX, y);
+      const composerFont = "italic 15px system-ui, -apple-system, 'Segoe UI', sans-serif";
+      nativeCtx.font = composerFont;
+      nativeCtx.fillStyle = "#555";
+      nativeCtx.textAlign = "center";
+      const cm = nativeCtx.measureText(score.composer);
+      const cw = Math.max(cm.width, 150);
+      titlePositions.composer = { x: centerX - cw / 2, y: y - cm.actualBoundingBoxAscent, width: cw, height: cm.actualBoundingBoxAscent + cm.actualBoundingBoxDescent };
+      if (!editingComposer) {
+        nativeCtx.fillText(score.composer, centerX, y);
+      }
+      nativeCtx.textAlign = "start";
     }
-    rawCtx.textAlign = "start";
-    rawCtx.restore();
   }
+  useEditorStore.getState().setTitlePositions(titlePositions);
 
   for (const system of systems) {
     const isFirstSystem = system.lineIndex === 0;
@@ -335,6 +357,11 @@ export function renderScore(
           for (const nb of result.noteBoxes) {
             allNoteBoxes.set(nb.id, nb);
           }
+          if ('annotationBoxes' in result) {
+            for (const ab of (result as { annotationBoxes: AnnotationBox[] }).annotationBoxes) {
+              allAnnotationBoxes.push(ab);
+            }
+          }
 
           // In songwriter mode, render chord symbols larger above the staff
           if (isSongwriterMode && si === 0) {
@@ -411,7 +438,7 @@ export function renderScore(
 
   const contentHeight = totalContentHeight(score, config);
 
-  return { noteBoxes: allNoteBoxes, measurePositions, contentHeight };
+  return { noteBoxes: allNoteBoxes, annotationBoxes: allAnnotationBoxes, measurePositions, contentHeight };
 }
 
 function drawCursor(

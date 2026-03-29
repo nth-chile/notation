@@ -36,6 +36,15 @@ export function HistoryModal() {
     return () => window.removeEventListener("notation:show-history", handler);
   }, [open]);
 
+  useEffect(() => {
+    if (!visible) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); close(); }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [visible, close]);
+
   const restore = useCallback(
     (snap: Snapshot) => {
       try {

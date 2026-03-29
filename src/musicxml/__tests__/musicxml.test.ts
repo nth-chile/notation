@@ -129,10 +129,11 @@ describe("MusicXML Export", () => {
   });
 
   it("should export chord symbols as harmony", () => {
-    const v = factory.voice([factory.rest(factory.dur("whole"))]);
+    const rest = factory.rest(factory.dur("whole"));
+    const v = factory.voice([rest]);
     const m = factory.measure([v], {
       annotations: [
-        { kind: "chord-symbol", text: "Cmaj7", beatOffset: 0 },
+        { kind: "chord-symbol", text: "Cmaj7", beatOffset: 0, noteEventId: rest.id },
       ],
     });
     const p = factory.part("Test", "T", [m]);
@@ -599,7 +600,7 @@ describe("MusicXML Round-trip", () => {
     const v = factory.voice([n]);
     const m = factory.measure([v], {
       annotations: [
-        { kind: "chord-symbol", text: "Dm7", beatOffset: 0 },
+        { kind: "chord-symbol", text: "Dm7", beatOffset: 0, noteEventId: n.id },
       ],
     });
     const p = factory.part("Lead", "Ld", [m]);

@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import type { NotationPlugin, PluginAPI } from "../PluginAPI";
 import { useEditorStore } from "../../state";
+import { useHotkey } from "../../hooks/useHotkey";
 import { TICKS_PER_QUARTER } from "../../model/duration";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -17,6 +18,7 @@ function TransportPanel() {
   const stopPlayback = useEditorStore((s) => s.stopPlayback);
   const setTempo = useEditorStore((s) => s.setTempo);
   const toggleMetronome = useEditorStore((s) => s.toggleMetronome);
+  const hotkey = useHotkey();
 
   const [tempoInput, setTempoInput] = useState<string | null>(null);
 
@@ -35,12 +37,12 @@ function TransportPanel() {
   const positionDisplay = formatPosition(playbackTick, score);
 
   return (
-    <div className="flex items-center gap-2 px-4 py-1.5 border-b bg-secondary/50 shrink-0">
+    <>
       <div className="flex items-center gap-1">
-        <TooltipButton variant="ghost" size="icon" onClick={handlePlayPause} tooltip={isPlaying ? "Pause (Space)" : "Play (Space)"}>
+        <TooltipButton variant="ghost" size="icon" onClick={handlePlayPause} tooltip={isPlaying ? `Pause (${hotkey("play-pause")})` : `Play (${hotkey("play-pause")})`}>
           {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
         </TooltipButton>
-        <TooltipButton variant="ghost" size="icon" onClick={() => stopPlayback()} tooltip="Stop">
+        <TooltipButton variant="ghost" size="icon" onClick={() => stopPlayback()} tooltip={`Stop (${hotkey("stop-playback")})`}>
           <Square className="h-3.5 w-3.5" />
         </TooltipButton>
       </div>
@@ -66,7 +68,7 @@ function TransportPanel() {
         variant={metronomeOn ? "secondary" : "ghost"}
         size="icon"
         onClick={toggleMetronome}
-        tooltip="Metronome"
+        tooltip={`Metronome (${hotkey("toggle-metronome")})`}
       >
         <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M5 19.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5L15 5H9L5 19.5Z" />
@@ -82,7 +84,7 @@ function TransportPanel() {
         <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Pos</span>
         <span className="text-sm font-semibold font-mono min-w-[48px]">{positionDisplay}</span>
       </div>
-    </div>
+    </>
   );
 }
 

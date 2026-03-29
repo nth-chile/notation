@@ -34,6 +34,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.7.0",
     "nanoid": "^5.1.5",
+    "radix-ui": "^1.4.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "smplr": "^0.20.0",

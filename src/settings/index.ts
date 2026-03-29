@@ -14,4 +14,5 @@ export {
   formatBinding,
   matchesBinding,
   eventToBinding,
+  getBindingLabel,
 } from "./keybindings";

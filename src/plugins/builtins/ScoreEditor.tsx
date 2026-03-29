@@ -1,16 +1,17 @@
 import type { NotationPlugin, PluginAPI } from "../PluginAPI";
 import { useEditorStore } from "../../state";
+import { useHotkey } from "../../hooks/useHotkey";
 import type { DurationType, Accidental } from "../../model";
 import { Separator } from "@/components/ui/separator";
 import { TooltipButton } from "@/components/ui/tooltip-button";
 
-const DURATIONS: { type: DurationType; label: string; key: string }[] = [
-  { type: "whole", label: "W", key: "1" },
-  { type: "half", label: "H", key: "2" },
-  { type: "quarter", label: "Q", key: "3" },
-  { type: "eighth", label: "8", key: "4" },
-  { type: "16th", label: "16", key: "5" },
-  { type: "32nd", label: "32", key: "6" },
+const DURATIONS: { type: DurationType; label: string; actionId: string }[] = [
+  { type: "whole", label: "W", actionId: "duration:whole" },
+  { type: "half", label: "H", actionId: "duration:half" },
+  { type: "quarter", label: "Q", actionId: "duration:quarter" },
+  { type: "eighth", label: "8", actionId: "duration:eighth" },
+  { type: "16th", label: "16", actionId: "duration:16th" },
+  { type: "32nd", label: "32", actionId: "duration:32nd" },
 ];
 
 const ACCIDENTALS: { acc: Accidental; label: string }[] = [
@@ -24,9 +25,10 @@ function NoteInputPanel() {
   const setDuration = useEditorStore((s) => s.setDuration);
   const toggleDot = useEditorStore((s) => s.toggleDot);
   const setAccidental = useEditorStore((s) => s.setAccidental);
+  const hotkey = useHotkey();
 
   return (
-    <div className="flex items-center gap-2 px-4 py-1.5 border-b bg-secondary/50 shrink-0">
+    <>
       <div className="flex items-center gap-1">
         <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Duration</span>
         {DURATIONS.map((d) => (
@@ -35,7 +37,7 @@ function NoteInputPanel() {
             variant={inputState.duration.type === d.type ? "secondary" : "ghost"}
             size="icon"
             onClick={() => setDuration(d.type)}
-            tooltip={`${d.type} (${d.key})`}
+            tooltip={`${d.type} (${hotkey(d.actionId)})`}
             className="text-base"
           >
             {d.label}
@@ -45,7 +47,7 @@ function NoteInputPanel() {
           variant={inputState.duration.dots > 0 ? "secondary" : "ghost"}
           size="icon"
           onClick={toggleDot}
-          tooltip="Dot (.)"
+          tooltip={`Dot (${hotkey("toggle-dot")})`}
           className="text-base"
         >
           {"\u2022"}{inputState.duration.dots > 0 ? inputState.duration.dots : ""}
@@ -62,7 +64,7 @@ function NoteInputPanel() {
             variant={inputState.accidental === a.acc && a.acc !== "natural" ? "secondary" : "ghost"}
             size="icon"
             onClick={() => setAccidental(a.acc)}
-            tooltip={a.acc}
+            tooltip={hotkey(`accidental:${a.acc}`) ? `${a.acc} (${hotkey(`accidental:${a.acc}`)})` : a.acc}
             className="text-base"
           >
             {a.label}
@@ -76,7 +78,7 @@ function NoteInputPanel() {
         <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Octave</span>
         <span className="text-sm font-semibold min-w-[20px] text-center">{inputState.octave}</span>
       </div>
-    </div>
+    </>
   );
 }
 

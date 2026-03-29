@@ -2,7 +2,7 @@ export interface Stylesheet {
   staffSize: number;        // pixels per staff space (default 8)
   spacingFactor: number;    // multiplier for proportional spacing (default 1.0)
   chordSymbolSize: number;  // font size for chord symbols (default 14)
-  lyricSize: number;        // font size for lyrics (default 12)
+  lyricSize: number;        // font size for lyrics (default 14)
   measureMinWidth: number;  // minimum measure width (default 150)
   measureMaxWidth: number;  // maximum measure width (default 400)
   systemMarginLeft: number; // left margin (default 20)
@@ -16,7 +16,7 @@ export function defaultStylesheet(): Stylesheet {
     staffSize: 8,
     spacingFactor: 1.0,
     chordSymbolSize: 14,
-    lyricSize: 12,
+    lyricSize: 14,
     measureMinWidth: 150,
     measureMaxWidth: 400,
     systemMarginLeft: 20,

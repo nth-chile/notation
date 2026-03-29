@@ -3,8 +3,7 @@ import { useEditorStore } from "../state";
 import type { CursorPosition } from "../input/InputState";
 import type { Selection } from "../plugins/PluginAPI";
 
-// Title layout constants — must match ScoreRenderer.ts
-const BASE_TOP_MARGIN = 40;
+const HIT_PADDING = 8; // extra pixels around text for easier clicking
 
 interface Props {
   width: number;
@@ -14,15 +13,21 @@ interface Props {
 export function ScoreOverlay({ width, height }: Props) {
   const score = useEditorStore((s) => s.score);
   const noteBoxes = useEditorStore((s) => s.noteBoxes);
+  const annotationBoxes = useEditorStore((s) => s.annotationBoxes);
   const measurePositions = useEditorStore((s) => s.measurePositions);
+  const titlePositions = useEditorStore((s) => s.titlePositions);
+  const editingTitle = useEditorStore((s) => s.editingTitle);
+  const editingComposer = useEditorStore((s) => s.editingComposer);
+  const setEditingTitle = useEditorStore((s) => s.setEditingTitle);
+  const setEditingComposer = useEditorStore((s) => s.setEditingComposer);
   const setCursorDirect = useEditorStore((s) => s.setCursorDirect);
   const setSelection = useEditorStore((s) => s.setSelection);
+  const editAnnotation = useEditorStore((s) => s.editAnnotation);
   const setTitle = useEditorStore((s) => s.setTitle);
   const setComposer = useEditorStore((s) => s.setComposer);
   const showTitle = useEditorStore((s) => s.showTitle);
+  const showComposer = useEditorStore((s) => s.showComposer);
 
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [editingComposer, setEditingComposer] = useState(false);
   const [titleValue, setTitleValue] = useState("");
   const [composerValue, setComposerValue] = useState("");
   const titleRef = useRef<HTMLInputElement>(null);
@@ -38,12 +43,8 @@ export function ScoreOverlay({ width, height }: Props) {
     if (editingComposer) composerRef.current?.focus();
   }, [editingComposer]);
 
-  const hasTitle = !!score.title;
-  const hasComposer = !!score.composer;
-  const titleY = BASE_TOP_MARGIN - 10;
-  const titleHeight = 38;
-  const composerY = titleY + (hasTitle ? titleHeight : 0);
-  const composerHeight = 22;
+  const titleRect = titlePositions.title;
+  const composerRect = titlePositions.composer;
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -51,9 +52,10 @@ export function ScoreOverlay({ width, height }: Props) {
     const y = e.clientY - rect.top + e.currentTarget.scrollTop;
 
     // Title click-to-edit
-    if (showTitle && y >= titleY - 10 && y <= titleY + titleHeight) {
-      const centerX = width / 2;
-      if (Math.abs(x - centerX) < 200) {
+    if (showTitle && titleRect) {
+      const r = titleRect;
+      if (x >= r.x - HIT_PADDING && x <= r.x + r.width + HIT_PADDING &&
+          y >= r.y - HIT_PADDING && y <= r.y + r.height + HIT_PADDING) {
         setTitleValue(score.title);
         setEditingTitle(true);
         return;
@@ -61,11 +63,21 @@ export function ScoreOverlay({ width, height }: Props) {
     }
 
     // Composer click-to-edit
-    if (showTitle && y >= composerY && y <= composerY + composerHeight) {
-      const centerX = width / 2;
-      if (Math.abs(x - centerX) < 150) {
+    if (showTitle && showComposer && composerRect) {
+      const r = composerRect;
+      if (x >= r.x - HIT_PADDING && x <= r.x + r.width + HIT_PADDING &&
+          y >= r.y - HIT_PADDING && y <= r.y + r.height + HIT_PADDING) {
         setComposerValue(score.composer);
         setEditingComposer(true);
+        return;
+      }
+    }
+
+    // Click on annotation (chord symbol or lyric) — edit it
+    for (const ab of annotationBoxes) {
+      if (x >= ab.x - HIT_PADDING && x <= ab.x + ab.width + HIT_PADDING &&
+          y >= ab.y - HIT_PADDING && y <= ab.y + ab.height + HIT_PADDING) {
+        editAnnotation(ab);
         return;
       }
     }
@@ -118,17 +130,17 @@ export function ScoreOverlay({ width, height }: Props) {
         return;
       }
     }
-  }, [noteBoxes, measurePositions, score, width, hasTitle, hasComposer, titleY, composerY, setCursorDirect, setSelection, showTitle]);
+  }, [noteBoxes, annotationBoxes, measurePositions, score, width, titleRect, composerRect, setCursorDirect, setSelection, editAnnotation, setEditingTitle, setEditingComposer, showTitle, showComposer]);
 
   const commitTitle = useCallback(() => {
     setTitle(titleValue);
     setEditingTitle(false);
-  }, [titleValue, setTitle]);
+  }, [titleValue, setTitle, setEditingTitle]);
 
   const commitComposer = useCallback(() => {
     setComposer(composerValue);
     setEditingComposer(false);
-  }, [composerValue, setComposer]);
+  }, [composerValue, setComposer, setEditingComposer]);
 
   return (
     <div
@@ -142,7 +154,7 @@ export function ScoreOverlay({ width, height }: Props) {
         cursor: "default",
       }}
     >
-      {showTitle && editingTitle && (
+      {showTitle && editingTitle && titleRect && (
         <input
           ref={titleRef}
           value={titleValue}
@@ -154,22 +166,23 @@ export function ScoreOverlay({ width, height }: Props) {
           }}
           style={{
             position: "absolute",
-            top: titleY - 14,
-            left: width / 2 - 200,
-            width: 400,
+            top: titleRect.y - 6,
+            left: titleRect.x - 16,
+            width: titleRect.width + 32,
             textAlign: "center",
-            font: "bold 32px 'Times New Roman', 'Georgia', serif",
-            color: "#fff",
-            background: "rgba(255,255,255,0.1)",
-            border: "1px solid rgba(255,255,255,0.3)",
+            font: "bold 28px system-ui, -apple-system, 'Segoe UI', sans-serif",
+            color: "#000",
+            background: "transparent",
+            border: "1px solid rgba(0,0,0,0.2)",
             borderRadius: 4,
             outline: "none",
-            padding: "2px 8px",
+            padding: "4px 16px",
+            boxSizing: "border-box" as const,
           }}
         />
       )}
 
-      {showTitle && editingComposer && (
+      {showTitle && showComposer && editingComposer && composerRect && (
         <input
           ref={composerRef}
           value={composerValue}
@@ -181,17 +194,18 @@ export function ScoreOverlay({ width, height }: Props) {
           }}
           style={{
             position: "absolute",
-            top: composerY - 6,
-            left: width / 2 - 150,
-            width: 300,
+            top: composerRect.y - 6,
+            left: composerRect.x - 16,
+            width: composerRect.width + 32,
             textAlign: "center",
-            font: "italic 15px 'Times New Roman', 'Georgia', serif",
-            color: "#fff",
-            background: "rgba(255,255,255,0.1)",
-            border: "1px solid rgba(255,255,255,0.3)",
+            font: "italic 15px system-ui, -apple-system, 'Segoe UI', sans-serif",
+            color: "#000",
+            background: "transparent",
+            border: "1px solid rgba(0,0,0,0.2)",
             borderRadius: 4,
             outline: "none",
-            padding: "2px 8px",
+            padding: "4px 16px",
+            boxSizing: "border-box" as const,
           }}
         />
       )}
