@@ -19,6 +19,8 @@ export interface SystemLine {
   staves: StaveLayout[];
   y: number;
   height: number;
+  /** Page number (0-based). Only meaningful when pageBreaks is true. */
+  page: number;
 }
 
 export interface LayoutConfig {
@@ -37,6 +39,12 @@ export interface LayoutConfig {
   availableWidth: number;
   /** Stylesheet for adaptive width calculation */
   stylesheet?: Partial<Stylesheet>;
+  /** When true, insert page breaks so systems don't overflow pages */
+  pageBreaks: boolean;
+  /** Page width in CSS pixels (default: 816 = 8.5in at 96dpi) */
+  pageWidth: number;
+  /** Page height in CSS pixels (default: 1056 = 11in at 96dpi) */
+  pageHeight: number;
 }
 
 export const DEFAULT_LAYOUT: LayoutConfig = {
@@ -51,6 +59,9 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
   bottomMargin: 60,
   adaptiveWidths: false,
   availableWidth: 1000,
+  pageBreaks: false,
+  pageWidth: 816, // 8.5in at 96dpi
+  pageHeight: 1056, // 11in at 96dpi
 };
 
 /**
@@ -182,12 +193,28 @@ export function computeLayout(
       })();
 
   const systems: SystemLine[] = [];
+  const usePages = config.pageBreaks;
+  let currentPage = 0;
+  // Track y position within the current page (relative to page top)
+  let pageY = config.topMargin;
+  // Track the absolute y position across all pages
+  let absoluteY = config.topMargin;
+  const pageContentHeight = usePages ? config.pageHeight - config.bottomMargin : Infinity;
 
   for (let li = 0; li < lineBreaks.length; li++) {
     const { start: startMeasure, end: endMeasure, widths: rawWidths } = lineBreaks[li];
     const isFirstSystem = li === 0;
 
-    const lineY = config.topMargin + li * (sysHeight + config.staffSpacing);
+    const systemH = sysHeight;
+
+    // Page break logic: if this system would overflow, move to next page
+    if (usePages && li > 0 && pageY + systemH > pageContentHeight) {
+      currentPage++;
+      pageY = config.topMargin;
+      absoluteY = currentPage * config.pageHeight + config.topMargin;
+    }
+
+    const lineY = absoluteY;
     const labelOffset = isFirstSystem ? config.partLabelWidth : 0;
 
     // Distribute remaining space proportionally for adaptive mode
@@ -227,13 +254,18 @@ export function computeLayout(
       }
     }
 
+    const systemHeight = yOffset - lineY;
+    pageY += systemHeight + config.staffSpacing;
+    absoluteY += systemHeight + config.staffSpacing;
+
     systems.push({
       lineIndex: li,
       startMeasure,
       endMeasure,
       staves,
       y: lineY,
-      height: yOffset - lineY,
+      height: systemHeight,
+      page: currentPage,
     });
   }
 
@@ -249,8 +281,13 @@ export function totalContentHeight(
 ): number {
   if (score.parts.length === 0) return config.topMargin + config.bottomMargin;
 
-  // Use computeLayout to determine the actual number of lines for adaptive mode
   const systems = computeLayout(score, config);
+
+  if (config.pageBreaks && systems.length > 0) {
+    const totalPages = systems[systems.length - 1].page + 1;
+    return totalPages * config.pageHeight;
+  }
+
   const lineCount = systems.length;
   const sysHeight = systemHeight(score, config);
   return (
@@ -259,4 +296,17 @@ export function totalContentHeight(
     (lineCount > 0 ? (lineCount - 1) * config.staffSpacing : 0) +
     config.bottomMargin
   );
+}
+
+/**
+ * Return the total number of pages when page breaks are enabled.
+ */
+export function totalPageCount(
+  score: Score,
+  config: LayoutConfig = DEFAULT_LAYOUT
+): number {
+  if (!config.pageBreaks) return 1;
+  const systems = computeLayout(score, config);
+  if (systems.length === 0) return 1;
+  return systems[systems.length - 1].page + 1;
 }

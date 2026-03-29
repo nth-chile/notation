@@ -46,6 +46,16 @@ export function KeyboardShortcuts() {
   const stopPlayback = useEditorStore((s) => s.stopPlayback);
   const moveCursorPart = useEditorStore((s) => s.moveCursorPart);
   const setViewMode = useEditorStore((s) => s.setViewMode);
+  const inputMode = useEditorStore((s) => s.inputState.mode);
+  const setInputMode = useEditorStore((s) => s.setInputMode);
+  const toggleArticulation = useEditorStore((s) => s.toggleArticulation);
+  const selection = useEditorStore((s) => s.selection);
+  const setSelection = useEditorStore((s) => s.setSelection);
+  const extendSelection = useEditorStore((s) => s.extendSelection);
+  const deleteSelectedMeasures = useEditorStore((s) => s.deleteSelectedMeasures);
+  const copySelection = useEditorStore((s) => s.copySelection);
+  const pasteAtCursor = useEditorStore((s) => s.pasteAtCursor);
+  const clipboardMeasures = useEditorStore((s) => s.clipboardMeasures);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -57,6 +67,20 @@ export function KeyboardShortcuts() {
 
       const key = e.key.toLowerCase();
 
+      // Escape: toggle between note entry and select mode
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setInputMode(inputMode === "select" ? "note" : "select");
+        return;
+      }
+
+      // N: enter note mode explicitly
+      if (key === "n" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setInputMode("note");
+        return;
+      }
+
       // Undo/Redo
       if ((e.metaKey || e.ctrlKey) && key === "z") {
         e.preventDefault();
@@ -64,6 +88,38 @@ export function KeyboardShortcuts() {
           redo();
         } else {
           undo();
+        }
+        return;
+      }
+
+      // Copy selection: Ctrl/Cmd+C
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && key === "c") {
+        if (selection) {
+          e.preventDefault();
+          copySelection();
+          return;
+        }
+        // If no selection, let the browser handle native copy
+        return;
+      }
+
+      // Paste clipboard measures: Ctrl/Cmd+V
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && key === "v") {
+        if (clipboardMeasures) {
+          e.preventDefault();
+          pasteAtCursor();
+          return;
+        }
+        return;
+      }
+
+      // Cut selection: Ctrl/Cmd+X
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && key === "x") {
+        if (selection) {
+          e.preventDefault();
+          copySelection();
+          deleteSelectedMeasures();
+          return;
         }
         return;
       }
@@ -125,6 +181,15 @@ export function KeyboardShortcuts() {
         return;
       }
 
+      // Articulations: Shift+period=staccato, Shift+comma=accent, Shift+minus=tenuto, Shift+u=fermata
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        if (e.key === ">") { e.preventDefault(); toggleArticulation("accent"); return; }
+        if (e.key === "<") { e.preventDefault(); toggleArticulation("staccato"); return; }
+        if (key === "t") { e.preventDefault(); toggleArticulation("tenuto"); return; }
+        if (key === "u") { e.preventDefault(); toggleArticulation("fermata"); return; }
+        if (e.key === "^") { e.preventDefault(); toggleArticulation("marcato"); return; }
+      }
+
       // Note input (also handles ChangePitch when cursor is on existing note)
       if (!e.metaKey && !e.ctrlKey && NOTE_KEYS[key]) {
         e.preventDefault();
@@ -165,14 +230,35 @@ export function KeyboardShortcuts() {
         return;
       }
 
-      // Cursor movement
+      // Shift+arrow: extend selection by measure
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && key === "arrowleft") {
+        e.preventDefault();
+        extendSelection("left");
+        return;
+      }
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && key === "arrowright") {
+        e.preventDefault();
+        extendSelection("right");
+        return;
+      }
+
+      // Delete/Backspace with selection: delete selected measures
+      if (selection && (key === "delete" || key === "backspace") && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        deleteSelectedMeasures();
+        return;
+      }
+
+      // Cursor movement (clears selection)
       if (key === "arrowleft") {
         e.preventDefault();
+        if (selection) setSelection(null);
         moveCursor("left");
         return;
       }
       if (key === "arrowright") {
         e.preventDefault();
+        if (selection) setSelection(null);
         moveCursor("right");
         return;
       }
@@ -234,6 +320,16 @@ export function KeyboardShortcuts() {
     stopPlayback,
     moveCursorPart,
     setViewMode,
+    selection,
+    copySelection,
+    pasteAtCursor,
+    clipboardMeasures,
+    deleteSelectedMeasures,
+    inputMode,
+    setInputMode,
+    toggleArticulation,
+    setSelection,
+    extendSelection,
   ]);
 
   return null;

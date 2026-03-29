@@ -1,6 +1,8 @@
 import type { NotationPlugin, PluginAPI } from "../PluginAPI";
 import { useEditorStore } from "../../state";
 import type { DurationType, Accidental } from "../../model";
+import { Separator } from "@/components/ui/separator";
+import { TooltipButton } from "@/components/ui/tooltip-button";
 
 const DURATIONS: { type: DurationType; label: string; key: string }[] = [
   { type: "whole", label: "W", key: "1" },
@@ -24,130 +26,70 @@ function NoteInputPanel() {
   const setAccidental = useEditorStore((s) => s.setAccidental);
 
   return (
-    <div style={styles.bar}>
-      <div style={styles.group}>
-        <span style={styles.label}>Duration</span>
+    <div className="flex items-center gap-2 px-4 py-1.5 border-b bg-secondary/50 shrink-0">
+      <div className="flex items-center gap-1">
+        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Duration</span>
         {DURATIONS.map((d) => (
-          <button
+          <TooltipButton
             key={d.type}
+            variant={inputState.duration.type === d.type ? "secondary" : "ghost"}
+            size="icon"
             onClick={() => setDuration(d.type)}
-            style={{
-              ...styles.button,
-              ...(inputState.duration.type === d.type ? styles.active : {}),
-            }}
-            title={`${d.type} (${d.key})`}
+            tooltip={`${d.type} (${d.key})`}
+            className="text-base"
           >
             {d.label}
-          </button>
+          </TooltipButton>
         ))}
-        <button
+        <TooltipButton
+          variant={inputState.duration.dots > 0 ? "secondary" : "ghost"}
+          size="icon"
           onClick={toggleDot}
-          style={{
-            ...styles.button,
-            ...(inputState.duration.dots > 0 ? styles.active : {}),
-          }}
-          title="Dot (.)"
+          tooltip="Dot (.)"
+          className="text-base"
         >
           {"\u2022"}{inputState.duration.dots > 0 ? inputState.duration.dots : ""}
-        </button>
+        </TooltipButton>
       </div>
 
-      <div style={styles.divider} />
+      <Separator orientation="vertical" />
 
-      <div style={styles.group}>
-        <span style={styles.label}>Accidental</span>
+      <div className="flex items-center gap-1">
+        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Accidental</span>
         {ACCIDENTALS.map((a) => (
-          <button
+          <TooltipButton
             key={a.acc}
+            variant={inputState.accidental === a.acc && a.acc !== "natural" ? "secondary" : "ghost"}
+            size="icon"
             onClick={() => setAccidental(a.acc)}
-            style={{
-              ...styles.button,
-              ...(inputState.accidental === a.acc && a.acc !== "natural" ? styles.active : {}),
-            }}
-            title={a.acc}
+            tooltip={a.acc}
+            className="text-base"
           >
             {a.label}
-          </button>
+          </TooltipButton>
         ))}
       </div>
 
-      <div style={styles.divider} />
+      <Separator orientation="vertical" />
 
-      <div style={styles.group}>
-        <span style={styles.label}>Octave</span>
-        <span style={styles.value}>{inputState.octave}</span>
+      <div className="flex items-center gap-1">
+        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Octave</span>
+        <span className="text-sm font-semibold min-w-[20px] text-center">{inputState.octave}</span>
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  bar: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 16px",
-    borderBottom: "1px solid #e2e8f0",
-    background: "#f1f5f9",
-    flexShrink: 0,
-  },
-  group: {
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-  },
-  label: {
-    fontSize: 11,
-    color: "#64748b",
-    marginRight: 4,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.05em",
-  },
-  value: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#1e293b",
-    minWidth: 20,
-    textAlign: "center" as const,
-  },
-  button: {
-    padding: "4px 8px",
-    fontSize: 16,
-    border: "1px solid #e2e8f0",
-    borderRadius: 4,
-    background: "#fff",
-    cursor: "pointer",
-    minWidth: 32,
-    height: 32,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  active: {
-    background: "#2563eb",
-    color: "#fff",
-    borderColor: "#2563eb",
-  },
-  divider: {
-    width: 1,
-    height: 24,
-    background: "#e2e8f0",
-    margin: "0 4px",
-  },
-};
 
 export const ScoreEditorPlugin: NotationPlugin = {
   id: "notation.score-editor",
   name: "Score Editor",
   version: "1.0.0",
   description: "Duration, accidental, octave, and dot note input controls",
-
   activate(api: PluginAPI) {
-    api.registerPanel("score-editor.note-input", {
-      title: "Note Input",
-      location: "toolbar",
-      component: () => <NoteInputPanel />,
-      defaultEnabled: true,
+    api.registerPanel("score-editor.note-input", { title: "Note Input", location: "toolbar", component: () => <NoteInputPanel />, defaultEnabled: true });
+
+    api.registerCommand("notation.file-history", "File History", () => {
+      import("../../components/HistoryModal").then((m) => m.showHistoryModal());
     });
   },
 };

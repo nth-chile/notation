@@ -24,12 +24,15 @@ const BASE_TICKS: Record<DurationType, number> = {
   "64th": 30,
 };
 
-export function durationToTicks(d: Duration): number {
+export function durationToTicks(d: Duration, tuplet?: { actual: number; normal: number }): number {
   let ticks = BASE_TICKS[d.type];
   let dotValue = ticks / 2;
   for (let i = 0; i < d.dots; i++) {
     ticks += dotValue;
     dotValue /= 2;
+  }
+  if (tuplet) {
+    ticks = Math.round((ticks * tuplet.normal) / tuplet.actual);
   }
   return ticks;
 }
@@ -52,6 +55,6 @@ export const DURATION_TYPES_ORDERED: DurationType[] = [
 /**
  * Calculates total ticks used by all events in a voice.
  */
-export function voiceTicksUsed(events: { duration: Duration }[]): number {
-  return events.reduce((sum, e) => sum + durationToTicks(e.duration), 0);
+export function voiceTicksUsed(events: { duration: Duration; tuplet?: { actual: number; normal: number } }[]): number {
+  return events.reduce((sum, e) => sum + durationToTicks(e.duration, e.tuplet), 0);
 }

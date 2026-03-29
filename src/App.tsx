@@ -6,25 +6,28 @@ import { TextInput } from "./components/TextInput";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { PluginPanel } from "./components/PluginPanel";
 import { CommandPalette } from "./components/CommandPalette";
+import { HistoryModal } from "./components/HistoryModal";
 import { PluginViewSwitcher } from "./components/PluginViewSwitcher";
 import { PanelLayout } from "./components/PanelLayout";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { useEditorStore } from "./state";
 import { saveScore } from "./fileio/save";
 import { loadScore } from "./fileio/load";
-import { useEffect, useCallback, useState, useRef, useSyncExternalStore } from "react";
+import { useEffect, useCallback, useState, useSyncExternalStore, useRef } from "react";
 import {
   PluginManager,
   TransposePlugin,
-  RetrogradePlugin,
-  AugmentPlugin,
   ChordAnalysisPlugin,
   ViewsPlugin,
-  MusicXMLPlugin,
+  ExportPlugin,
   PlaybackPlugin,
   AIChatPlugin,
   PartManagerPlugin,
   ScoreEditorPlugin,
+  ClipboardPlugin,
+  SoundFontPlugin,
 } from "./plugins";
+import { setGlobalPluginManager } from "./plugins/PluginManager";
 
 export function App() {
   const score = useEditorStore((s) => s.score);
@@ -43,7 +46,7 @@ export function App() {
         useEditorStore.getState().setScore(newScore);
       },
       getCursor: () => useEditorStore.getState().inputState.cursor,
-      getSelection: () => null, // Selection not yet implemented
+      getSelection: () => useEditorStore.getState().selection,
       showNotification: (message, type) => {
         console.log(`[${type ?? "info"}] ${message}`);
       },
@@ -56,14 +59,16 @@ export function App() {
     pm.registerAndActivate(PlaybackPlugin, true);
     pm.registerAndActivate(AIChatPlugin, true);
     pm.registerAndActivate(PartManagerPlugin, true);
-    pm.registerAndActivate(MusicXMLPlugin, true);
+    pm.registerAndActivate(ExportPlugin, true);
     pm.registerAndActivate(ScoreEditorPlugin, true);
 
     // Register and activate built-in transform plugins (enabled by default)
     pm.registerAndActivate(TransposePlugin, true);
-    pm.registerAndActivate(RetrogradePlugin, true);
-    pm.registerAndActivate(AugmentPlugin, true);
     pm.registerAndActivate(ChordAnalysisPlugin, true);
+    pm.registerAndActivate(ClipboardPlugin, true);
+    pm.registerAndActivate(SoundFontPlugin, true);
+
+    setGlobalPluginManager(pm);
   }
 
   const pm = pluginManagerRef.current;
@@ -86,23 +91,19 @@ export function App() {
 
   const handleSave = useCallback(async () => {
     try {
-      // Save exports a .notation JSON file (the working copy)
-      // Never overwrites the imported source file — always prompts for a new path
-      const path = await saveScore(score);
+      const path = await saveScore(score, filePath ?? undefined);
       setFilePath(path);
     } catch (err) {
       console.error("Save failed:", err);
     }
-  }, [score, setFilePath]);
+  }, [score, filePath, setFilePath]);
 
   const handleOpen = useCallback(async () => {
     try {
       const result = await loadScore();
-      if (result) {
-        // Store the original import path as metadata but don't overwrite source
-        setScore(result.score, result.path);
-        setFilePath(null); // working copy lives in localStorage, not the source file
-      }
+      if (!result) return;
+      setScore(result.score);
+      setFilePath(result.path);
     } catch (err) {
       console.error("Load failed:", err);
     }
@@ -128,7 +129,8 @@ export function App() {
   void pluginVersion;
 
   return (
-    <div style={styles.app}>
+    <TooltipProvider delayDuration={150} skipDelayDuration={100}>
+    <div className="flex flex-col h-screen w-screen overflow-hidden">
       <KeyboardShortcuts />
       <Toolbar
         onToggleSettings={() => setSettingsVisible((v) => !v)}
@@ -161,18 +163,9 @@ export function App() {
         pluginManager={pluginManagerRef.current}
       />
       <CommandPalette pluginManager={pluginManagerRef.current} />
+      <HistoryModal />
     </div>
+    </TooltipProvider>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  app: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100vh",
-    width: "100vw",
-    overflow: "hidden",
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  },
-};

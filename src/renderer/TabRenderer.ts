@@ -111,7 +111,9 @@ export function renderTabMeasure(
   y: number,
   width: number,
   showClef: boolean,
-  tuning: Tuning = STANDARD_TUNING
+  tuning: Tuning = STANDARD_TUNING,
+  partIndex = 0,
+  measureIndex = 0
 ): TabMeasureRenderResult {
   const stave = new TabStave(x, y, width);
   if (showClef) {
@@ -168,6 +170,10 @@ export function renderTabMeasure(
           y: bb.getY(),
           width: bb.getW(),
           height: bb.getH(),
+          partIndex,
+          measureIndex,
+          voiceIndex: 0,
+          eventIndex: idx,
         });
       }
     });

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { serialize as serializeScore, deserialize as deserializeScore } from "../serialization";
 import type {
   Score,
+  Measure,
   DurationType,
   Accidental,
   PitchClass,
@@ -18,6 +19,7 @@ import { durationToTicks as durationToTicksFn } from "../model/duration";
 import { factory } from "../model";
 import { defaultInputState, type InputState, type CursorPosition } from "../input/InputState";
 import { CommandHistory } from "../commands/CommandHistory";
+import type { Selection } from "../plugins/PluginAPI";
 import { InsertNote } from "../commands/InsertNote";
 import { InsertRest } from "../commands/InsertRest";
 import { DeleteNote } from "../commands/DeleteNote";
@@ -38,10 +40,11 @@ import { ReorderParts } from "../commands/ReorderParts";
 import { SetRepeatBarline } from "../commands/SetRepeatBarline";
 import { SetVolta } from "../commands/SetVolta";
 import { SetNavigationMark } from "../commands/SetNavigationMark";
+import { ToggleArticulation } from "../commands/ToggleArticulation";
 import type { NavigationMarkType } from "../commands/SetNavigationMark";
 import type { BarlineType, Volta } from "../model";
 import type { NoteBox } from "../renderer/vexBridge";
-import { newId, type VoiceId } from "../model/ids";
+import { newId, type VoiceId, type MeasureId } from "../model/ids";
 import * as Transport from "../playback/TonePlayback";
 
 const history = new CommandHistory();
@@ -53,8 +56,6 @@ interface EditorStore {
   // Document
   score: Score;
   filePath: string | null;
-  isDirty: boolean;
-  importSource: string | null;
   autoSaveStatus: string | null;
 
   // Input
@@ -62,6 +63,9 @@ interface EditorStore {
 
   // Rendering
   noteBoxes: Map<NoteEventId, NoteBox>;
+  measurePositions: { partIndex: number; measureIndex: number; x: number; y: number; width: number; height: number }[];
+  selection: Selection | null;
+  clipboardMeasures: Measure[] | null;
 
   // Actions
   insertNote(pitchClass: PitchClass): void;
@@ -73,13 +77,25 @@ interface EditorStore {
   moveCursor(direction: "left" | "right"): void;
   moveCursorToMeasure(direction: "next" | "prev"): void;
   changeOctave(direction: "up" | "down"): void;
-  setScore(score: Score, importSource?: string | null): void;
+  setScore(score: Score): void;
   setFilePath(path: string | null): void;
-  setImportSource(path: string | null): void;
   setAutoSaveStatus(status: string | null): void;
   setNoteBoxes(boxes: Map<NoteEventId, NoteBox>): void;
+  setMeasurePositions(positions: EditorStore["measurePositions"]): void;
+  setSelection(selection: Selection | null): void;
+  extendSelection(direction: "left" | "right"): void;
+  deleteSelectedMeasures(): void;
+  copySelection(): void;
+  pasteAtCursor(): void;
+  setCursorDirect(cursor: CursorPosition): void;
+  setInputMode(mode: InputState["mode"]): void;
+  setTitle(title: string): void;
+  setComposer(composer: string): void;
   undo(): void;
   redo(): void;
+
+  // Articulations
+  toggleArticulation(kind: import("../model/note").ArticulationKind): void;
 
   // Phase 2 actions
   changePitch(pitchClass: PitchClass): void;
@@ -141,11 +157,12 @@ function cursorOnExistingEvent(score: Score, cursor: CursorPosition): boolean {
 export const useEditorStore = create<EditorStore>((set, get) => ({
   score: factory.emptyScore(),
   filePath: null,
-  isDirty: false,
-  importSource: null,
   autoSaveStatus: null,
   inputState: defaultInputState(),
   noteBoxes: new Map(),
+  measurePositions: [],
+  selection: null,
+  clipboardMeasures: null,
   isPlaying: false,
   playbackTick: null,
   tempo: 120,
@@ -177,7 +194,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set({
         score: result.score,
         inputState: result.inputState,
-        isDirty: true,
       });
       return;
     }
@@ -195,7 +211,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -209,7 +224,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -223,7 +237,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -317,20 +330,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }));
   },
 
-  setScore(score: Score, importSource?: string | null) {
-    set({
-      score,
-      isDirty: false,
-      ...(importSource !== undefined ? { importSource } : {}),
-    });
+  setScore(score: Score) {
+    set({ score });
   },
 
   setFilePath(path: string | null) {
     set({ filePath: path });
-  },
-
-  setImportSource(path: string | null) {
-    set({ importSource: path });
   },
 
   setAutoSaveStatus(status: string | null) {
@@ -339,6 +344,129 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   setNoteBoxes(boxes: Map<NoteEventId, NoteBox>) {
     set({ noteBoxes: boxes });
+  },
+
+  setMeasurePositions(positions) {
+    set({ measurePositions: positions });
+  },
+
+  setSelection(selection) {
+    set({ selection });
+  },
+
+  extendSelection(direction: "left" | "right") {
+    const state = get();
+    const { cursor } = state.inputState;
+    const part = state.score.parts[cursor.partIndex];
+    if (!part) return;
+
+    const sel = state.selection ?? {
+      partIndex: cursor.partIndex,
+      measureStart: cursor.measureIndex,
+      measureEnd: cursor.measureIndex,
+    };
+
+    if (direction === "right") {
+      const newEnd = Math.min(sel.measureEnd + 1, part.measures.length - 1);
+      set({ selection: { ...sel, measureEnd: newEnd } });
+    } else {
+      const newStart = Math.max(sel.measureStart - 1, 0);
+      set({ selection: { ...sel, measureStart: newStart } });
+    }
+  },
+
+  deleteSelectedMeasures() {
+    const state = get();
+    if (!state.selection) return;
+    const { partIndex, measureStart, measureEnd } = state.selection;
+    const score = structuredClone(state.score);
+    const part = score.parts[partIndex];
+    if (!part) return;
+
+    const count = measureEnd - measureStart + 1;
+    part.measures.splice(measureStart, count);
+
+    // Ensure at least one measure remains
+    if (part.measures.length === 0) {
+      part.measures.push(factory.measure([factory.voice([])]));
+    }
+
+    const newCursor = {
+      ...state.inputState.cursor,
+      measureIndex: Math.min(measureStart, part.measures.length - 1),
+      eventIndex: 0,
+    };
+
+    set({
+      score,
+      selection: null,
+      inputState: { ...state.inputState, cursor: newCursor },
+    });
+  },
+
+  copySelection() {
+    const state = get();
+    if (!state.selection) return;
+    const { partIndex, measureStart, measureEnd } = state.selection;
+    const part = state.score.parts[partIndex];
+    if (!part) return;
+    const measures = part.measures.slice(measureStart, measureEnd + 1);
+    // Deep clone to detach from live score
+    const cloned = structuredClone(measures);
+    set({ clipboardMeasures: cloned });
+  },
+
+  pasteAtCursor() {
+    const state = get();
+    if (!state.clipboardMeasures || state.clipboardMeasures.length === 0) return;
+    const score = structuredClone(state.score);
+    const { cursor } = state.inputState;
+    const part = score.parts[cursor.partIndex];
+    if (!part) return;
+
+    // Deep clone clipboard and regenerate all IDs
+    const measuresToInsert: Measure[] = structuredClone(state.clipboardMeasures).map((m) => {
+      m.id = newId<MeasureId>("msr");
+      for (const voice of m.voices) {
+        voice.id = newId<VoiceId>("vce");
+        for (const event of voice.events) {
+          event.id = newId<NoteEventId>("evt");
+        }
+      }
+      return m;
+    });
+
+    // Insert at the measure after the cursor
+    const insertIndex = cursor.measureIndex + 1;
+    part.measures.splice(insertIndex, 0, ...measuresToInsert);
+
+    const newCursor = {
+      ...cursor,
+      measureIndex: insertIndex + measuresToInsert.length - 1,
+      eventIndex: 0,
+    };
+
+    set({
+      score,
+      inputState: { ...state.inputState, cursor: newCursor },
+      selection: null,
+    });
+  },
+
+  setCursorDirect(cursor) {
+    set((s) => ({ inputState: { ...s.inputState, cursor } }));
+  },
+
+  setInputMode(mode) {
+    set((s) => ({ inputState: { ...s.inputState, mode }, selection: mode === "note" ? null : s.selection }));
+  },
+
+  setTitle(title) {
+    set((s) => ({ score: { ...s.score, title } }));
+  },
+
+  setComposer(composer) {
+    set((s) => ({ score: { ...s.score, composer } }));
   },
 
   undo() {
@@ -365,6 +493,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   // Phase 2 actions
 
+  toggleArticulation(kind) {
+    const state = get();
+    const cmd = new ToggleArticulation(kind);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({ score: result.score, inputState: result.inputState });
+  },
+
   changePitch(pitchClass: PitchClass) {
     const state = get();
     const cmd = new ChangePitch(
@@ -379,7 +517,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -393,7 +530,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -438,7 +574,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -452,7 +587,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -466,7 +600,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -480,7 +613,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -494,7 +626,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -558,7 +689,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           textInputMode: null,
           textInputBuffer: "",
         },
-        isDirty: true,
       });
     } else if (textInputMode === "lyric") {
       // Parse syllable: "hel-" means begin, "-lo" means end, "-mid-" means middle
@@ -590,7 +720,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           textInputMode: "lyric",
           textInputBuffer: "",
         },
-        isDirty: true,
       });
     }
   },
@@ -639,7 +768,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     Transport.setTempo(bpm);
     set((s) => {
       const score = { ...s.score, tempo: bpm };
-      return { score, tempo: bpm, isDirty: true };
+      return { score, tempo: bpm };
     });
   },
 
@@ -667,7 +796,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -681,7 +809,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -695,7 +822,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -705,7 +831,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const part = score.parts[partIndex];
       if (!part) return s;
       part.solo = !part.solo;
-      return { score, isDirty: true };
+      return { score };
     });
   },
 
@@ -715,7 +841,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const part = score.parts[partIndex];
       if (!part) return s;
       part.muted = !part.muted;
-      return { score, isDirty: true };
+      return { score };
     });
   },
 
@@ -775,7 +901,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -789,7 +914,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 
@@ -803,24 +927,39 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
-      isDirty: true,
     });
   },
 }));
 
 // --- Auto-save: debounced save to localStorage on score changes ---
 
+import { saveSnapshot } from "../fileio/history";
+
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-function autoSaveToLocalStorage(score: Score, importSource: string | null): void {
+async function autoSave(score: Score, filePath: string | null): Promise<void> {
   try {
-    const payload = JSON.stringify({
-      score: serializeScore(score),
-      importSource,
-      savedAt: Date.now(),
-    });
+    const serialized = serializeScore(score);
+
+    // Always persist JSON to localStorage as a fallback
+    const payload = JSON.stringify({ score: serialized, filePath, savedAt: Date.now() });
     localStorage.setItem(AUTOSAVE_KEY, payload);
-    useEditorStore.getState().setAutoSaveStatus("Auto-saved");
+
+    // Save a snapshot to file history
+    saveSnapshot(serialized, score.title || "Untitled");
+
+    // If we have a file path, write MusicXML to disk (Tauri only)
+    if (filePath) {
+      try {
+        const { exportToMusicXML } = await import("../musicxml");
+        const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+        await writeTextFile(filePath, exportToMusicXML(score));
+      } catch {
+        // Not in Tauri or write failed — localStorage is the backup
+      }
+    }
+
+    useEditorStore.getState().setAutoSaveStatus("Saved");
   } catch {
     // ignore storage errors
   }
@@ -831,7 +970,7 @@ useEditorStore.subscribe((state, prevState) => {
   if (state.score !== prevState.score) {
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(() => {
-      autoSaveToLocalStorage(state.score, state.importSource);
+      autoSave(state.score, state.filePath);
     }, AUTOSAVE_DEBOUNCE_MS);
   }
 });
@@ -847,8 +986,7 @@ function restoreAutoSave(): void {
       const score = deserializeScore(parsed.score);
       useEditorStore.setState({
         score,
-        importSource: parsed.importSource ?? null,
-        isDirty: false,
+        filePath: parsed.filePath ?? parsed.importSource ?? null,
         autoSaveStatus: "Restored from auto-save",
       });
     }

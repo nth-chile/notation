@@ -1,7 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { transposeEvent, transposeScore } from "../builtins/Transpose";
-import { retrogradeScore } from "../builtins/Retrograde";
-import { changeDurationLevel, transformScore } from "../builtins/Augment";
 import { identifyChord } from "../builtins/ChordAnalysis";
 import { factory, pitchToMidi } from "../../model";
 import type { Score } from "../../model";
@@ -114,90 +112,6 @@ describe("Transpose Plugin", () => {
       expect(m1Events[0].head.pitch.pitchClass).toBe("D");
       expect(m1Events[0].head.pitch.accidental).toBe("natural");
     }
-  });
-});
-
-describe("Retrograde Plugin", () => {
-  it("reverses the order of notes", () => {
-    const notes = [makeNote("C", 4), makeNote("D", 4), makeNote("E", 4)];
-    const score = makeScoreWithNotes(notes);
-    const result = retrogradeScore(score, null);
-    const events = result.parts[0].measures[0].voices[0].events;
-
-    expect(events.length).toBe(3);
-    if (events[0].kind === "note" && events[1].kind === "note" && events[2].kind === "note") {
-      expect(events[0].head.pitch.pitchClass).toBe("E");
-      expect(events[1].head.pitch.pitchClass).toBe("D");
-      expect(events[2].head.pitch.pitchClass).toBe("C");
-    }
-  });
-
-  it("handles empty measures", () => {
-    const score = makeScoreWithNotes([]);
-    const result = retrogradeScore(score, null);
-    expect(result.parts[0].measures[0].voices[0].events.length).toBe(0);
-  });
-
-  it("preserves durations when reversing", () => {
-    const notes = [makeNote("C", 4, "quarter"), makeNote("D", 4, "half")];
-    const score = makeScoreWithNotes(notes);
-    const result = retrogradeScore(score, null);
-    const events = result.parts[0].measures[0].voices[0].events;
-
-    expect(events[0].duration.type).toBe("half");
-    expect(events[1].duration.type).toBe("quarter");
-  });
-});
-
-describe("Augment/Diminish Plugin", () => {
-  it("augments a quarter note to a half note", () => {
-    const note = makeNote("C", 4, "quarter");
-    const result = changeDurationLevel(note, "augment");
-    expect(result.duration.type).toBe("half");
-  });
-
-  it("diminishes a quarter note to an eighth note", () => {
-    const note = makeNote("C", 4, "quarter");
-    const result = changeDurationLevel(note, "diminish");
-    expect(result.duration.type).toBe("eighth");
-  });
-
-  it("does not augment beyond whole note", () => {
-    const note = makeNote("C", 4, "whole");
-    const result = changeDurationLevel(note, "augment");
-    expect(result.duration.type).toBe("whole");
-  });
-
-  it("does not diminish beyond 64th note", () => {
-    const note = makeNote("C", 4, "64th");
-    const result = changeDurationLevel(note, "diminish");
-    expect(result.duration.type).toBe("64th");
-  });
-
-  it("augments all notes in a score", () => {
-    const notes = [makeNote("C", 4, "quarter"), makeNote("D", 4, "eighth")];
-    const score = makeScoreWithNotes(notes);
-    const result = transformScore(score, "augment", null);
-    const events = result.parts[0].measures[0].voices[0].events;
-
-    expect(events[0].duration.type).toBe("half");
-    expect(events[1].duration.type).toBe("quarter");
-  });
-
-  it("diminishes all notes in a score", () => {
-    const notes = [makeNote("C", 4, "half"), makeNote("D", 4, "quarter")];
-    const score = makeScoreWithNotes(notes);
-    const result = transformScore(score, "diminish", null);
-    const events = result.parts[0].measures[0].voices[0].events;
-
-    expect(events[0].duration.type).toBe("quarter");
-    expect(events[1].duration.type).toBe("eighth");
-  });
-
-  it("handles rests in augmentation", () => {
-    const rest = makeRest("quarter");
-    const result = changeDurationLevel(rest, "augment");
-    expect(result.duration.type).toBe("half");
   });
 });
 

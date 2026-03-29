@@ -1,8 +1,8 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
-import type { NoteEvent, NoteHead } from "../model/note";
+import type { NoteEvent, NoteHead, TupletRatio } from "../model/note";
 import type { Pitch } from "../model/pitch";
 import type { Duration } from "../model/duration";
-import type { Annotation, ChordSymbol, Lyric } from "../model/annotations";
+import type { Annotation, ChordSymbol, Lyric, DynamicMark, Hairpin, Slur } from "../model/annotations";
 import { durationToTicks } from "../model/duration";
 import {
   DURATION_TYPE_TO_XML,
@@ -49,11 +49,21 @@ function accidentalXml(p: Pitch): string {
   return `        <accidental>${ACCIDENTAL_TO_XML[p.accidental]}</accidental>\n`;
 }
 
-function durationXml(d: Duration): string {
-  let xml = `        <duration>${durationDivisions(d)}</duration>\n`;
+function durationXml(d: Duration, tuplet?: TupletRatio): string {
+  let divs = durationDivisions(d);
+  if (tuplet) {
+    divs = Math.round((divs * tuplet.normal) / tuplet.actual);
+  }
+  let xml = `        <duration>${divs}</duration>\n`;
   xml += `        <type>${DURATION_TYPE_TO_XML[d.type]}</type>\n`;
   for (let i = 0; i < d.dots; i++) {
     xml += `        <dot/>\n`;
+  }
+  if (tuplet) {
+    xml += `        <time-modification>\n`;
+    xml += `          <actual-notes>${tuplet.actual}</actual-notes>\n`;
+    xml += `          <normal-notes>${tuplet.normal}</normal-notes>\n`;
+    xml += `        </time-modification>\n`;
   }
   return xml;
 }
@@ -69,13 +79,22 @@ function tieXml(tied: boolean | undefined, isChordTag: boolean): string {
   return xml;
 }
 
-function notationsXml(tied: boolean | undefined): string {
-  if (!tied) return "";
-  return (
-    `        <notations>\n` +
-    `          <tied type="start"/>\n` +
-    `        </notations>\n`
-  );
+function notationsXml(tied: boolean | undefined, tupletPosition?: "start" | "stop", slurPositions?: ("start" | "stop")[]): string {
+  if (!tied && !tupletPosition && (!slurPositions || slurPositions.length === 0)) return "";
+  let xml = `        <notations>\n`;
+  if (tied) {
+    xml += `          <tied type="start"/>\n`;
+  }
+  if (tupletPosition) {
+    xml += `          <tuplet type="${tupletPosition}"/>\n`;
+  }
+  if (slurPositions) {
+    for (const pos of slurPositions) {
+      xml += `          <slur type="${pos}"/>\n`;
+    }
+  }
+  xml += `        </notations>\n`;
+  return xml;
 }
 
 function findLyricForEvent(
@@ -125,28 +144,87 @@ function harmonyXml(chordSymbols: ChordSymbol[]): string {
   return xml;
 }
 
+function dynamicDirectionXml(dynamics: DynamicMark[]): string {
+  let xml = "";
+  for (const dyn of dynamics) {
+    xml += `      <direction placement="below">\n`;
+    xml += `        <direction-type>\n`;
+    xml += `          <dynamics>\n`;
+    xml += `            <${dyn.level}/>\n`;
+    xml += `          </dynamics>\n`;
+    xml += `        </direction-type>\n`;
+    xml += `      </direction>\n`;
+  }
+  return xml;
+}
+
+function hairpinDirectionXml(hairpins: { hairpin: Hairpin; position: "start" | "stop" }[]): string {
+  let xml = "";
+  for (const { hairpin, position } of hairpins) {
+    const wedgeType = position === "start"
+      ? (hairpin.type === "crescendo" ? "crescendo" : "diminuendo")
+      : "stop";
+    xml += `      <direction placement="below">\n`;
+    xml += `        <direction-type>\n`;
+    xml += `          <wedge type="${wedgeType}"/>\n`;
+    xml += `        </direction-type>\n`;
+    xml += `      </direction>\n`;
+  }
+  return xml;
+}
+
 function exportNoteEvent(
   event: NoteEvent,
   voiceNumber: number,
-  annotations: Annotation[]
+  annotations: Annotation[],
+  tupletPosition?: "start" | "stop"
 ): string {
   let xml = "";
+  const tuplet = event.tuplet;
+
+  // Emit dynamics attached to this event
+  const dynamics = annotations.filter(
+    (a): a is DynamicMark => a.kind === "dynamic" && a.noteEventId === event.id
+  );
+  if (dynamics.length > 0) {
+    xml += dynamicDirectionXml(dynamics);
+  }
+
+  // Emit hairpin starts/stops at this event
+  const hairpinEvents: { hairpin: Hairpin; position: "start" | "stop" }[] = [];
+  for (const a of annotations) {
+    if (a.kind !== "hairpin") continue;
+    if (a.startEventId === event.id) hairpinEvents.push({ hairpin: a, position: "start" });
+    if (a.endEventId === event.id) hairpinEvents.push({ hairpin: a, position: "stop" });
+  }
+  if (hairpinEvents.length > 0) {
+    xml += hairpinDirectionXml(hairpinEvents);
+  }
+
+  // Compute slur positions for this event
+  const slurPositions: ("start" | "stop")[] = [];
+  for (const a of annotations) {
+    if (a.kind !== "slur") continue;
+    if (a.startEventId === event.id) slurPositions.push("start");
+    if (a.endEventId === event.id) slurPositions.push("stop");
+  }
 
   if (event.kind === "rest") {
     xml += `      <note>\n`;
     xml += `        <rest/>\n`;
-    xml += durationXml(event.duration);
+    xml += durationXml(event.duration, tuplet);
     xml += `        <voice>${voiceNumber}</voice>\n`;
+    xml += notationsXml(undefined, tupletPosition, slurPositions);
     xml += `      </note>\n`;
   } else if (event.kind === "note") {
     const head = event.head;
     xml += `      <note>\n`;
     xml += pitchXml(head.pitch);
-    xml += durationXml(event.duration);
+    xml += durationXml(event.duration, tuplet);
     xml += tieXml(head.tied, false);
     xml += `        <voice>${voiceNumber}</voice>\n`;
     xml += accidentalXml(head.pitch);
-    xml += notationsXml(head.tied);
+    xml += notationsXml(head.tied, tupletPosition, slurPositions);
     const lyrics = findLyricForEvent(annotations, event.id);
     xml += lyricXml(lyrics);
     xml += `      </note>\n`;
@@ -159,11 +237,11 @@ function exportNoteEvent(
         xml += `        <chord/>\n`;
       }
       xml += pitchXml(head.pitch);
-      xml += durationXml(event.duration);
+      xml += durationXml(event.duration, tuplet);
       xml += tieXml(head.tied, i > 0);
       xml += `        <voice>${voiceNumber}</voice>\n`;
       xml += accidentalXml(head.pitch);
-      xml += notationsXml(head.tied);
+      xml += notationsXml(head.tied, i === 0 ? tupletPosition : undefined, i === 0 ? slurPositions : undefined);
       if (i === 0) {
         const lyrics = findLyricForEvent(annotations, event.id);
         xml += lyricXml(lyrics);
@@ -256,7 +334,10 @@ function exportMeasure(
       const prevVoice = measure.voices[vi - 1];
       let prevDuration = 0;
       for (const evt of prevVoice.events) {
-        prevDuration += durationDivisions(evt.duration);
+        const evtTuplet = evt.tuplet;
+        let divs = durationDivisions(evt.duration);
+        if (evtTuplet) divs = Math.round((divs * evtTuplet.normal) / evtTuplet.actual);
+        prevDuration += divs;
       }
       if (prevDuration > 0) {
         xml += `      <backup>\n`;
@@ -265,8 +346,30 @@ function exportMeasure(
       }
     }
 
-    for (const event of voice.events) {
-      xml += exportNoteEvent(event, voiceNumber, measure.annotations);
+    // Determine tuplet start/stop positions for notation elements
+    const events = voice.events;
+    for (let ei = 0; ei < events.length; ei++) {
+      const event = events[ei];
+      const prevTuplet = ei > 0 ? events[ei - 1].tuplet : undefined;
+      const nextTuplet = ei < events.length - 1 ? events[ei + 1].tuplet : undefined;
+      const curTuplet = event.tuplet;
+
+      let tupletPos: "start" | "stop" | undefined;
+      if (curTuplet) {
+        const isStart = !prevTuplet || prevTuplet.actual !== curTuplet.actual || prevTuplet.normal !== curTuplet.normal;
+        const isStop = !nextTuplet || nextTuplet.actual !== curTuplet.actual || nextTuplet.normal !== curTuplet.normal;
+        if (isStart && isStop) {
+          // Single-event tuplet: emit start, then we'd need a separate stop but MusicXML
+          // expects start on first and stop on last. For a single note, emit start.
+          tupletPos = "start";
+        } else if (isStart) {
+          tupletPos = "start";
+        } else if (isStop) {
+          tupletPos = "stop";
+        }
+      }
+
+      xml += exportNoteEvent(event, voiceNumber, measure.annotations, tupletPos);
     }
   }
 

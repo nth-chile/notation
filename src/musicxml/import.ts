@@ -1,9 +1,9 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
-import type { NoteEvent, NoteHead, Note, Chord, Rest } from "../model/note";
+import type { NoteEvent, NoteHead, Note, Chord, Rest, TupletRatio } from "../model/note";
 import type { Pitch, PitchClass, Accidental, Octave } from "../model/pitch";
 import type { Duration, DurationType } from "../model/duration";
 import type { Clef, ClefType, TimeSignature, KeySignature, BarlineType } from "../model/time";
-import type { Annotation, ChordSymbol, Lyric } from "../model/annotations";
+import type { Annotation, ChordSymbol, Lyric, DynamicMark, Hairpin, Slur, DynamicLevel } from "../model/annotations";
 import { newId, type ScoreId, type PartId, type MeasureId, type VoiceId, type NoteEventId } from "../model/ids";
 import {
   XML_TO_DURATION_TYPE,
@@ -44,6 +44,15 @@ function getDirectChildren(parent: Element, tagName: string): Element[] {
     }
   }
   return result;
+}
+
+function parseTimeModification(noteEl: Element): TupletRatio | undefined {
+  const tmEl = getDirectChild(noteEl, "time-modification");
+  if (!tmEl) return undefined;
+  const actual = getNumberContent(tmEl, "actual-notes");
+  const normal = getNumberContent(tmEl, "normal-notes");
+  if (actual === null || normal === null) return undefined;
+  return { actual, normal };
 }
 
 function parsePitch(noteEl: Element): Pitch | null {
@@ -206,7 +215,19 @@ function parseMeasure(
   let pendingChordDuration: Duration | null = null;
   let pendingChordEventId: NoteEventId | null = null;
   let pendingChordLyrics: Lyric[] = [];
+  let pendingChordTuplet: TupletRatio | undefined = undefined;
   let pendingVoiceNum = 1;
+
+  // Track pending dynamics/hairpins to attach to the next note
+  let pendingDynamicLevels: DynamicLevel[] = [];
+  let pendingWedgeStart: "crescendo" | "diminuendo" | null = null;
+  let openHairpinStartId: NoteEventId | null = null;
+  let openHairpinType: "crescendo" | "diminuendo" | null = null;
+
+  // Track open slurs: slur number -> start event id
+  const openSlurs = new Map<number, NoteEventId>();
+
+  const DYNAMIC_LEVELS: Set<string> = new Set(["pp", "p", "mp", "mf", "f", "ff", "sfz", "fp"]);
 
   function flushPendingChord() {
     if (pendingChordHeads.length > 0 && pendingChordDuration) {
@@ -219,6 +240,7 @@ function parseMeasure(
           id: pendingChordEventId!,
           duration: pendingChordDuration,
           head: pendingChordHeads[0],
+          tuplet: pendingChordTuplet,
         };
         voiceEvents.get(voiceNum)!.push(note);
       } else {
@@ -227,6 +249,7 @@ function parseMeasure(
           id: pendingChordEventId!,
           duration: pendingChordDuration,
           heads: pendingChordHeads,
+          tuplet: pendingChordTuplet,
         };
         voiceEvents.get(voiceNum)!.push(chord);
       }
@@ -236,10 +259,24 @@ function parseMeasure(
         annotations.push(lyric);
       }
 
+      // Attach pending dynamics to this event
+      for (const level of pendingDynamicLevels) {
+        annotations.push({ kind: "dynamic", level, noteEventId: pendingChordEventId! });
+      }
+      pendingDynamicLevels = [];
+
+      // Start a hairpin at this event if pending
+      if (pendingWedgeStart) {
+        openHairpinStartId = pendingChordEventId!;
+        openHairpinType = pendingWedgeStart;
+        pendingWedgeStart = null;
+      }
+
       pendingChordHeads = [];
       pendingChordDuration = null;
       pendingChordEventId = null;
       pendingChordLyrics = [];
+      pendingChordTuplet = undefined;
     }
   }
 
@@ -284,6 +321,7 @@ function parseMeasure(
 
         const duration = parseDuration(el, divisions);
         const durationDivs = getNumberContent(el, "duration") ?? 0;
+        const tuplet = parseTimeModification(el);
 
         if (isRest) {
           if (!voiceEvents.has(voiceNum)) voiceEvents.set(voiceNum, []);
@@ -291,6 +329,7 @@ function parseMeasure(
             kind: "rest",
             id: newId<NoteEventId>("evt"),
             duration,
+            tuplet,
           };
           voiceEvents.get(voiceNum)!.push(rest);
           currentTick += durationDivs;
@@ -321,8 +360,33 @@ function parseMeasure(
             pendingChordDuration = duration;
             pendingChordEventId = eventId;
             pendingChordLyrics = lyrics;
+            pendingChordTuplet = tuplet;
             pendingVoiceNum = voiceNum;
             currentTick += durationDivs;
+          }
+
+          // Parse slur elements inside <notations>
+          const notationsEl = getDirectChild(el, "notations");
+          if (notationsEl) {
+            const slurEls = getDirectChildren(notationsEl, "slur");
+            const slurEventId = isChord ? pendingChordEventId! : eventId;
+            for (const slurEl of slurEls) {
+              const slurType = slurEl.getAttribute("type");
+              const slurNumber = parseInt(slurEl.getAttribute("number") ?? "1", 10);
+              if (slurType === "start") {
+                openSlurs.set(slurNumber, slurEventId);
+              } else if (slurType === "stop") {
+                const startId = openSlurs.get(slurNumber);
+                if (startId) {
+                  annotations.push({
+                    kind: "slur",
+                    startEventId: startId,
+                    endEventId: slurEventId,
+                  });
+                  openSlurs.delete(slurNumber);
+                }
+              }
+            }
           }
         }
         break;
@@ -339,6 +403,43 @@ function parseMeasure(
         flushPendingChord();
         const backupDur = getNumberContent(el, "duration") ?? 0;
         currentTick -= backupDur;
+        break;
+      }
+
+      case "direction": {
+        const dirTypeEl = getDirectChild(el, "direction-type");
+        if (!dirTypeEl) break;
+
+        // Parse dynamics
+        const dynamicsEl = getDirectChild(dirTypeEl, "dynamics");
+        if (dynamicsEl) {
+          for (let d = 0; d < dynamicsEl.childNodes.length; d++) {
+            const dynChild = dynamicsEl.childNodes[d];
+            if (dynChild.nodeType === 1 && DYNAMIC_LEVELS.has((dynChild as Element).tagName)) {
+              pendingDynamicLevels.push((dynChild as Element).tagName as DynamicLevel);
+            }
+          }
+        }
+
+        // Parse wedge (hairpin)
+        const wedgeEl = getDirectChild(dirTypeEl, "wedge");
+        if (wedgeEl) {
+          const wedgeType = wedgeEl.getAttribute("type");
+          if (wedgeType === "crescendo" || wedgeType === "diminuendo") {
+            pendingWedgeStart = wedgeType;
+          } else if (wedgeType === "stop" && openHairpinStartId && openHairpinType) {
+            // Close the hairpin — endEventId is the last note we saw
+            const endId = pendingChordEventId ?? openHairpinStartId;
+            annotations.push({
+              kind: "hairpin",
+              type: openHairpinType,
+              startEventId: openHairpinStartId,
+              endEventId: endId,
+            });
+            openHairpinStartId = null;
+            openHairpinType = null;
+          }
+        }
         break;
       }
 

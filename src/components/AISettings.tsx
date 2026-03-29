@@ -1,5 +1,6 @@
 import { useChatStore } from "../state/ChatState";
 import type { ProviderType } from "../state/ChatState";
+import { Input } from "./ui/input";
 
 export function AISettings() {
   const provider = useChatStore((s) => s.provider);
@@ -8,13 +9,15 @@ export function AISettings() {
   const setApiKey = useChatStore((s) => s.setApiKey);
 
   return (
-    <div style={styles.container}>
-      <div style={styles.heading}>AI Settings</div>
+    <div className="p-2 border-b flex flex-col gap-2">
+      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+        AI Settings
+      </div>
 
-      <label style={styles.label}>
+      <label className="flex flex-col text-xs text-muted-foreground gap-1">
         Provider
         <select
-          style={styles.select}
+          className="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground"
           value={provider}
           onChange={(e) => setProvider(e.target.value as ProviderType)}
         >
@@ -24,24 +27,18 @@ export function AISettings() {
         </select>
       </label>
 
-      <label style={styles.label}>
+      <label className="flex flex-col text-xs text-muted-foreground gap-1">
         API Key
-        <input
-          style={styles.input}
+        <Input
           type="password"
-          placeholder={
-            provider === "anthropic"
-              ? "sk-ant-..."
-              : provider === "gemini"
-                ? "AIza..."
-                : "sk-..."
-          }
+          className="h-7 text-xs font-mono"
+          placeholder={provider === "anthropic" ? "sk-ant-..." : provider === "gemini" ? "AIza..." : "sk-..."}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
         />
       </label>
 
-      <div style={styles.hint}>
+      <div className="text-[11px] text-muted-foreground">
         {provider === "gemini"
           ? "Uses Gemini 2.5 Flash. Free tier — get key at aistudio.google.com"
           : provider === "anthropic"
@@ -51,48 +48,3 @@ export function AISettings() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    padding: "8px 12px",
-    borderBottom: "1px solid #333",
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  },
-  heading: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#aaa",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-  },
-  label: {
-    display: "flex",
-    flexDirection: "column",
-    fontSize: 12,
-    color: "#ccc",
-    gap: 4,
-  },
-  select: {
-    background: "#2a2a2a",
-    color: "#eee",
-    border: "1px solid #444",
-    borderRadius: 4,
-    padding: "4px 6px",
-    fontSize: 12,
-  },
-  input: {
-    background: "#2a2a2a",
-    color: "#eee",
-    border: "1px solid #444",
-    borderRadius: 4,
-    padding: "4px 6px",
-    fontSize: 12,
-    fontFamily: "monospace",
-  },
-  hint: {
-    fontSize: 11,
-    color: "#777",
-  },
-};

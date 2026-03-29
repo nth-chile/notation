@@ -15,6 +15,11 @@ export interface TransportOptions {
   onStateChange: (state: TransportState) => void;
 }
 
+export interface NotePlayer {
+  play(midi: number, duration: number, time: number): void;
+  stop(): void;
+}
+
 interface ScheduledNote {
   time: number;  // seconds from start
   midi: number;
@@ -29,11 +34,25 @@ let animationFrame: number | null = null;
 let playbackStartTime = 0;
 let totalDuration = 0;
 let synth: Tone.PolySynth | null = null;
+let metronomeSynth: Tone.PolySynth | null = null;
 let tickBoundaries: { time: number; tick: number }[] = [];
+let currentScore: Score | null = null;
+let customPlayer: NotePlayer | null = null;
 
 function setState(s: TransportState): void {
   state = s;
   onStateChangeCallback?.(s);
+}
+
+function ensureMetronomeSynth(): Tone.PolySynth {
+  if (!metronomeSynth) {
+    metronomeSynth = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "square" },
+      envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 },
+    }).toDestination();
+    metronomeSynth.volume.value = -4;
+  }
+  return metronomeSynth;
 }
 
 function ensureSynth(): Tone.PolySynth {
@@ -155,6 +174,31 @@ function updateCursor(): void {
   animationFrame = requestAnimationFrame(updateCursor);
 }
 
+function scheduleMetronomeClicks(score: Score): void {
+  const met = ensureMetronomeSynth();
+  const lastMi = findLastContentMeasure(score);
+  const elapsed = Tone.now() - playbackStartTime;
+  let beatTime = 0;
+  for (let mi = 0; mi <= lastMi; mi++) {
+    const bpm = getTempoForMeasure(score, mi);
+    const m0 = score.parts[0]?.measures[mi];
+    if (!m0) continue;
+    const beats = m0.timeSignature.numerator;
+    const secPerBeat = 60 / bpm;
+    for (let b = 0; b < beats; b++) {
+      const clickTime = beatTime + b * secPerBeat;
+      // Skip clicks that are already in the past
+      if (clickTime < elapsed - 0.05) continue;
+      const t = playbackStartTime + clickTime;
+      const note = b === 0 ? "G6" : "C6";
+      const vel = b === 0 ? 0.7 : 0.4;
+      met.triggerAttackRelease(note, 0.03, t, vel);
+    }
+    const mTicks = (TICKS_PER_QUARTER * 4 * m0.timeSignature.numerator) / m0.timeSignature.denominator;
+    beatTime += ticksToSec(mTicks, bpm);
+  }
+}
+
 // --- Public API ---
 
 export function setCallbacks(opts: TransportOptions): void {
@@ -176,11 +220,26 @@ export async function play(score: Score): Promise<void> {
   // Schedule every note at an absolute audio-context time
   playbackStartTime = Tone.now() + 0.05; // tiny buffer
 
-  for (const note of schedule.notes) {
-    const name = midiToNoteName(note.midi);
-    const startAt = playbackStartTime + note.time;
-    const dur = Math.max(note.duration * 0.9, 0.05);
-    s.triggerAttackRelease(name, dur, startAt);
+  if (customPlayer) {
+    for (const note of schedule.notes) {
+      const startAt = playbackStartTime + note.time;
+      const dur = Math.max(note.duration * 0.9, 0.05);
+      customPlayer.play(note.midi, dur, startAt);
+    }
+  } else {
+    for (const note of schedule.notes) {
+      const name = midiToNoteName(note.midi);
+      const startAt = playbackStartTime + note.time;
+      const dur = Math.max(note.duration * 0.9, 0.05);
+      s.triggerAttackRelease(name, dur, startAt);
+    }
+  }
+
+  currentScore = score;
+
+  // Schedule metronome clicks
+  if (metronomeEnabled) {
+    scheduleMetronomeClicks(score);
   }
 
   animationFrame = requestAnimationFrame(updateCursor);
@@ -194,13 +253,23 @@ export function pause(): void {
 }
 
 export function stop(): void {
+  if (customPlayer) {
+    customPlayer.stop();
+  }
   if (synth) {
     synth.releaseAll();
+    synth.dispose();
+    synth = null;
+  }
+  if (metronomeSynth) {
+    metronomeSynth.dispose();
+    metronomeSynth = null;
   }
   if (animationFrame !== null) {
     cancelAnimationFrame(animationFrame);
     animationFrame = null;
   }
+  currentScore = null;
   onTickCallback?.(0);
   setState("stopped");
 }
@@ -211,6 +280,15 @@ export function setTempo(_bpm: number): void {
 
 export function setMetronome(enabled: boolean): void {
   metronomeEnabled = enabled;
+  if (state === "playing" && currentScore) {
+    if (enabled) {
+      scheduleMetronomeClicks(currentScore);
+    } else if (metronomeSynth) {
+      metronomeSynth.releaseAll();
+      metronomeSynth.dispose();
+      metronomeSynth = null;
+    }
+  }
 }
 
 export function isMetronomeEnabled(): boolean {
@@ -223,4 +301,8 @@ export function getTransportState(): TransportState {
 
 export function getScoreDuration(score: Score): number {
   return buildSchedule(score).duration;
+}
+
+export function setNotePlayer(player: NotePlayer | null): void {
+  customPlayer = player;
 }

@@ -16,9 +16,13 @@ export interface LayoutState {
   sidebarOpen: Record<"left" | "right", boolean>;
   /** Collapsed state per panel */
   panelCollapsed: Record<string, boolean>;
+  /** Sidebar widths in pixels */
+  sidebarWidth: Record<"left" | "right", number>;
 
   movePanel: (panelId: string, toSidebar: "left" | "right", toIndex: number) => void;
   toggleSidebar: (side: "left" | "right") => void;
+  setSidebarOpen: (side: "left" | "right", open: boolean) => void;
+  setSidebarWidth: (side: "left" | "right", width: number) => void;
   togglePanelCollapsed: (panelId: string) => void;
   /** Initialize layout with available panel IDs, merging with persisted state */
   initLayout: (availablePanels: { id: string; defaultSidebar: "left" | "right" }[]) => void;
@@ -28,6 +32,7 @@ function loadPersistedLayout(): {
   panels?: Record<"left" | "right", string[]>;
   sidebarOpen?: Record<"left" | "right", boolean>;
   panelCollapsed?: Record<string, boolean>;
+  sidebarWidth?: Record<"left" | "right", number>;
 } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -38,7 +43,7 @@ function loadPersistedLayout(): {
   return null;
 }
 
-function persistLayout(state: Pick<LayoutState, "panels" | "sidebarOpen" | "panelCollapsed">) {
+function persistLayout(state: Pick<LayoutState, "panels" | "sidebarOpen" | "panelCollapsed" | "sidebarWidth">) {
   try {
     localStorage.setItem(
       STORAGE_KEY,
@@ -46,6 +51,7 @@ function persistLayout(state: Pick<LayoutState, "panels" | "sidebarOpen" | "pane
         panels: state.panels,
         sidebarOpen: state.sidebarOpen,
         panelCollapsed: state.panelCollapsed,
+        sidebarWidth: state.sidebarWidth,
       })
     );
   } catch {
@@ -53,10 +59,15 @@ function persistLayout(state: Pick<LayoutState, "panels" | "sidebarOpen" | "pane
   }
 }
 
+export const DEFAULT_SIDEBAR_WIDTH = 280;
+export const MIN_SIDEBAR_WIDTH = 180;
+export const MAX_SIDEBAR_WIDTH = 500;
+
 export const useLayoutStore = create<LayoutState>((set, get) => ({
   panels: { left: [], right: [] },
   sidebarOpen: { left: true, right: true },
   panelCollapsed: {},
+  sidebarWidth: { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
 
   movePanel: (panelId, toSidebar, toIndex) => {
     set((state) => {
@@ -91,6 +102,28 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
           ...state.sidebarOpen,
           [side]: !state.sidebarOpen[side],
         },
+      };
+      persistLayout(next);
+      return next;
+    });
+  },
+
+  setSidebarOpen: (side, open) => {
+    set((state) => {
+      const next = {
+        ...state,
+        sidebarOpen: { ...state.sidebarOpen, [side]: open },
+      };
+      persistLayout(next);
+      return next;
+    });
+  },
+
+  setSidebarWidth: (side, width) => {
+    set((state) => {
+      const next = {
+        ...state,
+        sidebarWidth: { ...state.sidebarWidth, [side]: width },
       };
       persistLayout(next);
       return next;
@@ -136,6 +169,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
         panels: { left, right },
         sidebarOpen: persisted.sidebarOpen ?? { left: true, right: true },
         panelCollapsed: persisted.panelCollapsed ?? {},
+        sidebarWidth: persisted.sidebarWidth ?? { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
       });
     } else {
       // No persisted state — use defaults
@@ -152,6 +186,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
         panels: { left, right },
         sidebarOpen: { left: true, right: true },
         panelCollapsed: {},
+        sidebarWidth: { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
       });
     }
   },

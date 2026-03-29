@@ -3,33 +3,60 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
   PointerSensor,
   useSensor,
   useSensors,
   useDroppable,
 } from "@dnd-kit/core";
-import type { DragStartEvent, DragEndEvent, DragOverEvent } from "@dnd-kit/core";
+import type { DragStartEvent, DragEndEvent, DragOverEvent, CollisionDetection } from "@dnd-kit/core";
 import {
   SortableContext,
   verticalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { useLayoutStore } from "../state/LayoutState";
+import { useLayoutStore, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH } from "../state/LayoutState";
 import { DraggablePanel } from "./DraggablePanel";
 import type { PanelRegistration } from "../plugins/PluginManager";
+import { cn } from "@/lib/utils";
+
+/**
+ * Custom collision detection: prioritize sidebar containers when the pointer
+ * is over them, then fall back to closestCenter for reordering within a sidebar.
+ */
+const sidebarAwareCollision: CollisionDetection = (args) => {
+  // First check if pointer is within a sidebar droppable
+  const pointerCollisions = pointerWithin(args);
+  const sidebarHit = pointerCollisions.find(
+    (c) => c.id === "left" || c.id === "right"
+  );
+
+  if (sidebarHit) {
+    // Pointer is over a sidebar — check for sortable items within it too
+    const withinSidebar = rectIntersection({
+      ...args,
+      droppableContainers: args.droppableContainers.filter(
+        (c) => c.id === sidebarHit.id || pointerCollisions.some((pc) => pc.id === c.id)
+      ),
+    });
+    if (withinSidebar.length > 0) return withinSidebar;
+    return [sidebarHit];
+  }
+
+  // Fallback to closestCenter for normal reordering
+  return closestCenter(args);
+};
 
 interface PanelLayoutProps {
   leftPanels: PanelRegistration[];
   rightPanels: PanelRegistration[];
-  children: React.ReactNode; // main content area
+  children: React.ReactNode;
 }
 
-/** Map panel registrations by id for quick lookup */
 function buildPanelMap(panels: PanelRegistration[]): Map<string, PanelRegistration> {
   const map = new Map<string, PanelRegistration>();
-  for (const p of panels) {
-    map.set(p.id, p);
-  }
+  for (const p of panels) map.set(p.id, p);
   return map;
 }
 
@@ -38,40 +65,44 @@ function DroppableSidebar({
   panelIds,
   panelMap,
   isOpen,
+  width,
 }: {
   id: string;
   panelIds: string[];
   panelMap: Map<string, PanelRegistration>;
   isOpen: boolean;
+  width: number;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
-
   if (!isOpen) return null;
 
   return (
     <div
       ref={setNodeRef}
-      style={{
-        ...sidebarStyles.container,
-        background: isOver ? "#eff6ff" : "#f1f5f9",
-        borderRight: id === "left" ? "1px solid #e2e8f0" : undefined,
-        borderLeft: id === "right" ? "1px solid #e2e8f0" : undefined,
-      }}
+      style={{ width, minWidth: width }}
+      className={cn(
+        "flex flex-col overflow-y-auto overflow-x-hidden transition-colors",
+        id === "left" ? "border-r" : "border-l",
+        isOver ? "bg-accent" : "bg-card"
+      )}
     >
       <SortableContext items={panelIds} strategy={verticalListSortingStrategy}>
-        {panelIds.map((panelId) => {
+        {panelIds.map((panelId, i) => {
           const reg = panelMap.get(panelId);
           if (!reg) return null;
           return (
-            <DraggablePanel key={panelId} id={panelId} title={reg.config.title}>
-              {reg.config.component()}
-            </DraggablePanel>
+            <React.Fragment key={panelId}>
+              {i > 0 && <div className="border-t" />}
+              <DraggablePanel id={panelId} title={reg.config.title} menuItems={reg.config.menuItems} fill={reg.config.fill}>
+                {reg.config.component()}
+              </DraggablePanel>
+            </React.Fragment>
           );
         })}
       </SortableContext>
 
       {panelIds.length === 0 && (
-        <div style={sidebarStyles.emptyDropZone}>
+        <div className="p-6 text-center text-xs text-muted-foreground border-2 border-dashed m-1">
           Drop panels here
         </div>
       )}
@@ -79,9 +110,61 @@ function DroppableSidebar({
   );
 }
 
+const HIDE_THRESHOLD = 100;
+
+function ResizeHandle({ side }: { side: "left" | "right" }) {
+  const [dragging, setDragging] = useState(false);
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      setDragging(true);
+      const startX = e.clientX;
+      const startWidth = useLayoutStore.getState().sidebarWidth[side];
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const delta = moveEvent.clientX - startX;
+        const adjustedDelta = side === "left" ? delta : -delta;
+        const newWidth = Math.min(
+          MAX_SIDEBAR_WIDTH,
+          Math.max(MIN_SIDEBAR_WIDTH, startWidth + adjustedDelta)
+        );
+        useLayoutStore.getState().setSidebarWidth(side, newWidth);
+      };
+
+      const handleMouseUp = (upEvent: MouseEvent) => {
+        setDragging(false);
+        const totalDelta = upEvent.clientX - startX;
+        const adjustedDelta = side === "left" ? totalDelta : -totalDelta;
+        if (startWidth + adjustedDelta < HIDE_THRESHOLD) {
+          useLayoutStore.getState().setSidebarOpen(side, false);
+          useLayoutStore.getState().setSidebarWidth(side, DEFAULT_SIDEBAR_WIDTH);
+        }
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+    },
+    [side]
+  );
+
+  return (
+    <div
+      onMouseDown={handleMouseDown}
+      className={cn(
+        "w-1 shrink-0 cursor-col-resize transition-colors hover:bg-primary",
+        dragging && "bg-primary"
+      )}
+    />
+  );
+}
+
 export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutProps) {
   const panels = useLayoutStore((s) => s.panels);
   const sidebarOpen = useLayoutStore((s) => s.sidebarOpen);
+  const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
   const movePanel = useLayoutStore((s) => s.movePanel);
   const initLayout = useLayoutStore((s) => s.initLayout);
 
@@ -90,7 +173,6 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
   const allPanels = [...leftPanels, ...rightPanels];
   const panelMap = buildPanelMap(allPanels);
 
-  // Initialize layout from available panels
   useEffect(() => {
     const available = [
       ...leftPanels.map((p) => ({ id: p.id, defaultSidebar: "left" as const })),
@@ -100,14 +182,9 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
   }, [leftPanels.length, rightPanels.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-  /** Find which sidebar a panel is currently in */
   const findSidebar = useCallback(
     (panelId: string): "left" | "right" | null => {
       if (panels.left.includes(panelId)) return "left";
@@ -128,10 +205,8 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
 
       const activeIdStr = active.id as string;
       const overIdStr = over.id as string;
-
       const activeSidebar = findSidebar(activeIdStr);
 
-      // Determine the target sidebar
       let overSidebar: "left" | "right" | null = null;
       if (overIdStr === "left" || overIdStr === "right") {
         overSidebar = overIdStr;
@@ -139,10 +214,8 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
         overSidebar = findSidebar(overIdStr);
       }
 
-      if (!activeSidebar || !overSidebar) return;
-      if (activeSidebar === overSidebar) return;
+      if (!activeSidebar || !overSidebar || activeSidebar === overSidebar) return;
 
-      // Move panel to the other sidebar (at end)
       const targetList = panels[overSidebar];
       const overIndex = targetList.indexOf(overIdStr);
       const insertIndex = overIndex !== -1 ? overIndex : targetList.length;
@@ -155,13 +228,11 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
     (event: DragEndEvent) => {
       const { active, over } = event;
       setActiveId(null);
-
       if (!over) return;
 
       const activeIdStr = active.id as string;
       const overIdStr = over.id as string;
 
-      // If dropped on a sidebar container directly
       if (overIdStr === "left" || overIdStr === "right") {
         const currentSidebar = findSidebar(activeIdStr);
         if (currentSidebar !== overIdStr) {
@@ -170,47 +241,40 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
         return;
       }
 
-      // Reorder within the same sidebar
       const activeSidebar = findSidebar(activeIdStr);
       const overSidebar = findSidebar(overIdStr);
 
-      if (!activeSidebar || !overSidebar) return;
+      if (!activeSidebar || !overSidebar || activeSidebar !== overSidebar) return;
 
-      if (activeSidebar === overSidebar) {
-        const list = panels[activeSidebar];
-        const oldIndex = list.indexOf(activeIdStr);
-        const newIndex = list.indexOf(overIdStr);
+      const list = panels[activeSidebar];
+      const oldIndex = list.indexOf(activeIdStr);
+      const newIndex = list.indexOf(overIdStr);
 
-        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-          const reordered = arrayMove(list, oldIndex, newIndex);
-          // Apply the reordered list via movePanel calls
-          // We need to set the whole sidebar order, so we remove and re-add each
-          // Actually, let's just set the state directly for efficiency
-          useLayoutStore.setState((state) => {
-            const newPanels = { ...state.panels, [activeSidebar]: reordered };
-            // Persist
-            try {
-              localStorage.setItem(
-                "notation-panel-layout",
-                JSON.stringify({
-                  panels: newPanels,
-                  sidebarOpen: state.sidebarOpen,
-                  panelCollapsed: state.panelCollapsed,
-                })
-              );
-            } catch {
-              // ignore
-            }
-            return { panels: newPanels };
-          });
-        }
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        const reordered = arrayMove(list, oldIndex, newIndex);
+        useLayoutStore.setState((state) => {
+          const newPanels = { ...state.panels, [activeSidebar]: reordered };
+          try {
+            localStorage.setItem(
+              "notation-panel-layout",
+              JSON.stringify({
+                panels: newPanels,
+                sidebarOpen: state.sidebarOpen,
+                panelCollapsed: state.panelCollapsed,
+                sidebarWidth: state.sidebarWidth,
+              })
+            );
+          } catch {
+            // ignore
+          }
+          return { panels: newPanels };
+        });
       }
     },
     [findSidebar, movePanel, panels]
   );
 
   const activePanel = activeId ? panelMap.get(activeId) : null;
-
   const hasLeftPanels = panels.left.length > 0;
   const hasRightPanels = panels.right.length > 0;
   const showLeft = hasLeftPanels && sidebarOpen.left;
@@ -219,32 +283,36 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={sidebarAwareCollision}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <div style={layoutStyles.container}>
+      <div className="flex flex-1 overflow-hidden">
         <DroppableSidebar
           id="left"
           panelIds={panels.left}
           panelMap={panelMap}
           isOpen={showLeft}
+          width={sidebarWidth.left}
         />
+        {showLeft && <ResizeHandle side="left" />}
 
-        <div style={layoutStyles.mainContent}>{children}</div>
+        <div className="flex flex-1 overflow-hidden min-w-0">{children}</div>
 
+        {showRight && <ResizeHandle side="right" />}
         <DroppableSidebar
           id="right"
           panelIds={panels.right}
           panelMap={panelMap}
           isOpen={showRight}
+          width={sidebarWidth.right}
         />
       </div>
 
       <DragOverlay>
         {activeId && activePanel ? (
-          <DraggablePanel id={activeId} title={activePanel.config.title} isOverlay>
+          <DraggablePanel id={activeId} title={activePanel.config.title} isOverlay menuItems={activePanel.config.menuItems}>
             {activePanel.config.component()}
           </DraggablePanel>
         ) : null}
@@ -252,39 +320,3 @@ export function PanelLayout({ leftPanels, rightPanels, children }: PanelLayoutPr
     </DndContext>
   );
 }
-
-const sidebarStyles: Record<string, React.CSSProperties> = {
-  container: {
-    width: 280,
-    minWidth: 280,
-    display: "flex",
-    flexDirection: "column",
-    padding: 6,
-    gap: 4,
-    overflowY: "auto",
-    overflowX: "hidden",
-    transition: "background 0.15s ease",
-  },
-  emptyDropZone: {
-    padding: "24px 12px",
-    textAlign: "center",
-    color: "#94a3b8",
-    fontSize: 12,
-    border: "2px dashed #cbd5e1",
-    borderRadius: 6,
-    margin: 4,
-  },
-};
-
-const layoutStyles: Record<string, React.CSSProperties> = {
-  container: {
-    display: "flex",
-    flex: 1,
-    overflow: "hidden",
-  },
-  mainContent: {
-    display: "flex",
-    flex: 1,
-    overflow: "hidden",
-  },
-};

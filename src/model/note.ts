@@ -4,6 +4,11 @@ import type { NoteEventId } from "./ids";
 import type { TabInfo } from "./guitar";
 
 export type Articulation =
+  | { kind: "staccato" }
+  | { kind: "accent" }
+  | { kind: "tenuto" }
+  | { kind: "fermata" }
+  | { kind: "marcato" }
   | { kind: "bend"; semitones: number }
   | { kind: "slide-up" }
   | { kind: "slide-down" }
@@ -13,10 +18,18 @@ export type Articulation =
   | { kind: "palm-mute" }
   | { kind: "harmonic" };
 
+export type ArticulationKind = Articulation["kind"];
+
 export interface NoteHead {
   pitch: Pitch;
   tied?: boolean;
   tabInfo?: TabInfo;
+}
+
+/** Tuplet ratio: `actual` notes in the space of `normal`. E.g. { actual: 3, normal: 2 } for triplets. */
+export interface TupletRatio {
+  actual: number;
+  normal: number;
 }
 
 export type NoteEvent = Note | Chord | Rest | Slash;
@@ -29,6 +42,7 @@ export interface Note {
   stemDirection?: "up" | "down" | null;
   tabInfo?: TabInfo;
   articulations?: Articulation[];
+  tuplet?: TupletRatio;
 }
 
 export interface Chord {
@@ -39,6 +53,7 @@ export interface Chord {
   stemDirection?: "up" | "down" | null;
   tabInfo?: TabInfo;
   articulations?: Articulation[];
+  tuplet?: TupletRatio;
 }
 
 export interface Rest {
@@ -46,10 +61,12 @@ export interface Rest {
   id: NoteEventId;
   duration: Duration;
   staffPosition?: number;
+  tuplet?: TupletRatio;
 }
 
 export interface Slash {
   kind: "slash";
   id: NoteEventId;
   duration: Duration;
+  tuplet?: TupletRatio;
 }

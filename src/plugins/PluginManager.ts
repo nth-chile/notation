@@ -56,6 +56,7 @@ export interface PluginEntry {
   views: ViewEntry[];
   importers: ImporterEntry[];
   exporters: ExporterEntry[];
+  settingsComponent: (() => React.ReactNode) | null;
 }
 
 type ScoreGetter = () => Score;
@@ -181,6 +182,11 @@ export class PluginManager {
           entry.exporters.push(reg);
         }
       },
+      registerSettings: (component: () => React.ReactNode) => {
+        if (entry) {
+          entry.settingsComponent = component;
+        }
+      },
     };
   }
 
@@ -198,6 +204,7 @@ export class PluginManager {
       views: [],
       importers: [],
       exporters: [],
+      settingsComponent: null,
     });
   }
 
@@ -252,6 +259,7 @@ export class PluginManager {
     entry.views = [];
     entry.importers = [];
     entry.exporters = [];
+    entry.settingsComponent = null;
 
     entry.plugin.deactivate?.();
     entry.enabled = false;
@@ -342,4 +350,18 @@ export class PluginManager {
     parts.push(key);
     return parts.join("+");
   }
+}
+
+// Global accessor for command labels (used by AI system prompt)
+let _instance: PluginManager | null = null;
+
+export function setGlobalPluginManager(pm: PluginManager): void {
+  _instance = pm;
+}
+
+export function getCommandLabels(): string[] {
+  if (!_instance) return [];
+  return _instance.getCommands()
+    .filter((c) => !c.id.startsWith("notation.toggle-") && !c.id.startsWith("notation.play") && !c.id.startsWith("notation.pause") && !c.id.startsWith("notation.stop"))
+    .map((c) => c.label);
 }

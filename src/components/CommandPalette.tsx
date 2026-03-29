@@ -12,116 +12,64 @@ export function CommandPalette({ pluginManager }: CommandPaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const commands = pluginManager?.getCommands() ?? [];
-
   const filtered = commands.filter((cmd) => {
     if (!query) return true;
     const q = query.toLowerCase();
-    return (
-      cmd.label.toLowerCase().includes(q) ||
-      cmd.id.toLowerCase().includes(q)
-    );
+    return cmd.label.toLowerCase().includes(q) || cmd.id.toLowerCase().includes(q);
   });
 
-  const open = useCallback(() => {
-    setVisible(true);
-    setQuery("");
-    setSelectedIndex(0);
-  }, []);
+  const open = useCallback(() => { setVisible(true); setQuery(""); setSelectedIndex(0); }, []);
+  const close = useCallback(() => { setVisible(false); setQuery(""); setSelectedIndex(0); }, []);
+  const execute = useCallback((cmd: PluginCommand) => { close(); cmd.handler(); }, [close]);
 
-  const close = useCallback(() => {
-    setVisible(false);
-    setQuery("");
-    setSelectedIndex(0);
-  }, []);
-
-  const execute = useCallback(
-    (cmd: PluginCommand) => {
-      close();
-      cmd.handler();
-    },
-    [close]
-  );
-
-  // Ctrl+Shift+P to toggle
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
-        if (visible) {
-          close();
-        } else {
-          open();
-        }
+        visible ? close() : open();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [visible, open, close]);
 
-  // Focus input when visible
   useEffect(() => {
-    if (visible) {
-      setTimeout(() => inputRef.current?.focus(), 0);
-    }
+    if (visible) setTimeout(() => inputRef.current?.focus(), 0);
   }, [visible]);
 
   if (!visible) return null;
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") {
-      close();
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSelectedIndex((i) => Math.max(i - 1, 0));
-      return;
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (filtered[selectedIndex]) {
-        execute(filtered[selectedIndex]);
-      }
-      return;
-    }
+    if (e.key === "Escape") { close(); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1)); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); setSelectedIndex((i) => Math.max(i - 1, 0)); return; }
+    if (e.key === "Enter") { e.preventDefault(); if (filtered[selectedIndex]) execute(filtered[selectedIndex]); return; }
   }
 
   return (
-    <div style={styles.overlay} onClick={close}>
-      <div style={styles.palette} onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 flex justify-center pt-24 z-[1100]" onClick={close}>
+      <div className="bg-popover border rounded-lg w-[500px] max-h-[400px] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <input
           ref={inputRef}
           type="text"
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setSelectedIndex(0);
-          }}
+          onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
           onKeyDown={handleKeyDown}
           placeholder="Type a command..."
-          style={styles.input}
+          className="px-4 py-3 text-base border-b bg-background text-foreground outline-none"
         />
-
-        <div style={styles.list}>
+        <div className="overflow-y-auto flex-1">
           {filtered.length === 0 && (
-            <div style={styles.empty}>No commands found</div>
+            <div className="py-5 px-4 text-center text-sm text-muted-foreground">No commands found</div>
           )}
           {filtered.map((cmd, i) => (
             <div
               key={cmd.id}
               onClick={() => execute(cmd)}
-              style={{
-                ...styles.item,
-                ...(i === selectedIndex ? styles.itemSelected : {}),
-              }}
+              className={`px-4 py-2 cursor-pointer flex justify-between items-center ${i === selectedIndex ? "bg-accent" : "hover:bg-accent/50"}`}
             >
-              <span style={styles.itemLabel}>{cmd.label}</span>
-              <span style={styles.itemId}>{cmd.id}</span>
+              <span className="text-sm">{cmd.label}</span>
+              <span className="text-xs text-muted-foreground">{cmd.id}</span>
             </div>
           ))}
         </div>
@@ -129,63 +77,3 @@ export function CommandPalette({ pluginManager }: CommandPaletteProps) {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: "rgba(0,0,0,0.3)",
-    display: "flex",
-    justifyContent: "center",
-    paddingTop: 100,
-    zIndex: 1100,
-  },
-  palette: {
-    background: "#fff",
-    borderRadius: 8,
-    width: 500,
-    maxHeight: 400,
-    display: "flex",
-    flexDirection: "column",
-    boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-    overflow: "hidden",
-  },
-  input: {
-    padding: "12px 16px",
-    fontSize: 16,
-    border: "none",
-    borderBottom: "1px solid #e2e8f0",
-    outline: "none",
-  },
-  list: {
-    overflowY: "auto" as const,
-    flex: 1,
-  },
-  empty: {
-    padding: "20px 16px",
-    color: "#94a3b8",
-    textAlign: "center" as const,
-    fontSize: 14,
-  },
-  item: {
-    padding: "8px 16px",
-    cursor: "pointer",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  itemSelected: {
-    background: "#eff6ff",
-  },
-  itemLabel: {
-    fontSize: 14,
-    color: "#1e293b",
-  },
-  itemId: {
-    fontSize: 12,
-    color: "#94a3b8",
-  },
-};

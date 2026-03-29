@@ -10,6 +10,7 @@ export interface AppSettings {
   aiProvider: "anthropic" | "openai";
   theme: "light" | "dark";
   keyboardLayout: "standard" | "custom";
+  historyMaxSnapshots: number;
 }
 
 const STORAGE_KEY = "notation-settings";
@@ -25,6 +26,7 @@ function defaultSettings(): AppSettings {
     aiProvider: "anthropic",
     theme: "light",
     keyboardLayout: "standard",
+    historyMaxSnapshots: 50,
   };
 }
 
