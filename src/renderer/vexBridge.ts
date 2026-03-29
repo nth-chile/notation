@@ -7,6 +7,7 @@ import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
 import { durationToTicks as durationToTicksFn, measureCapacity } from "../model/duration";
 import { getBeamGroups } from "./beaming";
+import { useEditorStore } from "../state/EditorState";
 
 export interface RenderContext {
   renderer: Renderer;
@@ -481,6 +482,8 @@ export function renderMeasure(
             break;
           }
           case "lyric": {
+            // Skip lyric rendering when lyrics are disabled
+            if (!useEditorStore.getState().showLyrics) break;
             // Find matching noteBox by noteEventId
             const box = noteBoxes.find((nb) => nb.id === annotation.noteEventId);
             if (box) {

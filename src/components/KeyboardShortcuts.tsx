@@ -39,6 +39,7 @@ export function KeyboardShortcuts() {
   const deleteMeasure = useEditorStore((s) => s.deleteMeasure);
   const enterChordMode = useEditorStore((s) => s.enterChordMode);
   const enterLyricMode = useEditorStore((s) => s.enterLyricMode);
+  const showLyrics = useEditorStore((s) => s.showLyrics);
   const textInputMode = useEditorStore((s) => s.inputState.textInputMode);
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const play = useEditorStore((s) => s.play);
@@ -46,8 +47,6 @@ export function KeyboardShortcuts() {
   const stopPlayback = useEditorStore((s) => s.stopPlayback);
   const moveCursorPart = useEditorStore((s) => s.moveCursorPart);
   const setViewMode = useEditorStore((s) => s.setViewMode);
-  const inputMode = useEditorStore((s) => s.inputState.mode);
-  const setInputMode = useEditorStore((s) => s.setInputMode);
   const toggleArticulation = useEditorStore((s) => s.toggleArticulation);
   const selection = useEditorStore((s) => s.selection);
   const setSelection = useEditorStore((s) => s.setSelection);
@@ -67,17 +66,10 @@ export function KeyboardShortcuts() {
 
       const key = e.key.toLowerCase();
 
-      // Escape: toggle between note entry and select mode
+      // Escape: clear selection
       if (e.key === "Escape") {
         e.preventDefault();
-        setInputMode(inputMode === "select" ? "note" : "select");
-        return;
-      }
-
-      // N: enter note mode explicitly
-      if (key === "n" && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        setInputMode("note");
+        setSelection(null);
         return;
       }
 
@@ -174,8 +166,9 @@ export function KeyboardShortcuts() {
         return;
       }
 
-      // Shift+L: enter lyric input mode
+      // Shift+L: enter lyric input mode (only when lyrics plugin is active)
       if (e.shiftKey && !e.metaKey && !e.ctrlKey && key === "l") {
+        if (!showLyrics) return;
         e.preventDefault();
         enterLyricMode();
         return;
@@ -313,6 +306,7 @@ export function KeyboardShortcuts() {
     deleteMeasure,
     enterChordMode,
     enterLyricMode,
+    showLyrics,
     textInputMode,
     isPlaying,
     play,
@@ -325,8 +319,6 @@ export function KeyboardShortcuts() {
     pasteAtCursor,
     clipboardMeasures,
     deleteSelectedMeasures,
-    inputMode,
-    setInputMode,
     toggleArticulation,
     setSelection,
     extendSelection,

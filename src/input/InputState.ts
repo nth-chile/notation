@@ -8,7 +8,6 @@ export interface CursorPosition {
 }
 
 export interface InputState {
-  mode: "note" | "rest" | "select";
   duration: Duration;
   accidental: Accidental;
   voice: number;
@@ -20,7 +19,6 @@ export interface InputState {
 
 export function defaultInputState(): InputState {
   return {
-    mode: "note",
     duration: { type: "quarter", dots: 0 },
     accidental: "natural",
     voice: 0,

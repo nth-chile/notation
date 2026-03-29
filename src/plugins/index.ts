@@ -31,3 +31,5 @@ export { PartManagerPlugin } from "./builtins/PartManager";
 export { ScoreEditorPlugin } from "./builtins/ScoreEditor";
 export { ClipboardPlugin } from "./builtins/Clipboard";
 export { SoundFontPlugin } from "./builtins/SoundFont";
+export { TitleDisplayPlugin } from "./builtins/TitleDisplay";
+export { LyricsPlugin } from "./builtins/Lyrics";

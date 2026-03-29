@@ -8,6 +8,7 @@ import type { ViewConfig, AnnotationFilter } from "../views/ViewMode";
 import type { Annotation } from "../model/annotations";
 import type { Selection } from "../plugins/PluginAPI";
 import type { Measure } from "../model";
+import { useEditorStore } from "../state/EditorState";
 
 /** Check if a measure contains only rests or empty voices (rendering-only check). */
 function isMeasureAllRests(m: Measure): boolean {
@@ -70,6 +71,7 @@ const TOP_MARGIN = DEFAULT_LAYOUT.topMargin;
 const MEASURES_PER_LINE = DEFAULT_LAYOUT.measuresPerLine;
 
 function titleHeight(score: Score): number {
+  if (!useEditorStore.getState().showTitle) return 0;
   const hasTitle = !!score.title;
   const hasComposer = !!score.composer;
   return (hasTitle ? 48 : 0) + (hasComposer ? 22 : 0) + (hasTitle || hasComposer ? 16 : 0);
@@ -177,7 +179,8 @@ export function renderScore(
   }
 
   // Render title and composer (only on first page)
-  if (rawCtx.save && (hasTitle || hasComposer)) {
+  const showTitle = useEditorStore.getState().showTitle;
+  if (showTitle && rawCtx.save && (hasTitle || hasComposer)) {
     rawCtx.save();
     rawCtx.textAlign = "center";
     const centerX = pageLayoutEnabled ? config.pageWidth / 2 : effectiveWidth / 2;
