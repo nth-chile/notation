@@ -104,10 +104,8 @@ test.describe("Note Input", () => {
     await expect(page.locator("canvas")).toBeVisible();
   });
 
-  test("toggles note/select mode with Escape and N", async ({ page }) => {
-    await pressKey(page, "Escape"); // enter select mode
-    await pressKey(page, "n"); // back to note mode
-    await pressKey(page, "c"); // should insert note
+  test("Escape clears selection", async ({ page }) => {
+    await pressKey(page, "Escape");
     await expect(page.locator("canvas")).toBeVisible();
   });
 });

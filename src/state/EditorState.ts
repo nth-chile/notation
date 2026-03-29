@@ -88,7 +88,6 @@ interface EditorStore {
   copySelection(): void;
   pasteAtCursor(): void;
   setCursorDirect(cursor: CursorPosition): void;
-  setInputMode(mode: InputState["mode"]): void;
   setTitle(title: string): void;
   setComposer(composer: string): void;
   undo(): void;
@@ -144,6 +143,12 @@ interface EditorStore {
   setRepeatBarline(barlineType: BarlineType): void;
   setVolta(volta: Volta | null): void;
   setNavigationMark(markType: NavigationMarkType, value?: string | boolean): void;
+
+  // Plugin display toggles
+  showTitle: boolean;
+  showLyrics: boolean;
+  setShowTitle(show: boolean): void;
+  setShowLyrics(show: boolean): void;
 }
 
 /** Returns true if the cursor is on an existing event (not past the end) */
@@ -175,6 +180,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     "songwriter": 0,
     "tab": 0,
   },
+  showTitle: true,
+  showLyrics: true,
 
   insertNote(pitchClass: PitchClass) {
     const state = get();
@@ -457,9 +464,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((s) => ({ inputState: { ...s.inputState, cursor } }));
   },
 
-  setInputMode(mode) {
-    set((s) => ({ inputState: { ...s.inputState, mode }, selection: mode === "note" ? null : s.selection }));
-  },
 
   setTitle(title) {
     set((s) => ({ score: { ...s.score, title } }));
@@ -928,6 +932,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       score: result.score,
       inputState: result.inputState,
     });
+  },
+
+  // Plugin display toggles
+  setShowTitle(show: boolean) {
+    set({ showTitle: show });
+  },
+  setShowLyrics(show: boolean) {
+    set({ showLyrics: show });
   },
 }));
 

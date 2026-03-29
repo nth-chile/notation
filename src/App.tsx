@@ -26,6 +26,8 @@ import {
   ScoreEditorPlugin,
   ClipboardPlugin,
   SoundFontPlugin,
+  TitleDisplayPlugin,
+  LyricsPlugin,
 } from "./plugins";
 import { setGlobalPluginManager } from "./plugins/PluginManager";
 
@@ -67,6 +69,8 @@ export function App() {
     pm.registerAndActivate(ChordAnalysisPlugin, true);
     pm.registerAndActivate(ClipboardPlugin, true);
     pm.registerAndActivate(SoundFontPlugin, true);
+    pm.registerAndActivate(TitleDisplayPlugin, true);
+    pm.registerAndActivate(LyricsPlugin, true);
 
     setGlobalPluginManager(pm);
   }

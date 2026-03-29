@@ -4,12 +4,10 @@ import { showHistoryModal } from "./HistoryModal";
 export function StatusBar() {
   const filePath = useEditorStore((s) => s.filePath);
   const autoSaveStatus = useEditorStore((s) => s.autoSaveStatus);
-  const inputMode = useEditorStore((s) => s.inputState.mode);
 
   return (
     <div className="flex items-center gap-4 px-4 py-1 border-t bg-background text-muted-foreground text-xs shrink-0">
       <span className="whitespace-nowrap">{filePath ? filePath.split("/").pop() : "Untitled"}</span>
-      <span className="whitespace-nowrap font-medium">{inputMode === "select" ? "SELECT" : "NOTE ENTRY"}</span>
       <span className="ml-auto" />
       {autoSaveStatus && <span className="whitespace-nowrap">{autoSaveStatus}</span>}
       <button
