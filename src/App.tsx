@@ -29,6 +29,7 @@ import {
   SoundFontPlugin,
   TitleDisplayPlugin,
   LyricsPlugin,
+  MidiInputPlugin,
 } from "./plugins";
 import { setGlobalPluginManager } from "./plugins/PluginManager";
 
@@ -72,6 +73,7 @@ export function App() {
     pm.registerAndActivate(SoundFontPlugin, false);
     pm.registerAndActivate(TitleDisplayPlugin, false);
     pm.registerAndActivate(LyricsPlugin, false);
+    pm.registerAndActivate(MidiInputPlugin, false);
 
     setGlobalPluginManager(pm);
   }
