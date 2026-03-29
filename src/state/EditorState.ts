@@ -43,6 +43,7 @@ import { SetNavigationMark } from "../commands/SetNavigationMark";
 import { ToggleArticulation } from "../commands/ToggleArticulation";
 import { SetDynamic } from "../commands/SetDynamic";
 import { TogglePickup } from "../commands/TogglePickup";
+import { SetSlur } from "../commands/SetSlur";
 import { InsertGraceNote } from "../commands/InsertGraceNote";
 import { OverwriteNote } from "../commands/OverwriteNote";
 import type { NavigationMarkType } from "../commands/SetNavigationMark";
@@ -166,6 +167,8 @@ interface EditorStore {
   setRehearsalMark(text: string): void;
   togglePickup(): void;
   toggleGraceNoteMode(): void;
+  slurStartEventId: NoteEventId | null;
+  toggleSlur(): void;
 
   // Plugin display toggles
   showTitle: boolean;
@@ -255,6 +258,26 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((s) => ({
       inputState: { ...s.inputState, graceNoteMode: !s.inputState.graceNoteMode },
     }));
+  },
+
+  slurStartEventId: null,
+
+  toggleSlur() {
+    const state = get();
+    const { cursor } = state.inputState;
+    const voice = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+    const evt = voice?.events[cursor.eventIndex];
+    if (!evt || evt.kind === "rest") return;
+
+    if (!state.slurStartEventId) {
+      // Mark slur start
+      set({ slurStartEventId: evt.id });
+    } else {
+      // Complete slur
+      const cmd = new SetSlur(state.slurStartEventId, evt.id);
+      const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+      set({ score: result.score, inputState: result.inputState, slurStartEventId: null });
+    }
   },
 
   insertNote(pitchClass: PitchClass) {
