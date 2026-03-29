@@ -259,7 +259,8 @@ function exportMeasure(
   isFirstMeasure: boolean,
   prevMeasure?: Measure
 ): string {
-  let xml = `    <measure number="${measureNumber}">\n`;
+  const xmlMeasureNum = measure.isPickup ? "0" : measureNumber;
+  let xml = `    <measure number="${xmlMeasureNum}"${measure.isPickup ? ' implicit="yes"' : ""}>\n`;
 
   // Attributes — emit on first measure, or when clef/time/key change
   const needsAttributes =

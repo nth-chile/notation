@@ -34,6 +34,7 @@ export interface Measure {
   navigation?: NavigationMarks;
   annotations: Annotation[];
   voices: Voice[];
+  isPickup?: boolean;
 }
 
 export interface Voice {
