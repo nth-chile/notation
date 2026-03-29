@@ -2,26 +2,7 @@ import { useEffect } from "react";
 import { useEditorStore } from "../state";
 import type { PitchClass, DurationType } from "../model";
 import type { ViewModeType } from "../views/ViewMode";
-
-const NOTE_KEYS: Record<string, PitchClass> = {
-  a: "A",
-  b: "B",
-  c: "C",
-  d: "D",
-  e: "E",
-  f: "F",
-  g: "G",
-};
-
-const DURATION_KEYS: Record<string, DurationType> = {
-  "1": "whole",
-  "2": "half",
-  "3": "quarter",
-  "4": "eighth",
-  "5": "16th",
-  "6": "32nd",
-  "7": "64th",
-};
+import { getSettings, matchesBinding } from "../settings";
 
 export function KeyboardShortcuts() {
   const insertNote = useEditorStore((s) => s.insertNote);
@@ -44,7 +25,6 @@ export function KeyboardShortcuts() {
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const play = useEditorStore((s) => s.play);
   const pause = useEditorStore((s) => s.pause);
-  const stopPlayback = useEditorStore((s) => s.stopPlayback);
   const moveCursorPart = useEditorStore((s) => s.moveCursorPart);
   const setViewMode = useEditorStore((s) => s.setViewMode);
   const toggleArticulation = useEditorStore((s) => s.toggleArticulation);
@@ -57,270 +37,111 @@ export function KeyboardShortcuts() {
   const clipboardMeasures = useEditorStore((s) => s.clipboardMeasures);
 
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      // Don't capture when typing in input fields
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      // Don't capture when in text input mode
-      if (textInputMode) return;
-
-      const key = e.key.toLowerCase();
-
-      // Escape: clear selection
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSelection(null);
-        return;
-      }
-
-      // Undo/Redo
-      if ((e.metaKey || e.ctrlKey) && key === "z") {
-        e.preventDefault();
-        if (e.shiftKey) {
-          redo();
-        } else {
-          undo();
-        }
-        return;
-      }
-
-      // Copy selection: Ctrl/Cmd+C
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && key === "c") {
-        if (selection) {
-          e.preventDefault();
-          copySelection();
-          return;
-        }
-        // If no selection, let the browser handle native copy
-        return;
-      }
-
-      // Paste clipboard measures: Ctrl/Cmd+V
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && key === "v") {
-        if (clipboardMeasures) {
-          e.preventDefault();
-          pasteAtCursor();
-          return;
-        }
-        return;
-      }
-
-      // Cut selection: Ctrl/Cmd+X
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && key === "x") {
-        if (selection) {
-          e.preventDefault();
-          copySelection();
-          deleteSelectedMeasures();
-          return;
-        }
-        return;
-      }
-
-      // View mode switching: Ctrl+Shift+1/2/3/4
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && key >= "1" && key <= "4") {
-        e.preventDefault();
-        const viewModes: ViewModeType[] = ["songwriter", "lead-sheet", "tab", "full-score"];
-        const idx = parseInt(key) - 1;
-        if (idx >= 0 && idx < viewModes.length) {
-          setViewMode(viewModes[idx]);
-        }
-        return;
-      }
-
-      // Voice switching: Ctrl+1 through Ctrl+4
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && key >= "1" && key <= "4") {
-        e.preventDefault();
-        setVoice(parseInt(key) - 1);
-        return;
-      }
-
-      // Insert measure: Ctrl+M
-      if ((e.ctrlKey || e.metaKey) && key === "m") {
-        e.preventDefault();
-        insertMeasure();
-        return;
-      }
-
-      // Delete measure: Ctrl+Shift+Backspace
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && key === "backspace") {
-        e.preventDefault();
-        deleteMeasure();
-        return;
-      }
-
-      // Space: play/pause toggle
-      if (key === " " && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
-        e.preventDefault();
-        if (isPlaying) {
-          pause();
-        } else {
-          play();
-        }
-        return;
-      }
-
-      // Shift+C: enter chord input mode
-      if (e.shiftKey && !e.metaKey && !e.ctrlKey && key === "c") {
-        e.preventDefault();
-        enterChordMode();
-        return;
-      }
-
-      // Shift+L: enter lyric input mode (only when lyrics plugin is active)
-      if (e.shiftKey && !e.metaKey && !e.ctrlKey && key === "l") {
-        if (!showLyrics) return;
-        e.preventDefault();
-        enterLyricMode();
-        return;
-      }
-
-      // Articulations: Shift+period=staccato, Shift+comma=accent, Shift+minus=tenuto, Shift+u=fermata
-      if (e.shiftKey && !e.metaKey && !e.ctrlKey) {
-        if (e.key === ">") { e.preventDefault(); toggleArticulation("accent"); return; }
-        if (e.key === "<") { e.preventDefault(); toggleArticulation("staccato"); return; }
-        if (key === "t") { e.preventDefault(); toggleArticulation("tenuto"); return; }
-        if (key === "u") { e.preventDefault(); toggleArticulation("fermata"); return; }
-        if (e.key === "^") { e.preventDefault(); toggleArticulation("marcato"); return; }
-      }
-
-      // Note input (also handles ChangePitch when cursor is on existing note)
-      if (!e.metaKey && !e.ctrlKey && NOTE_KEYS[key]) {
-        e.preventDefault();
-        insertNote(NOTE_KEYS[key]);
-        return;
-      }
-
-      // Rest
-      if (key === "r" && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        insertRest();
-        return;
-      }
+    // Action handlers — keyed by shortcut action id
+    const handlers: Record<string, () => void> = {
+      // Notes
+      "note:a": () => insertNote("A" as PitchClass),
+      "note:b": () => insertNote("B" as PitchClass),
+      "note:c": () => insertNote("C" as PitchClass),
+      "note:d": () => insertNote("D" as PitchClass),
+      "note:e": () => insertNote("E" as PitchClass),
+      "note:f": () => insertNote("F" as PitchClass),
+      "note:g": () => insertNote("G" as PitchClass),
+      "insert-rest": () => insertRest(),
+      "delete": () => {
+        if (selection) deleteSelectedMeasures();
+        else deleteNote();
+      },
 
       // Duration
-      if (DURATION_KEYS[key] && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        setDuration(DURATION_KEYS[key]);
-        return;
-      }
-
-      // Dot
-      if (key === "." && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        toggleDot();
-        return;
-      }
+      "duration:whole": () => setDuration("whole" as DurationType),
+      "duration:half": () => setDuration("half" as DurationType),
+      "duration:quarter": () => setDuration("quarter" as DurationType),
+      "duration:eighth": () => setDuration("eighth" as DurationType),
+      "duration:16th": () => setDuration("16th" as DurationType),
+      "duration:32nd": () => setDuration("32nd" as DurationType),
+      "duration:64th": () => setDuration("64th" as DurationType),
+      "toggle-dot": () => toggleDot(),
 
       // Accidentals
-      if (key === "=" || key === "+") {
-        e.preventDefault();
-        setAccidental("sharp");
-        return;
-      }
-      if (key === "-" || key === "_") {
-        e.preventDefault();
-        setAccidental("flat");
-        return;
-      }
+      "accidental:sharp": () => setAccidental("sharp"),
+      "accidental:flat": () => setAccidental("flat"),
 
-      // Shift+arrow: extend selection by measure
-      if (e.shiftKey && !e.metaKey && !e.ctrlKey && key === "arrowleft") {
-        e.preventDefault();
-        extendSelection("left");
-        return;
-      }
-      if (e.shiftKey && !e.metaKey && !e.ctrlKey && key === "arrowright") {
-        e.preventDefault();
-        extendSelection("right");
-        return;
-      }
+      // Navigation
+      "cursor:left": () => { if (selection) setSelection(null); moveCursor("left"); },
+      "cursor:right": () => { if (selection) setSelection(null); moveCursor("right"); },
+      "octave:up": () => changeOctave("up"),
+      "octave:down": () => changeOctave("down"),
+      "part:up": () => moveCursorPart("up"),
+      "part:down": () => moveCursorPart("down"),
 
-      // Delete/Backspace with selection: delete selected measures
-      if (selection && (key === "delete" || key === "backspace") && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        deleteSelectedMeasures();
-        return;
-      }
+      // Selection
+      "select:left": () => extendSelection("left"),
+      "select:right": () => extendSelection("right"),
+      "escape": () => setSelection(null),
+      "copy": () => { if (selection) copySelection(); },
+      "paste": () => { if (clipboardMeasures) pasteAtCursor(); },
+      "cut": () => { if (selection) { copySelection(); deleteSelectedMeasures(); } },
 
-      // Cursor movement (clears selection)
-      if (key === "arrowleft") {
-        e.preventDefault();
-        if (selection) setSelection(null);
-        moveCursor("left");
-        return;
-      }
-      if (key === "arrowright") {
-        e.preventDefault();
-        if (selection) setSelection(null);
-        moveCursor("right");
-        return;
-      }
+      // Editing
+      "undo": () => undo(),
+      "redo": () => redo(),
+      "insert-measure": () => insertMeasure(),
+      "delete-measure": () => deleteMeasure(),
 
-      // Alt+Up/Down: move cursor between parts
-      if (e.altKey && !e.metaKey && !e.ctrlKey && key === "arrowup") {
-        e.preventDefault();
-        moveCursorPart("up");
-        return;
-      }
-      if (e.altKey && !e.metaKey && !e.ctrlKey && key === "arrowdown") {
-        e.preventDefault();
-        moveCursorPart("down");
-        return;
-      }
+      // Voices
+      "voice:1": () => setVoice(0),
+      "voice:2": () => setVoice(1),
+      "voice:3": () => setVoice(2),
+      "voice:4": () => setVoice(3),
 
-      // Octave
-      if (key === "arrowup") {
-        e.preventDefault();
-        changeOctave("up");
-        return;
-      }
-      if (key === "arrowdown") {
-        e.preventDefault();
-        changeOctave("down");
-        return;
-      }
+      // Views
+      "view:songwriter": () => setViewMode("songwriter" as ViewModeType),
+      "view:lead-sheet": () => setViewMode("lead-sheet" as ViewModeType),
+      "view:tab": () => setViewMode("tab" as ViewModeType),
+      "view:full-score": () => setViewMode("full-score" as ViewModeType),
 
-      // Delete
-      if (key === "backspace" || key === "delete") {
-        e.preventDefault();
-        deleteNote();
-        return;
+      // Annotation
+      "chord-mode": () => enterChordMode(),
+      "lyric-mode": () => { if (showLyrics) enterLyricMode(); },
+
+      // Articulations
+      "articulation:accent": () => toggleArticulation("accent"),
+      "articulation:staccato": () => toggleArticulation("staccato"),
+      "articulation:tenuto": () => toggleArticulation("tenuto"),
+      "articulation:fermata": () => toggleArticulation("fermata"),
+      "articulation:marcato": () => toggleArticulation("marcato"),
+
+      // Playback
+      "play-pause": () => { if (isPlaying) pause(); else play(); },
+    };
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (textInputMode) return;
+
+      const bindings = getSettings().keyBindings;
+
+      for (const [actionId, binding] of Object.entries(bindings)) {
+        if (matchesBinding(e, binding)) {
+          const handler = handlers[actionId];
+          if (handler) {
+            e.preventDefault();
+            handler();
+            return;
+          }
+        }
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    insertNote,
-    insertRest,
-    deleteNote,
-    setDuration,
-    toggleDot,
-    setAccidental,
-    moveCursor,
-    changeOctave,
-    undo,
-    redo,
-    setVoice,
-    insertMeasure,
-    deleteMeasure,
-    enterChordMode,
-    enterLyricMode,
-    showLyrics,
-    textInputMode,
-    isPlaying,
-    play,
-    pause,
-    stopPlayback,
-    moveCursorPart,
-    setViewMode,
-    selection,
-    copySelection,
-    pasteAtCursor,
-    clipboardMeasures,
-    deleteSelectedMeasures,
-    toggleArticulation,
-    setSelection,
+    insertNote, insertRest, deleteNote, setDuration, toggleDot, setAccidental,
+    moveCursor, changeOctave, undo, redo, setVoice, insertMeasure, deleteMeasure,
+    enterChordMode, enterLyricMode, showLyrics, textInputMode, isPlaying, play,
+    pause, moveCursorPart, setViewMode, selection, copySelection, pasteAtCursor,
+    clipboardMeasures, deleteSelectedMeasures, toggleArticulation, setSelection,
     extendSelection,
   ]);
 

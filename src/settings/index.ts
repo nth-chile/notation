@@ -6,3 +6,12 @@ export {
   subscribeSettings,
   defaultSettings,
 } from "./Settings";
+export {
+  type KeyBinding,
+  type ShortcutAction,
+  SHORTCUT_ACTIONS,
+  defaultKeyBindings,
+  formatBinding,
+  matchesBinding,
+  eventToBinding,
+} from "./keybindings";

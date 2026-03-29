@@ -248,6 +248,24 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setDuration(type: DurationType) {
+    const state = get();
+    if (state.selection) {
+      const { partIndex, measureStart, measureEnd } = state.selection;
+      const score = structuredClone(state.score);
+      const part = score.parts[partIndex];
+      if (!part) return;
+      for (let mi = measureStart; mi <= measureEnd; mi++) {
+        const measure = part.measures[mi];
+        if (!measure) continue;
+        for (const voice of measure.voices) {
+          voice.events = voice.events.map((ev) => ({
+            ...ev,
+            duration: { ...ev.duration, type },
+          }));
+        }
+      }
+      set({ score });
+    }
     set((s) => ({
       inputState: {
         ...s.inputState,
