@@ -13,10 +13,15 @@ export function ScoreCanvas() {
   const score = useEditorStore((s) => s.score);
   const inputState = useEditorStore((s) => s.inputState);
   const setNoteBoxes = useEditorStore((s) => s.setNoteBoxes);
+  const setAnnotationBoxes = useEditorStore((s) => s.setAnnotationBoxes);
   const setMeasurePositions = useEditorStore((s) => s.setMeasurePositions);
   const playbackTick = useEditorStore((s) => s.playbackTick);
   const viewConfig = useEditorStore((s) => s.viewConfig);
   const selection = useEditorStore((s) => s.selection);
+  const showTitle = useEditorStore((s) => s.showTitle);
+  const showComposer = useEditorStore((s) => s.showComposer);
+  const editingTitle = useEditorStore((s) => s.editingTitle);
+  const editingComposer = useEditorStore((s) => s.editingComposer);
 
   // Track container size
   useEffect(() => {
@@ -53,30 +58,26 @@ export function ScoreCanvas() {
     const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
     if (rawCtx.scale) rawCtx.scale(dpr, dpr);
 
+    // Fill canvas with warm off-white background
+    const raw = canvas.getContext("2d")!;
+    raw.save();
+    raw.scale(dpr, dpr);
+    raw.fillStyle = "#f0e9de";
+    raw.fillRect(0, 0, width, height);
+    raw.restore();
+
     const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, viewConfig, width, selection);
 
-    // Invert drawn content for dark mode, preserving transparency.
-    const raw = canvas.getContext("2d")!;
-    const imageData = raw.getImageData(0, 0, canvas.width, canvas.height);
-    const d = imageData.data;
-    for (let i = 0; i < d.length; i += 4) {
-      if (d[i + 3] > 0) {
-        d[i] = 255 - d[i];
-        d[i + 1] = 255 - d[i + 1];
-        d[i + 2] = 255 - d[i + 2];
-      }
-    }
-    raw.putImageData(imageData, 0, 0);
-
     setNoteBoxes(result.noteBoxes);
+    setAnnotationBoxes(result.annotationBoxes);
     setMeasurePositions(result.measurePositions);
-  }, [score, inputState.cursor, playbackTick, viewConfig, containerWidth, selection, setNoteBoxes, setMeasurePositions]);
+  }, [score, inputState.cursor, playbackTick, viewConfig, containerWidth, selection, showTitle, showComposer, editingTitle, editingComposer, setNoteBoxes, setAnnotationBoxes, setMeasurePositions]);
 
   return (
     <div
       ref={containerRef}
       data-score-container=""
-      style={{ flex: 1, overflow: "auto", background: "#1e1e1e", minWidth: 0, position: "relative" }}
+      style={{ flex: 1, overflow: "auto", background: "#f0e9de", minWidth: 0, position: "relative" }}
     >
       <canvas ref={canvasRef} style={{ display: "block" }} />
       <ScoreOverlay width={containerWidth} height={canvasHeight} />

@@ -1,7 +1,7 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
 import type { NoteEvent, NoteHead, Note, Chord, Rest, TupletRatio } from "../model/note";
 import type { Pitch, PitchClass, Accidental, Octave } from "../model/pitch";
-import type { Duration, DurationType } from "../model/duration";
+import { durationToTicks, type Duration, type DurationType } from "../model/duration";
 import type { Clef, ClefType, TimeSignature, KeySignature, BarlineType } from "../model/time";
 import type { Annotation, ChordSymbol, Lyric, DynamicMark, Hairpin, Slur, DynamicLevel } from "../model/annotations";
 import { newId, type ScoreId, type PartId, type MeasureId, type VoiceId, type NoteEventId } from "../model/ids";
@@ -135,10 +135,12 @@ function parseHarmony(harmonyEl: Element, currentTick: number): ChordSymbol | nu
     }
   }
 
+  // noteEventId is assigned in post-processing after notes are parsed
   return {
     kind: "chord-symbol",
     text,
     beatOffset: currentTick,
+    noteEventId: "" as NoteEventId,
   };
 }
 
@@ -469,6 +471,24 @@ function parseMeasure(
   }
 
   const barlineEnd = parseBarline(measureEl);
+
+  // Match chord symbols to note events by tick position (voice 1)
+  const v1Events = voices[0]?.events ?? [];
+  for (const ann of annotations) {
+    if (ann.kind !== "chord-symbol") continue;
+    let tick = 0;
+    for (const ev of v1Events) {
+      if (tick >= ann.beatOffset) {
+        ann.noteEventId = ev.id;
+        break;
+      }
+      tick += durationToTicks(ev.duration, ev.tuplet);
+    }
+    // If no match found (chord at end of measure), use last event
+    if (!ann.noteEventId && v1Events.length > 0) {
+      ann.noteEventId = v1Events[v1Events.length - 1].id;
+    }
+  }
 
   const measure: Measure = {
     id: newId<MeasureId>("msr"),

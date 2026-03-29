@@ -1,11 +1,13 @@
 import type { Command, EditorSnapshot } from "./Command";
+import type { NoteEventId } from "../model";
 
 export class SetChordSymbol implements Command {
   description = "Set chord symbol";
 
   constructor(
     private text: string,
-    private beatOffset: number
+    private beatOffset: number,
+    private noteEventId: NoteEventId
   ) {}
 
   execute(state: EditorSnapshot): EditorSnapshot {
@@ -26,6 +28,7 @@ export class SetChordSymbol implements Command {
         kind: "chord-symbol",
         text: this.text.trim(),
         beatOffset: this.beatOffset,
+        noteEventId: this.noteEventId,
       });
     }
 

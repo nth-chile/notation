@@ -4,6 +4,7 @@ import { Input } from "./ui/input";
 
 export function TextInput() {
   const textInputMode = useEditorStore((s) => s.inputState.textInputMode);
+  const textInputInitialValue = useEditorStore((s) => s.inputState.textInputInitialValue);
   const commitTextInput = useEditorStore((s) => s.commitTextInput);
   const cancelTextInput = useEditorStore((s) => s.cancelTextInput);
   const cursor = useEditorStore((s) => s.inputState.cursor);
@@ -13,15 +14,18 @@ export function TextInput() {
   useEffect(() => {
     if (textInputMode && inputRef.current) {
       inputRef.current.focus();
-      inputRef.current.value = "";
+      inputRef.current.value = textInputInitialValue || "";
+      // Place cursor at end when pre-populated
+      if (textInputInitialValue) {
+        inputRef.current.select();
+      }
     }
-  }, [textInputMode, cursor.measureIndex, cursor.eventIndex]);
+  }, [textInputMode, textInputInitialValue, cursor.measureIndex, cursor.eventIndex]);
 
-  // Find the position of the current note for lyric mode positioning
+  // Find the position of the current note for positioning
   const notePosition = useMemo(() => {
-    if (textInputMode !== "lyric") return null;
+    if (!textInputMode) return null;
 
-    // Look up the note box matching the current cursor position
     for (const box of noteBoxes.values()) {
       if (
         box.partIndex === cursor.partIndex &&
@@ -29,7 +33,11 @@ export function TextInput() {
         box.voiceIndex === cursor.voiceIndex &&
         box.eventIndex === cursor.eventIndex
       ) {
-        return { x: box.x + box.width / 2, y: box.y + box.height };
+        return {
+          x: box.x + box.width / 2,
+          y: box.y,
+          height: box.height,
+        };
       }
     }
     return null;
@@ -43,40 +51,48 @@ export function TextInput() {
     if (e.key === "Enter") {
       e.preventDefault();
       commitTextInput(inputRef.current?.value ?? "");
+      // Clear input for next entry
+      if (inputRef.current) inputRef.current.value = "";
     } else if (e.key === "Escape") {
       e.preventDefault();
       cancelTextInput();
-    } else if (e.key === "Tab" && textInputMode === "lyric") {
-      e.preventDefault();
-      commitTextInput(inputRef.current?.value ?? "");
-    } else if (e.key === " " && textInputMode === "lyric") {
-      e.preventDefault();
-      commitTextInput(inputRef.current?.value ?? "");
     }
   }
 
-  // Position near the note in lyric mode, otherwise at the bottom center
-  const useNotePosition = textInputMode === "lyric" && notePosition;
-
-  // Get the score container's bounding rect for offset calculation
+  // Position near the note: chords above, lyrics below
   const scoreContainer = document.querySelector("[data-score-container]");
   const containerRect = scoreContainer?.getBoundingClientRect();
 
-  const positionStyle = useNotePosition && containerRect
-    ? {
-        position: "fixed" as const,
+  let positionStyle: React.CSSProperties;
+  if (notePosition && containerRect) {
+    if (textInputMode === "chord") {
+      // Position above the note (where chord symbols render)
+      positionStyle = {
+        position: "fixed",
         left: `${containerRect.left + notePosition.x}px`,
-        top: `${containerRect.top + notePosition.y + 8}px`,
-        transform: "translateX(-50%)",
+        top: `${containerRect.top + notePosition.y - 8}px`,
+        transform: "translate(-50%, -100%)",
         zIndex: 1000,
-      }
-    : {
-        position: "fixed" as const,
-        bottom: "40px",
-        left: "50%",
+      };
+    } else {
+      // Position below the note (where lyrics render)
+      positionStyle = {
+        position: "fixed",
+        left: `${containerRect.left + notePosition.x}px`,
+        top: `${containerRect.top + notePosition.y + notePosition.height + 24}px`,
         transform: "translateX(-50%)",
         zIndex: 1000,
       };
+    }
+  } else {
+    positionStyle = {
+      position: "fixed",
+      bottom: "40px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      zIndex: 1000,
+    };
+  }
 
   return (
     <div style={positionStyle}>
@@ -91,9 +107,7 @@ export function TextInput() {
           onBlur={() => cancelTextInput()}
         />
         <span className="text-xs text-muted-foreground whitespace-nowrap">
-          {textInputMode === "lyric"
-            ? "Enter/Space/Tab to advance, Esc to exit"
-            : "Enter to confirm, Esc to cancel"}
+          Enter to advance, Esc to exit
         </span>
       </div>
     </div>

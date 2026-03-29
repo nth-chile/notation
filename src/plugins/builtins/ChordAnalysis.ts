@@ -96,13 +96,17 @@ export const ChordAnalysisPlugin: NotationPlugin = {
             measure.annotations = measure.annotations.filter(
               (a) => !(a.kind === "chord-symbol" && a.beatOffset === 0)
             );
-            const chordSymbol: ChordSymbol = {
-              kind: "chord-symbol",
-              text: chordName,
-              beatOffset: 0,
-            };
-            measure.annotations.push(chordSymbol);
-            chordsAdded++;
+            const firstEvent = measure.voices[0]?.events[0];
+            if (firstEvent) {
+              const chordSymbol: ChordSymbol = {
+                kind: "chord-symbol",
+                text: chordName,
+                beatOffset: 0,
+                noteEventId: firstEvent.id,
+              };
+              measure.annotations.push(chordSymbol);
+              chordsAdded++;
+            }
           }
         }
       }

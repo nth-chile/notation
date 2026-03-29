@@ -18,12 +18,20 @@ export interface LayoutState {
   panelCollapsed: Record<string, boolean>;
   /** Sidebar widths in pixels */
   sidebarWidth: Record<"left" | "right", number>;
+  /** Ordered toolbar group IDs per row */
+  toolbarOrder: Record<"primary" | "secondary", string[]>;
+  /** Hidden toolbar group IDs */
+  toolbarHidden: string[];
 
   movePanel: (panelId: string, toSidebar: "left" | "right", toIndex: number) => void;
   toggleSidebar: (side: "left" | "right") => void;
   setSidebarOpen: (side: "left" | "right", open: boolean) => void;
   setSidebarWidth: (side: "left" | "right", width: number) => void;
   togglePanelCollapsed: (panelId: string) => void;
+  setToolbarOrder: (row: "primary" | "secondary", order: string[]) => void;
+  moveToolbarGroup: (groupId: string, toRow: "primary" | "secondary") => void;
+  toggleToolbarGroup: (groupId: string) => void;
+  resetToolbar: () => void;
   /** Initialize layout with available panel IDs, merging with persisted state */
   initLayout: (availablePanels: { id: string; defaultSidebar: "left" | "right" }[]) => void;
 }
@@ -33,6 +41,8 @@ function loadPersistedLayout(): {
   sidebarOpen?: Record<"left" | "right", boolean>;
   panelCollapsed?: Record<string, boolean>;
   sidebarWidth?: Record<"left" | "right", number>;
+  toolbarOrder?: Record<"primary" | "secondary", string[]>;
+  toolbarHidden?: string[];
 } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -43,7 +53,7 @@ function loadPersistedLayout(): {
   return null;
 }
 
-function persistLayout(state: Pick<LayoutState, "panels" | "sidebarOpen" | "panelCollapsed" | "sidebarWidth">) {
+function persistLayout(state: Pick<LayoutState, "panels" | "sidebarOpen" | "panelCollapsed" | "sidebarWidth" | "toolbarOrder" | "toolbarHidden">) {
   try {
     localStorage.setItem(
       STORAGE_KEY,
@@ -52,6 +62,8 @@ function persistLayout(state: Pick<LayoutState, "panels" | "sidebarOpen" | "pane
         sidebarOpen: state.sidebarOpen,
         panelCollapsed: state.panelCollapsed,
         sidebarWidth: state.sidebarWidth,
+        toolbarOrder: state.toolbarOrder,
+        toolbarHidden: state.toolbarHidden,
       })
     );
   } catch {
@@ -68,6 +80,8 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   sidebarOpen: { left: true, right: true },
   panelCollapsed: {},
   sidebarWidth: { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
+  toolbarOrder: { primary: [], secondary: [] },
+  toolbarHidden: [],
 
   movePanel: (panelId, toSidebar, toIndex) => {
     set((state) => {
@@ -144,6 +158,46 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     });
   },
 
+  setToolbarOrder: (row, order) => {
+    set((state) => {
+      const next = { ...state, toolbarOrder: { ...state.toolbarOrder, [row]: order } };
+      persistLayout(next);
+      return next;
+    });
+  },
+
+  moveToolbarGroup: (groupId, toRow) => {
+    set((state) => {
+      const fromRow = toRow === "primary" ? "secondary" : "primary";
+      const newOrder = {
+        [fromRow]: state.toolbarOrder[fromRow].filter((id) => id !== groupId),
+        [toRow]: [...state.toolbarOrder[toRow].filter((id) => id !== groupId), groupId],
+      } as Record<"primary" | "secondary", string[]>;
+      const next = { ...state, toolbarOrder: newOrder };
+      persistLayout(next);
+      return next;
+    });
+  },
+
+  toggleToolbarGroup: (groupId) => {
+    set((state) => {
+      const hidden = state.toolbarHidden.includes(groupId)
+        ? state.toolbarHidden.filter((id) => id !== groupId)
+        : [...state.toolbarHidden, groupId];
+      const next = { ...state, toolbarHidden: hidden };
+      persistLayout(next);
+      return next;
+    });
+  },
+
+  resetToolbar: () => {
+    set((state) => {
+      const next = { ...state, toolbarOrder: { primary: [], secondary: [] }, toolbarHidden: [] };
+      persistLayout(next);
+      return next;
+    });
+  },
+
   initLayout: (availablePanels) => {
     const persisted = loadPersistedLayout();
     const availableIds = new Set(availablePanels.map((p) => p.id));
@@ -170,6 +224,8 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
         sidebarOpen: persisted.sidebarOpen ?? { left: true, right: true },
         panelCollapsed: persisted.panelCollapsed ?? {},
         sidebarWidth: persisted.sidebarWidth ?? { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
+        toolbarOrder: persisted.toolbarOrder ?? { primary: [], secondary: [] },
+        toolbarHidden: persisted.toolbarHidden ?? [],
       });
     } else {
       // No persisted state — use defaults
@@ -187,6 +243,8 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
         sidebarOpen: { left: true, right: true },
         panelCollapsed: {},
         sidebarWidth: { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
+        toolbarOrder: { primary: [], secondary: [] },
+        toolbarHidden: [],
       });
     }
   },

@@ -12,6 +12,7 @@ export interface AppSettings {
   theme: "light" | "dark";
   historyMaxSnapshots: number;
   keyBindings: Record<string, KeyBinding>;
+  showComposer: boolean;
 }
 
 const STORAGE_KEY = "notation-settings";
@@ -32,6 +33,7 @@ function defaultSettings(): AppSettings {
     theme: "light",
     historyMaxSnapshots: 50,
     keyBindings: defaultKeyBindings(),
+    showComposer: false,
   };
 }
 

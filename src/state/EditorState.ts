@@ -43,7 +43,7 @@ import { SetNavigationMark } from "../commands/SetNavigationMark";
 import { ToggleArticulation } from "../commands/ToggleArticulation";
 import type { NavigationMarkType } from "../commands/SetNavigationMark";
 import type { BarlineType, Volta } from "../model";
-import type { NoteBox } from "../renderer/vexBridge";
+import type { NoteBox, AnnotationBox } from "../renderer/vexBridge";
 import { newId, type VoiceId, type MeasureId } from "../model/ids";
 import * as Transport from "../playback/TonePlayback";
 
@@ -63,7 +63,11 @@ interface EditorStore {
 
   // Rendering
   noteBoxes: Map<NoteEventId, NoteBox>;
+  annotationBoxes: AnnotationBox[];
   measurePositions: { partIndex: number; measureIndex: number; x: number; y: number; width: number; height: number }[];
+  titlePositions: { title?: { x: number; y: number; width: number; height: number }; composer?: { x: number; y: number; width: number; height: number } };
+  editingTitle: boolean;
+  editingComposer: boolean;
   selection: Selection | null;
   clipboardMeasures: Measure[] | null;
 
@@ -81,7 +85,11 @@ interface EditorStore {
   setFilePath(path: string | null): void;
   setAutoSaveStatus(status: string | null): void;
   setNoteBoxes(boxes: Map<NoteEventId, NoteBox>): void;
+  setAnnotationBoxes(boxes: AnnotationBox[]): void;
   setMeasurePositions(positions: EditorStore["measurePositions"]): void;
+  setTitlePositions(positions: EditorStore["titlePositions"]): void;
+  setEditingTitle(editing: boolean): void;
+  setEditingComposer(editing: boolean): void;
   setSelection(selection: Selection | null): void;
   extendSelection(direction: "left" | "right"): void;
   deleteSelectedMeasures(): void;
@@ -109,6 +117,7 @@ interface EditorStore {
   // Phase 3 actions
   enterChordMode(): void;
   enterLyricMode(): void;
+  editAnnotation(box: AnnotationBox): void;
   commitTextInput(text: string): void;
   cancelTextInput(): void;
 
@@ -146,8 +155,10 @@ interface EditorStore {
 
   // Plugin display toggles
   showTitle: boolean;
+  showComposer: boolean;
   showLyrics: boolean;
   setShowTitle(show: boolean): void;
+  setShowComposer(show: boolean): void;
   setShowLyrics(show: boolean): void;
 }
 
@@ -165,7 +176,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   autoSaveStatus: null,
   inputState: defaultInputState(),
   noteBoxes: new Map(),
+  annotationBoxes: [],
   measurePositions: [],
+  titlePositions: {},
+  editingTitle: false,
+  editingComposer: false,
   selection: null,
   clipboardMeasures: null,
   isPlaying: false,
@@ -181,6 +196,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     "tab": 0,
   },
   showTitle: true,
+  showComposer: false,
   showLyrics: true,
 
   insertNote(pitchClass: PitchClass) {
@@ -371,8 +387,24 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({ noteBoxes: boxes });
   },
 
+  setAnnotationBoxes(boxes: AnnotationBox[]) {
+    set({ annotationBoxes: boxes });
+  },
+
   setMeasurePositions(positions) {
     set({ measurePositions: positions });
+  },
+
+  setTitlePositions(positions) {
+    set({ titlePositions: positions });
+  },
+
+  setEditingTitle(editing) {
+    set({ editingTitle: editing });
+  },
+
+  setEditingComposer(editing) {
+    set({ editingComposer: editing });
   },
 
   setSelection(selection) {
@@ -498,7 +530,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       inputState: state.inputState,
     });
     if (result) {
-      set({ score: result.score, inputState: result.inputState });
+      // Restore score + cursor, but keep current toolbar state
+      set({
+        score: result.score,
+        inputState: { ...state.inputState, cursor: result.inputState.cursor },
+      });
     }
   },
 
@@ -509,7 +545,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       inputState: state.inputState,
     });
     if (result) {
-      set({ score: result.score, inputState: result.inputState });
+      set({
+        score: result.score,
+        inputState: { ...state.inputState, cursor: result.inputState.cursor },
+      });
     }
   },
 
@@ -659,6 +698,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...s.inputState,
         textInputMode: "chord",
         textInputBuffer: "",
+        textInputInitialValue: "",
       },
     }));
   },
@@ -669,20 +709,54 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...s.inputState,
         textInputMode: "lyric",
         textInputBuffer: "",
+        textInputInitialValue: "",
       },
     }));
+  },
+
+  editAnnotation(box: AnnotationBox) {
+    // Move cursor to the note this annotation belongs to, then enter edit mode with pre-populated value
+    const state = get();
+    const part = state.score.parts[box.partIndex];
+    if (!part) return;
+    const measure = part.measures[box.measureIndex];
+    if (!measure) return;
+
+    // Find the voice and event index for this noteEventId
+    for (let vi = 0; vi < measure.voices.length; vi++) {
+      const voice = measure.voices[vi];
+      for (let ei = 0; ei < voice.events.length; ei++) {
+        if (voice.events[ei].id === box.noteEventId) {
+          set({
+            inputState: {
+              ...state.inputState,
+              cursor: {
+                partIndex: box.partIndex,
+                measureIndex: box.measureIndex,
+                voiceIndex: vi,
+                eventIndex: ei,
+              },
+              textInputMode: box.kind === "chord-symbol" ? "chord" : "lyric",
+              textInputBuffer: "",
+              textInputInitialValue: box.text,
+            },
+          });
+          return;
+        }
+      }
+    }
   },
 
   commitTextInput(text: string) {
     const state = get();
     const { textInputMode } = state.inputState;
-    if (!textInputMode || !text.trim()) {
-      // Just cancel if empty
+    if (!textInputMode) {
       set((s) => ({
         inputState: {
           ...s.inputState,
           textInputMode: null,
           textInputBuffer: "",
+          textInputInitialValue: "",
         },
       }));
       return;
@@ -696,10 +770,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       let beatOffset = 0;
       if (voice) {
         for (let i = 0; i < eventIndex && i < voice.events.length; i++) {
-          beatOffset += durationToTicksFn(voice.events[i].duration);
+          beatOffset += durationToTicksFn(voice.events[i].duration, voice.events[i].tuplet);
         }
       }
-      const cmd = new SetChordSymbol(text, beatOffset);
+      const event = voice?.events[eventIndex];
+      if (!event) return;
+      const cmd = new SetChordSymbol(text, beatOffset, event.id);
       const result = history.execute(cmd, {
         score: state.score,
         inputState: state.inputState,
@@ -710,6 +786,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           ...result.inputState,
           textInputMode: null,
           textInputBuffer: "",
+          textInputInitialValue: "",
         },
       });
     } else if (textInputMode === "lyric") {
@@ -738,9 +815,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         score: result.score,
         inputState: {
           ...result.inputState,
-          // Stay in lyric mode to allow advancing through notes
           textInputMode: "lyric",
           textInputBuffer: "",
+          textInputInitialValue: "",
         },
       });
     }
@@ -752,6 +829,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...s.inputState,
         textInputMode: null,
         textInputBuffer: "",
+        textInputInitialValue: "",
       },
     }));
   },
@@ -955,6 +1033,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   // Plugin display toggles
   setShowTitle(show: boolean) {
     set({ showTitle: show });
+  },
+  setShowComposer(show: boolean) {
+    set({ showComposer: show });
   },
   setShowLyrics(show: boolean) {
     set({ showLyrics: show });

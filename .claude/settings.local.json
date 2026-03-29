@@ -23,7 +23,20 @@
       "Bash(find /Users/jared/work/notation/src/model -name *.test.ts -o -name *.spec.ts)",
       "Bash(grep -r type.*=.*{ /Users/jared/work/notation/src/model/index.ts)",
       "Bash(npx playwright:*)",
-      "Bash(pkill -f \"Google Chrome\")"
+      "Bash(pkill -f \"Google Chrome\")",
+      "Bash(grep -l \"class\\\\|function\\\\|export\" /Users/jared/work/notation/src/ai/*.ts)",
+      "Bash(wc -l src/**/*.ts src/**/*.tsx)",
+      "Bash(grep -l \"SHORTCUT_ACTIONS\\\\|keyBindings\" /Users/jared/work/notation/src/**/*.ts /Users/jared/work/notation/src/**/*.tsx)",
+      "Bash(grep -l \"Plugin\" /Users/jared/work/notation/src/plugins/builtins/*.ts*)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(find /Users/jared/work/notation -name *.notation)",
+      "Bash(head -20 /Users/jared/work/notation/src/plugins/builtins/*.ts /Users/jared/work/notation/src/plugins/builtins/*.tsx)",
+      "Bash(ls -1 /Users/jared/work/notation/src/commands/*.ts)",
+      "Bash(xargs -I {} basename {} .ts)",
+      "Bash(ls -la /Users/jared/work/notation/src/commands/*.ts)",
+      "Bash(ls -lt .playwright-mcp/console-*.log)",
+      "Bash(lsof -ti:3891)",
+      "Bash(grep -r \"edit.*chord\\\\|edit.*lyric\\\\|update.*chord\\\\|update.*lyric\" /Users/jared/work/notation/src --include=*.ts --include=*.tsx)"
     ]
   }
 }

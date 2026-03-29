@@ -25,6 +25,8 @@ export function KeyboardShortcuts() {
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const play = useEditorStore((s) => s.play);
   const pause = useEditorStore((s) => s.pause);
+  const stopPlayback = useEditorStore((s) => s.stopPlayback);
+  const toggleMetronome = useEditorStore((s) => s.toggleMetronome);
   const moveCursorPart = useEditorStore((s) => s.moveCursorPart);
   const setViewMode = useEditorStore((s) => s.setViewMode);
   const toggleArticulation = useEditorStore((s) => s.toggleArticulation);
@@ -114,6 +116,8 @@ export function KeyboardShortcuts() {
 
       // Playback
       "play-pause": () => { if (isPlaying) pause(); else play(); },
+      "stop-playback": () => stopPlayback(),
+      "toggle-metronome": () => toggleMetronome(),
     };
 
     function handleKeyDown(e: KeyboardEvent) {
@@ -140,9 +144,9 @@ export function KeyboardShortcuts() {
     insertNote, insertRest, deleteNote, setDuration, toggleDot, setAccidental,
     moveCursor, changeOctave, undo, redo, setVoice, insertMeasure, deleteMeasure,
     enterChordMode, enterLyricMode, showLyrics, textInputMode, isPlaying, play,
-    pause, moveCursorPart, setViewMode, selection, copySelection, pasteAtCursor,
-    clipboardMeasures, deleteSelectedMeasures, toggleArticulation, setSelection,
-    extendSelection,
+    pause, stopPlayback, toggleMetronome, moveCursorPart, setViewMode, selection,
+    copySelection, pasteAtCursor, clipboardMeasures, deleteSelectedMeasures,
+    toggleArticulation, setSelection, extendSelection,
   ]);
 
   return null;

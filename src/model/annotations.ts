@@ -5,6 +5,7 @@ export interface ChordSymbol {
   kind: "chord-symbol";
   text: string; // "Cmaj7", "Dm7b5/A"
   beatOffset: number; // ticks from measure start
+  noteEventId: NoteEventId;
 }
 
 export interface Lyric {
