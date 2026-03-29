@@ -1,4 +1,5 @@
 import type { ClefType } from "../model/time";
+import { type KeyBinding, defaultKeyBindings } from "./keybindings";
 
 export interface AppSettings {
   defaultTempo: number;
@@ -9,11 +10,15 @@ export interface AppSettings {
   metronomeEnabled: boolean;
   aiProvider: "anthropic" | "openai";
   theme: "light" | "dark";
-  keyboardLayout: "standard" | "custom";
   historyMaxSnapshots: number;
+  keyBindings: Record<string, KeyBinding>;
 }
 
 const STORAGE_KEY = "notation-settings";
+const CONFIG_FILENAME = "settings.json";
+
+// Set VITE_CLEAN_SETTINGS=1 to simulate a fresh install without touching your real config
+const SIMULATE_FRESH_INSTALL = import.meta.env.VITE_CLEAN_SETTINGS === "1";
 
 function defaultSettings(): AppSettings {
   return {
@@ -25,27 +30,99 @@ function defaultSettings(): AppSettings {
     metronomeEnabled: false,
     aiProvider: "anthropic",
     theme: "light",
-    keyboardLayout: "standard",
     historyMaxSnapshots: 50,
+    keyBindings: defaultKeyBindings(),
   };
 }
 
 let currentSettings: AppSettings | null = null;
 const listeners: Set<(settings: AppSettings) => void> = new Set();
 
+// Whether we've confirmed Tauri fs is available
+let tauriAvailable: boolean | null = null;
+
+async function getTauriFsModules() {
+  if (tauriAvailable === false) return null;
+  try {
+    const [fs, path] = await Promise.all([
+      import("@tauri-apps/plugin-fs"),
+      import("@tauri-apps/api/path"),
+    ]);
+    tauriAvailable = true;
+    return { fs, path };
+  } catch {
+    tauriAvailable = false;
+    return null;
+  }
+}
+
+async function readConfigFile(): Promise<AppSettings | null> {
+  if (SIMULATE_FRESH_INSTALL) return null;
+  const tauri = await getTauriFsModules();
+  if (!tauri) return null;
+
+  try {
+    const configDir = await tauri.path.appConfigDir();
+    const filePath = `${configDir}${CONFIG_FILENAME}`;
+    const content = await tauri.fs.readTextFile(filePath);
+    return JSON.parse(content) as AppSettings;
+  } catch {
+    return null;
+  }
+}
+
+async function writeConfigFile(settings: AppSettings): Promise<boolean> {
+  if (SIMULATE_FRESH_INSTALL) return false;
+  const tauri = await getTauriFsModules();
+  if (!tauri) return false;
+
+  try {
+    const configDir = await tauri.path.appConfigDir();
+    // Ensure the config directory exists
+    await tauri.fs.mkdir(configDir, { recursive: true });
+    const filePath = `${configDir}${CONFIG_FILENAME}`;
+    await tauri.fs.writeTextFile(filePath, JSON.stringify(settings, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getSettings(): AppSettings {
   if (currentSettings) return currentSettings;
 
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      currentSettings = { ...defaultSettings(), ...JSON.parse(stored) };
-    } else {
+  // Synchronous load from localStorage (fast, always available)
+  if (SIMULATE_FRESH_INSTALL) {
+    currentSettings = defaultSettings();
+  } else {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        currentSettings = { ...defaultSettings(), ...JSON.parse(stored) };
+      } else {
+        currentSettings = defaultSettings();
+      }
+    } catch {
       currentSettings = defaultSettings();
     }
-  } catch {
-    currentSettings = defaultSettings();
   }
+
+  // Async: try to load from config file (takes priority if it exists)
+  readConfigFile().then((fileSettings) => {
+    if (fileSettings) {
+      currentSettings = { ...defaultSettings(), ...fileSettings };
+      // Sync localStorage with config file
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSettings));
+      } catch { /* ignore */ }
+      for (const listener of listeners) {
+        listener(currentSettings!);
+      }
+    } else if (currentSettings) {
+      // No config file yet — write current settings to create one
+      writeConfigFile(currentSettings);
+    }
+  });
 
   return currentSettings!;
 }
@@ -54,11 +131,13 @@ export function updateSettings(partial: Partial<AppSettings>): AppSettings {
   const current = getSettings();
   currentSettings = { ...current, ...partial };
 
+  // Write to localStorage (synchronous, immediate)
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSettings));
-  } catch {
-    // localStorage may be unavailable
-  }
+  } catch { /* ignore */ }
+
+  // Write to config file (async, durable)
+  writeConfigFile(currentSettings);
 
   for (const listener of listeners) {
     listener(currentSettings);
@@ -69,11 +148,14 @@ export function updateSettings(partial: Partial<AppSettings>): AppSettings {
 
 export function resetSettings(): AppSettings {
   currentSettings = defaultSettings();
+
   try {
     localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
+  } catch { /* ignore */ }
+
+  // Write defaults to config file
+  writeConfigFile(currentSettings);
+
   for (const listener of listeners) {
     listener(currentSettings);
   }

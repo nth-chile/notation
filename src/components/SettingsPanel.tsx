@@ -1,16 +1,22 @@
-import { useState, useEffect } from "react";
-import { getSettings, updateSettings, subscribeSettings, type AppSettings } from "../settings";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { getSettings, updateSettings, subscribeSettings, type AppSettings, SHORTCUT_ACTIONS, formatBinding, eventToBinding, defaultKeyBindings, type KeyBinding } from "../settings";
 import type { ClefType } from "../model";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
+import { Button } from "./ui/button";
 
 interface SettingsPanelProps {
   visible: boolean;
   onClose: () => void;
 }
 
+type SettingsTab = "settings" | "hotkeys" | "feedback";
+
 export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
   const [settings, setSettings] = useState<AppSettings>(getSettings());
+  const [tab, setTab] = useState<SettingsTab>("settings");
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSent, setFeedbackSent] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeSettings((s) => setSettings({ ...s }));
@@ -23,10 +29,93 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
 
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+      <DialogContent className={`${tab === "hotkeys" ? "max-w-lg" : "max-w-md"} max-h-[80vh] overflow-y-auto`}>
         <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
+          <DialogTitle className="sr-only">Settings</DialogTitle>
+          <div className="flex gap-1 border-b border-border pb-2">
+            <button
+              onClick={() => setTab("settings")}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                tab === "settings"
+                  ? "bg-secondary text-secondary-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Settings
+            </button>
+            <button
+              onClick={() => setTab("hotkeys")}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                tab === "hotkeys"
+                  ? "bg-secondary text-secondary-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Hotkeys
+            </button>
+            <button
+              onClick={() => { setTab("feedback"); setFeedbackSent(false); }}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                tab === "feedback"
+                  ? "bg-secondary text-secondary-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Feedback
+            </button>
+          </div>
         </DialogHeader>
+
+        {tab === "hotkeys" ? (
+          <HotkeysTab settings={settings} />
+        ) : tab === "feedback" ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Bug report, feature request, or just venting — all welcome.
+            </p>
+            {feedbackSent ? (
+              <div className="text-sm text-green-500 py-4 text-center">
+                Thanks for the feedback!
+              </div>
+            ) : (
+              <>
+                <textarea
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  placeholder="What's on your mind?"
+                  rows={5}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                />
+                <Button
+                  disabled={!feedbackText.trim()}
+                  className="w-full"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("https://formspree.io/f/xgopavpe", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ message: feedbackText }),
+                      });
+                      if (res.ok) {
+                        setFeedbackText("");
+                        setFeedbackSent(true);
+                      }
+                    } catch {
+                      // Fallback to mailto if fetch fails
+                      const subject = encodeURIComponent("Notation Feedback");
+                      const body = encodeURIComponent(feedbackText);
+                      window.open(`mailto:feedback@notation.app?subject=${subject}&body=${body}`, "_blank");
+                      setFeedbackText("");
+                      setFeedbackSent(true);
+                    }
+                  }}
+                >
+                  Send Feedback
+                </Button>
+              </>
+            )}
+          </div>
+        ) : (
 
         <div className="space-y-6">
           <section>
@@ -148,22 +237,148 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
             </div>
           </section>
 
-          <section>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Appearance</h3>
-            <div className="flex justify-between items-center">
-              <span className="text-sm">Keyboard Layout</span>
-              <select
-                value={settings.keyboardLayout}
-                onChange={(e) => update("keyboardLayout", e.target.value as "standard" | "custom")}
-                className="h-7 rounded-md border border-input bg-background px-2 text-sm"
-              >
-                <option value="standard">Standard</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-          </section>
         </div>
+
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function HotkeysTab({ settings }: { settings: AppSettings }) {
+  const [search, setSearch] = useState("");
+  const [editingAction, setEditingAction] = useState<string | null>(null);
+  const captureRef = useRef<HTMLDivElement>(null);
+
+  const bindings = settings.keyBindings ?? defaultKeyBindings();
+
+  const handleCapture = useCallback(
+    (e: KeyboardEvent) => {
+      if (!editingAction) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const binding = eventToBinding(e);
+      if (!binding) return; // bare modifier, ignore
+
+      const updated = { ...bindings, [editingAction]: binding };
+      updateSettings({ keyBindings: updated });
+      setEditingAction(null);
+    },
+    [editingAction, bindings],
+  );
+
+  useEffect(() => {
+    if (!editingAction) return;
+    window.addEventListener("keydown", handleCapture, true);
+    return () => window.removeEventListener("keydown", handleCapture, true);
+  }, [editingAction, handleCapture]);
+
+  // Close capture on click outside
+  useEffect(() => {
+    if (!editingAction) return;
+    const handleClick = (e: MouseEvent) => {
+      if (captureRef.current && !captureRef.current.contains(e.target as Node)) {
+        setEditingAction(null);
+      }
+    };
+    window.addEventListener("mousedown", handleClick);
+    return () => window.removeEventListener("mousedown", handleClick);
+  }, [editingAction]);
+
+  const filteredActions = SHORTCUT_ACTIONS.filter(
+    (a) =>
+      a.label.toLowerCase().includes(search.toLowerCase()) ||
+      a.category.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const categories = [...new Set(filteredActions.map((a) => a.category))];
+
+  function resetBinding(actionId: string) {
+    const defaults = defaultKeyBindings();
+    const updated = { ...bindings, [actionId]: defaults[actionId] };
+    updateSettings({ keyBindings: updated });
+  }
+
+  function isCustom(actionId: string): boolean {
+    const defaults = defaultKeyBindings();
+    const current = bindings[actionId];
+    const def = defaults[actionId];
+    if (!current || !def) return false;
+    return (
+      current.key !== def.key ||
+      !!current.ctrl !== !!def.ctrl ||
+      !!current.shift !== !!def.shift ||
+      !!current.alt !== !!def.alt
+    );
+  }
+
+  return (
+    <div className="space-y-3" ref={captureRef}>
+      <Input
+        placeholder="Filter hotkeys..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="h-8"
+      />
+      <div className="space-y-4">
+        {categories.map((category) => (
+          <section key={category}>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              {category}
+            </h3>
+            <div className="space-y-1">
+              {filteredActions
+                .filter((a) => a.category === category)
+                .map((action) => {
+                  const binding = bindings[action.id];
+                  const editing = editingAction === action.id;
+                  const custom = isCustom(action.id);
+
+                  return (
+                    <div
+                      key={action.id}
+                      className="flex items-center justify-between py-1 px-2 rounded hover:bg-secondary/50 group"
+                    >
+                      <span className="text-sm">{action.label}</span>
+                      <div className="flex items-center gap-1">
+                        {custom && (
+                          <button
+                            onClick={() => resetBinding(action.id)}
+                            className="text-xs text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity px-1"
+                            title="Reset to default"
+                          >
+                            reset
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setEditingAction(editing ? null : action.id)}
+                          className={`text-xs font-mono px-2 py-0.5 rounded border min-w-15 text-center transition-colors ${
+                            editing
+                              ? "border-primary bg-primary/10 text-primary animate-pulse"
+                              : custom
+                                ? "border-primary/50 bg-primary/5 text-foreground hover:border-primary"
+                                : "border-input bg-background text-foreground hover:border-primary"
+                          }`}
+                        >
+                          {editing ? "Press key..." : binding ? formatBinding(binding) : "—"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </section>
+        ))}
+      </div>
+      <div className="pt-2 border-t border-border">
+        <button
+          onClick={() => updateSettings({ keyBindings: defaultKeyBindings() })}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Restore all defaults
+        </button>
+      </div>
+    </div>
   );
 }

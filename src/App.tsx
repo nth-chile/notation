@@ -56,21 +56,21 @@ export function App() {
 
     const pm = pluginManagerRef.current;
 
-    // Register and activate built-in feature plugins (enabled by default)
-    pm.registerAndActivate(ViewsPlugin, true);
+    // Register and activate built-in feature plugins
+    pm.registerAndActivate(ViewsPlugin, false);
     pm.registerAndActivate(PlaybackPlugin, true);
     pm.registerAndActivate(AIChatPlugin, true);
     pm.registerAndActivate(PartManagerPlugin, true);
     pm.registerAndActivate(ExportPlugin, true);
     pm.registerAndActivate(ScoreEditorPlugin, true);
 
-    // Register and activate built-in transform plugins (enabled by default)
+    // Register and activate built-in transform plugins
     pm.registerAndActivate(TransposePlugin, true);
     pm.registerAndActivate(ChordAnalysisPlugin, true);
-    pm.registerAndActivate(ClipboardPlugin, true);
-    pm.registerAndActivate(SoundFontPlugin, true);
-    pm.registerAndActivate(TitleDisplayPlugin, true);
-    pm.registerAndActivate(LyricsPlugin, true);
+    pm.registerAndActivate(ClipboardPlugin, false);
+    pm.registerAndActivate(SoundFontPlugin, false);
+    pm.registerAndActivate(TitleDisplayPlugin, false);
+    pm.registerAndActivate(LyricsPlugin, false);
 
     setGlobalPluginManager(pm);
   }

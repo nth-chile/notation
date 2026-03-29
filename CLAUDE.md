@@ -5,17 +5,17 @@ AI-native music notation editor. Tauri v2 + React + TypeScript + VexFlow 5.
 ## Architecture
 
 - **Data model** (`src/model/`): Source of truth. Score → Part → Measure → Voice → NoteEvent (Note | Chord | Rest | Slash). Annotations (chords, lyrics, rehearsal marks, tempo). Navigation marks (repeats, voltas, coda, segno). Instruments, stylesheet, guitar tab info.
-- **Serialization** (`src/serialization/`): JSON-based `.notation` format. Single `json.ts` file handles serialize/deserialize for file storage and AI context.
+- **Serialization** (`src/serialization/`): JSON-based internal format. Single `json.ts` file handles serialize/deserialize for AI context and undo history.
 - **Renderer** (`src/renderer/`): VexFlow 5 behind adapter (`vexBridge.ts`). Canvas-based. SystemLayout for multi-part positioning. TabRenderer for guitar tab. Proportional spacing, automatic beaming, adaptive measure widths.
 - **Commands** (`src/commands/`): All mutations via Command pattern for undo/redo. InsertNote, DeleteNote, ChangePitch, ChangeDuration, InsertMeasure, DeleteMeasure, SetChordSymbol, SetLyric, SetTempo, SetRepeatBarline, SetVolta, SetNavigationMark, AddPart, RemovePart, and more.
-- **State** (`src/state/`): Zustand stores. `useEditorStore` (score, input, rendering), `useChatStore` (AI chat).
+- **State** (`src/state/`): Zustand stores. `useEditorStore` (score, input, rendering), `useChatStore` (AI chat), `useLayoutStore` (panels).
 - **Views** (`src/views/`): Full Score, Lead Sheet, Songwriter, Tab. Each filters/transforms rendering of the same data model.
-- **AI** (`src/ai/`): Chat sidebar, Anthropic + OpenAI providers, score context builder, diff/apply. Presets: /harmonize, /transpose, /fill-drums, /simplify, /bass-line.
+- **AI** (`src/ai/`): Chat sidebar, Anthropic + OpenAI + Gemini providers, score context builder, diff/apply.
 - **Playback** (`src/playback/`): Web Audio oscillator synth, lookahead scheduler, transport, metronome, PlaybackOrder (follows repeats/D.S./D.C.).
-- **Plugins** (`src/plugins/`): Plugin API with sandboxed instances. Built-ins: Transpose, Retrograde, Augment/Diminish, ChordAnalysis. Command palette (Ctrl+Shift+P).
+- **Plugins** (`src/plugins/`): Plugin API with sandboxed instances. Built-ins: Transpose, ChordAnalysis, Clipboard, Export, Playback, PartManager, ScoreEditor, SoundFont, Lyrics, TitleDisplay, Views, AIChat. Command palette (Ctrl+Shift+P).
 - **MusicXML** (`src/musicxml/`): Full import/export for interop with MuseScore, Dorico, Sibelius, etc.
-- **Settings** (`src/settings/`): AppSettings persisted to localStorage.
-- **File I/O** (`src/fileio/`): Tauri native dialogs with browser fallback. .notation and .musicxml.
+- **Settings** (`src/settings/`): AppSettings + keybindings persisted to Tauri config file (`~/Library/Application Support/com.notation.app/settings.json` on macOS) with localStorage fallback in browser.
+- **File I/O** (`src/fileio/`): Tauri native dialogs with browser fallback. Import: .musicxml, .mxl, .xml. Export: .musicxml, .pdf.
 - **Tauri** (`src-tauri/`): Minimal Rust — file I/O commands.
 
 ## Commands
@@ -23,13 +23,16 @@ AI-native music notation editor. Tauri v2 + React + TypeScript + VexFlow 5.
 ```bash
 npm run dev          # Vite dev server (for browser testing)
 npm run build        # Production build
-npm run test         # Vitest (125 tests)
+npm run test         # Vitest (295 tests)
 npm run tauri dev    # Full Tauri desktop app
+
+VITE_CLEAN_SETTINGS=1 npm run dev        # Simulate fresh install (ignores saved settings)
+VITE_CLEAN_SETTINGS=1 npm run tauri dev  # Same for desktop
 ```
 
 ## Keyboard Shortcuts
 
-A-G: insert note | R: rest | 1-7: duration | .: dot | +/-: sharp/flat
+A-G: insert note | R: rest | 1-7: duration (bulk-applies to selection) | .: dot | =/- : sharp/flat
 Arrow L/R: move cursor | Arrow U/D: octave | Backspace: delete
 Ctrl+Z / Ctrl+Shift+Z: undo/redo | Ctrl+S: save | Ctrl+O: open
 Ctrl+1-4: switch voice | Ctrl+M: insert measure
@@ -38,9 +41,9 @@ Ctrl+Shift+P: command palette | Space: play/pause
 Shift+C: chord input | Shift+L: lyric input
 Alt+Up/Down: navigate between parts
 
-## Serialization Format (.notation)
+## Internal JSON Format
 
-JSON-based format. File extension is `.notation`, content is JSON.
+JSON representation used for AI context, undo history, and clipboard. Files are saved as MusicXML.
 
 ```json
 {
