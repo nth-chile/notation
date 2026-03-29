@@ -15,7 +15,15 @@
       "Bash(rustup update:*)",
       "Bash(brew upgrade:*)",
       "Bash(python3:*)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(npm run:*)",
+      "Bash(lsof -ti:3847)",
+      "Bash(xargs kill:*)",
+      "Bash(npm test:*)",
+      "Bash(find /Users/jared/work/notation/src/model -name *.test.ts -o -name *.spec.ts)",
+      "Bash(grep -r type.*=.*{ /Users/jared/work/notation/src/model/index.ts)",
+      "Bash(npx playwright:*)",
+      "Bash(pkill -f \"Google Chrome\")"
     ]
   }
 }

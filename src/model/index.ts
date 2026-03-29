@@ -1,11 +1,11 @@
 export type { Score, Part, Measure, Voice } from "./score";
-export type { Note, Chord, Rest, Slash, NoteHead, NoteEvent } from "./note";
+export type { Note, Chord, Rest, Slash, NoteHead, NoteEvent, TupletRatio } from "./note";
 export type { NavigationMarks, Volta } from "./navigation";
 export type { Pitch, PitchClass, Accidental, Octave } from "./pitch";
 export type { Duration, DurationType } from "./duration";
 export type { Clef, ClefType, TimeSignature, KeySignature, BarlineType } from "./time";
 export type { ScoreId, PartId, MeasureId, VoiceId, NoteEventId } from "./ids";
-export type { Annotation, ChordSymbol, Lyric, RehearsalMark, TempoMark } from "./annotations";
+export type { Annotation, ChordSymbol, Lyric, RehearsalMark, TempoMark, Slur } from "./annotations";
 export type { Stylesheet } from "./stylesheet";
 export { defaultStylesheet, resolveStylesheet } from "./stylesheet";
 

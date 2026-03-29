@@ -2,6 +2,10 @@ import { useState, useCallback } from "react";
 import type { NotationPlugin, PluginAPI } from "../PluginAPI";
 import { useEditorStore } from "../../state";
 import { TICKS_PER_QUARTER } from "../../model/duration";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { TooltipButton } from "@/components/ui/tooltip-button";
+import { Play, Pause, Square } from "lucide-react";
 
 function TransportPanel() {
   const isPlaying = useEditorStore((s) => s.isPlaying);
@@ -17,94 +21,66 @@ function TransportPanel() {
   const [tempoInput, setTempoInput] = useState<string | null>(null);
 
   const handlePlayPause = useCallback(() => {
-    if (isPlaying) {
-      pause();
-    } else {
-      play();
-    }
+    isPlaying ? pause() : play();
   }, [isPlaying, play, pause]);
-
-  const handleStop = useCallback(() => {
-    stopPlayback();
-  }, [stopPlayback]);
-
-  const handleTempoChange = useCallback((value: string) => {
-    setTempoInput(value);
-  }, []);
 
   const handleTempoCommit = useCallback(() => {
     if (tempoInput !== null) {
       const bpm = parseInt(tempoInput);
-      if (!isNaN(bpm) && bpm >= 20 && bpm <= 400) {
-        setTempo(bpm);
-      }
+      if (!isNaN(bpm) && bpm >= 20 && bpm <= 400) setTempo(bpm);
       setTempoInput(null);
     }
   }, [tempoInput, setTempo]);
 
-  const handleTempoKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        handleTempoCommit();
-      } else if (e.key === "Escape") {
-        setTempoInput(null);
-      }
-    },
-    [handleTempoCommit]
-  );
-
   const positionDisplay = formatPosition(playbackTick, score);
 
   return (
-    <div style={styles.bar}>
-      <div style={styles.group}>
-        <button
-          onClick={handlePlayPause}
-          style={styles.button}
-          title={isPlaying ? "Pause (Space)" : "Play (Space)"}
-        >
-          {isPlaying ? "\u23F8" : "\u25B6"}
-        </button>
-        <button onClick={handleStop} style={styles.button} title="Stop">
-          {"\u23F9"}
-        </button>
+    <div className="flex items-center gap-2 px-4 py-1.5 border-b bg-secondary/50 shrink-0">
+      <div className="flex items-center gap-1">
+        <TooltipButton variant="ghost" size="icon" onClick={handlePlayPause} tooltip={isPlaying ? "Pause (Space)" : "Play (Space)"}>
+          {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+        </TooltipButton>
+        <TooltipButton variant="ghost" size="icon" onClick={() => stopPlayback()} tooltip="Stop">
+          <Square className="h-3.5 w-3.5" />
+        </TooltipButton>
       </div>
 
-      <div style={styles.divider} />
+      <Separator orientation="vertical" />
 
-      <div style={styles.group}>
-        <span style={styles.label}>BPM</span>
-        <input
+      <div className="flex items-center gap-1">
+        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">BPM</span>
+        <Input
           type="text"
           value={tempoInput !== null ? tempoInput : String(score.tempo)}
-          onChange={(e) => handleTempoChange(e.target.value)}
+          onChange={(e) => setTempoInput(e.target.value)}
           onBlur={handleTempoCommit}
-          onKeyDown={handleTempoKeyDown}
+          onKeyDown={(e) => { if (e.key === "Enter") handleTempoCommit(); else if (e.key === "Escape") setTempoInput(null); }}
           onFocus={() => setTempoInput(String(score.tempo))}
-          style={styles.tempoInput}
+          className="w-12 h-7 text-center text-sm font-semibold"
         />
       </div>
 
-      <div style={styles.divider} />
+      <Separator orientation="vertical" />
 
-      <div style={styles.group}>
-        <button
-          onClick={toggleMetronome}
-          style={{
-            ...styles.button,
-            ...(metronomeOn ? styles.active : {}),
-          }}
-          title="Metronome"
-        >
-          {"\uD83E\uDD41"}
-        </button>
-      </div>
+      <TooltipButton
+        variant={metronomeOn ? "secondary" : "ghost"}
+        size="icon"
+        onClick={toggleMetronome}
+        tooltip="Metronome"
+      >
+        <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 19.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5L15 5H9L5 19.5Z" />
+          <path d="M9 5h6" />
+          <path d="M12 18l4-11" />
+          <circle cx="15" cy="10" r="1.5" fill="currentColor" />
+        </svg>
+      </TooltipButton>
 
-      <div style={styles.divider} />
+      <Separator orientation="vertical" />
 
-      <div style={styles.group}>
-        <span style={styles.label}>Pos</span>
-        <span style={styles.position}>{positionDisplay}</span>
+      <div className="flex items-center gap-1">
+        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Pos</span>
+        <span className="text-sm font-semibold font-mono min-w-[48px]">{positionDisplay}</span>
       </div>
     </div>
   );
@@ -112,126 +88,34 @@ function TransportPanel() {
 
 function formatPosition(
   tick: number | null,
-  score: {
-    parts: Array<{
-      measures: Array<{
-        timeSignature: { numerator: number; denominator: number };
-      }>;
-    }>;
-  }
+  score: { parts: Array<{ measures: Array<{ timeSignature: { numerator: number; denominator: number } }> }> }
 ): string {
   if (tick === null || tick <= 0) return "1:1";
-
   let accumulated = 0;
   const part = score.parts[0];
   if (!part) return "1:1";
-
   for (let mi = 0; mi < part.measures.length; mi++) {
     const ts = part.measures[mi].timeSignature;
-    const measureTicks =
-      (TICKS_PER_QUARTER * 4 * ts.numerator) / ts.denominator;
+    const measureTicks = (TICKS_PER_QUARTER * 4 * ts.numerator) / ts.denominator;
     if (accumulated + measureTicks > tick) {
       const tickInMeasure = tick - accumulated;
       const beatTicks = (TICKS_PER_QUARTER * 4) / ts.denominator;
-      const beat = Math.floor(tickInMeasure / beatTicks) + 1;
-      return `${mi + 1}:${beat}`;
+      return `${mi + 1}:${Math.floor(tickInMeasure / beatTicks) + 1}`;
     }
     accumulated += measureTicks;
   }
-
   return `${part.measures.length}:1`;
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  bar: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 16px",
-    borderBottom: "1px solid #e2e8f0",
-    background: "#f1f5f9",
-    flexShrink: 0,
-  },
-  group: {
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-  },
-  label: {
-    fontSize: 11,
-    color: "#64748b",
-    marginRight: 4,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.05em",
-  },
-  button: {
-    padding: "4px 8px",
-    fontSize: 16,
-    border: "1px solid #e2e8f0",
-    borderRadius: 4,
-    background: "#fff",
-    cursor: "pointer",
-    minWidth: 32,
-    height: 32,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  active: {
-    background: "#2563eb",
-    color: "#fff",
-    borderColor: "#2563eb",
-  },
-  tempoInput: {
-    width: 48,
-    height: 28,
-    border: "1px solid #e2e8f0",
-    borderRadius: 4,
-    textAlign: "center" as const,
-    fontSize: 13,
-    fontWeight: 600,
-    background: "#fff",
-    padding: "0 4px",
-  },
-  position: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#1e293b",
-    fontFamily: "monospace",
-    minWidth: 48,
-  },
-  divider: {
-    width: 1,
-    height: 24,
-    background: "#e2e8f0",
-    margin: "0 4px",
-  },
-};
 
 export const PlaybackPlugin: NotationPlugin = {
   id: "notation.playback",
   name: "Playback",
   version: "1.0.0",
   description: "Transport bar with play, pause, stop, tempo, and metronome controls",
-
   activate(api: PluginAPI) {
-    api.registerPanel("playback.transport", {
-      title: "Transport",
-      location: "toolbar",
-      component: () => <TransportPanel />,
-      defaultEnabled: true,
-    });
-
-    api.registerCommand("notation.play", "Play", () => {
-      useEditorStore.getState().play();
-    });
-
-    api.registerCommand("notation.pause", "Pause", () => {
-      useEditorStore.getState().pause();
-    });
-
-    api.registerCommand("notation.stop", "Stop Playback", () => {
-      useEditorStore.getState().stopPlayback();
-    });
+    api.registerPanel("playback.transport", { title: "Transport", location: "toolbar", component: () => <TransportPanel />, defaultEnabled: true });
+    api.registerCommand("notation.play", "Play", () => { useEditorStore.getState().play(); });
+    api.registerCommand("notation.pause", "Pause", () => { useEditorStore.getState().pause(); });
+    api.registerCommand("notation.stop", "Stop Playback", () => { useEditorStore.getState().stopPlayback(); });
   },
 };

@@ -690,4 +690,217 @@ describe("MusicXML Round-trip", () => {
       expect(ev2.head.pitch.octave).toBe(3);
     }
   });
+
+  it("should round-trip dynamics", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <key><fifths>0</fifths></key>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <direction placement="below">
+        <direction-type><dynamics><f/></dynamics></direction-type>
+      </direction>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>480</duration><type>quarter</type><voice>1</voice>
+      </note>
+      <direction placement="below">
+        <direction-type><dynamics><pp/></dynamics></direction-type>
+      </direction>
+      <note>
+        <pitch><step>D</step><octave>4</octave></pitch>
+        <duration>480</duration><type>quarter</type><voice>1</voice>
+      </note>
+      <note><rest/><duration>960</duration><type>half</type><voice>1</voice></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+    const imported = importFromMusicXML(xml);
+    const annotations = imported.parts[0].measures[0].annotations;
+    const dynamics = annotations.filter((a) => a.kind === "dynamic");
+    expect(dynamics).toHaveLength(2);
+    expect(dynamics[0].kind === "dynamic" && dynamics[0].level).toBe("f");
+    expect(dynamics[1].kind === "dynamic" && dynamics[1].level).toBe("pp");
+
+    // Re-export and re-import
+    const reExported = exportToMusicXML(imported);
+    expect(reExported).toContain("<dynamics>");
+    expect(reExported).toContain("<f/>");
+    expect(reExported).toContain("<pp/>");
+
+    const reimported = importFromMusicXML(reExported);
+    const reimportedDyn = reimported.parts[0].measures[0].annotations.filter((a) => a.kind === "dynamic");
+    expect(reimportedDyn).toHaveLength(2);
+    expect(reimportedDyn[0].kind === "dynamic" && reimportedDyn[0].level).toBe("f");
+    expect(reimportedDyn[1].kind === "dynamic" && reimportedDyn[1].level).toBe("pp");
+  });
+
+  it("should round-trip hairpins (crescendo/diminuendo)", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <key><fifths>0</fifths></key>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <direction placement="below">
+        <direction-type><wedge type="crescendo"/></direction-type>
+      </direction>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>480</duration><type>quarter</type><voice>1</voice>
+      </note>
+      <note>
+        <pitch><step>D</step><octave>4</octave></pitch>
+        <duration>480</duration><type>quarter</type><voice>1</voice>
+      </note>
+      <direction placement="below">
+        <direction-type><wedge type="stop"/></direction-type>
+      </direction>
+      <note>
+        <pitch><step>E</step><octave>4</octave></pitch>
+        <duration>480</duration><type>quarter</type><voice>1</voice>
+      </note>
+      <note><rest/><duration>480</duration><type>quarter</type><voice>1</voice></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+    const imported = importFromMusicXML(xml);
+    const annotations = imported.parts[0].measures[0].annotations;
+    const hairpins = annotations.filter((a) => a.kind === "hairpin");
+    expect(hairpins).toHaveLength(1);
+    if (hairpins[0].kind === "hairpin") {
+      expect(hairpins[0].type).toBe("crescendo");
+      // startEventId should be different from endEventId
+      expect(hairpins[0].startEventId).not.toBe(hairpins[0].endEventId);
+    }
+
+    // Re-export and check wedge elements
+    const reExported = exportToMusicXML(imported);
+    expect(reExported).toContain('<wedge type="crescendo"/>');
+    expect(reExported).toContain('<wedge type="stop"/>');
+  });
+
+  it("should round-trip slurs", () => {
+    const n1 = factory.note("C", 4, factory.dur("quarter"));
+    const n2 = factory.note("E", 4, factory.dur("quarter"));
+    const n3 = factory.note("G", 4, factory.dur("half"));
+    const v = factory.voice([n1, n2, n3]);
+    const m = factory.measure([v], {
+      annotations: [
+        {
+          kind: "slur",
+          startEventId: n1.id,
+          endEventId: n2.id,
+        },
+      ],
+    });
+    const p = factory.part("Piano", "Pno", [m]);
+    const original = factory.score("Slur Test", "Test", [p]);
+
+    const xml = exportToMusicXML(original);
+    expect(xml).toContain('<slur type="start"/>');
+    expect(xml).toContain('<slur type="stop"/>');
+
+    const imported = importFromMusicXML(xml);
+    const slurs = imported.parts[0].measures[0].annotations.filter(
+      (a) => a.kind === "slur"
+    );
+    expect(slurs).toHaveLength(1);
+    if (slurs[0].kind === "slur") {
+      expect(slurs[0].startEventId).not.toBe(slurs[0].endEventId);
+    }
+
+    // Re-export should still contain slur elements
+    const reExported = exportToMusicXML(imported);
+    expect(reExported).toContain('<slur type="start"/>');
+    expect(reExported).toContain('<slur type="stop"/>');
+  });
+
+  it("should import slurs from MusicXML", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <key><fifths>0</fifths></key>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>480</duration><type>quarter</type><voice>1</voice>
+        <notations><slur type="start" number="1"/></notations>
+      </note>
+      <note>
+        <pitch><step>D</step><octave>4</octave></pitch>
+        <duration>480</duration><type>quarter</type><voice>1</voice>
+      </note>
+      <note>
+        <pitch><step>E</step><octave>4</octave></pitch>
+        <duration>480</duration><type>quarter</type><voice>1</voice>
+        <notations><slur type="stop" number="1"/></notations>
+      </note>
+      <note><rest/><duration>480</duration><type>quarter</type><voice>1</voice></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+    const imported = importFromMusicXML(xml);
+    const annotations = imported.parts[0].measures[0].annotations;
+    const slurs = annotations.filter((a) => a.kind === "slur");
+    expect(slurs).toHaveLength(1);
+    if (slurs[0].kind === "slur") {
+      // The slur should span from the first note to the third note
+      const events = imported.parts[0].measures[0].voices[0].events;
+      expect(slurs[0].startEventId).toBe(events[0].id);
+      expect(slurs[0].endEventId).toBe(events[2].id);
+    }
+  });
+
+  it("should import sfz and fp dynamics", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <direction placement="below">
+        <direction-type><dynamics><sfz/></dynamics></direction-type>
+      </direction>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>960</duration><type>half</type><voice>1</voice>
+      </note>
+      <direction placement="below">
+        <direction-type><dynamics><fp/></dynamics></direction-type>
+      </direction>
+      <note>
+        <pitch><step>E</step><octave>4</octave></pitch>
+        <duration>960</duration><type>half</type><voice>1</voice>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+    const imported = importFromMusicXML(xml);
+    const dynamics = imported.parts[0].measures[0].annotations.filter((a) => a.kind === "dynamic");
+    expect(dynamics).toHaveLength(2);
+    expect(dynamics[0].kind === "dynamic" && dynamics[0].level).toBe("sfz");
+    expect(dynamics[1].kind === "dynamic" && dynamics[1].level).toBe("fp");
+  });
 });

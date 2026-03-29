@@ -1,5 +1,8 @@
 import { useEditorStore } from "../state";
 import { useLayoutStore } from "../state/LayoutState";
+import { TooltipButton } from "./ui/tooltip-button";
+import { Separator } from "./ui/separator";
+import { PanelLeft, PanelRight, Undo2, Redo2, Settings, Puzzle } from "lucide-react";
 
 interface ToolbarProps {
   onToggleSettings?: () => void;
@@ -19,137 +22,66 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onOpen, onSave }: T
   const hasRightPanels = panels.right.length > 0;
 
   return (
-    <div style={styles.toolbar}>
-      <div style={styles.group}>
-        <button onClick={undo} style={styles.button} title="Undo (Ctrl+Z)">
-          {"\u21A9"}
-        </button>
-        <button onClick={redo} style={styles.button} title="Redo (Ctrl+Shift+Z)">
-          {"\u21AA"}
-        </button>
-      </div>
-
-      <div style={styles.divider} />
-
-      <div style={styles.group}>
-        {onOpen && (
-          <button onClick={onOpen} style={{ ...styles.button, fontSize: 12, padding: "4px 8px" }} title="Open file">
-            Open
-          </button>
-        )}
-        {onSave && (
-          <button onClick={onSave} style={{ ...styles.button, fontSize: 12, padding: "4px 8px" }} title="Save file">
-            Save
-          </button>
-        )}
-      </div>
-
-      <div style={{ flex: 1 }} />
-
+    <div className="flex items-center gap-1 px-2 py-1 border-b bg-card shrink-0">
       {hasLeftPanels && (
-        <button
+        <TooltipButton
+          variant={sidebarOpen.left ? "secondary" : "ghost"}
+          size="icon"
           onClick={() => toggleSidebar("left")}
-          style={{
-            ...styles.button,
-            fontSize: 12,
-            padding: "4px 10px",
-            ...(sidebarOpen.left ? styles.active : {}),
-          }}
-          title={sidebarOpen.left ? "Hide left sidebar" : "Show left sidebar"}
+          tooltip={sidebarOpen.left ? "Hide left sidebar" : "Show left sidebar"}
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <rect x="1" y="2" width="12" height="10" rx="1" />
-            <line x1="5" y1="2" x2="5" y2="12" />
-          </svg>
-        </button>
+          <PanelLeft className="h-4 w-4" />
+        </TooltipButton>
       )}
 
-      {hasRightPanels && (
-        <button
-          onClick={() => toggleSidebar("right")}
-          style={{
-            ...styles.button,
-            fontSize: 12,
-            padding: "4px 10px",
-            ...(sidebarOpen.right ? styles.active : {}),
-          }}
-          title={sidebarOpen.right ? "Hide right sidebar" : "Show right sidebar"}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <rect x="1" y="2" width="12" height="10" rx="1" />
-            <line x1="9" y1="2" x2="9" y2="12" />
-          </svg>
-        </button>
+      <div className="flex items-center gap-1">
+        <TooltipButton variant="ghost" size="icon" onClick={undo} tooltip="Undo (Ctrl+Z)">
+          <Undo2 className="h-4 w-4" />
+        </TooltipButton>
+        <TooltipButton variant="ghost" size="icon" onClick={redo} tooltip="Redo (Ctrl+Shift+Z)">
+          <Redo2 className="h-4 w-4" />
+        </TooltipButton>
+      </div>
+
+      <Separator orientation="vertical" />
+
+      <div className="flex items-center gap-1">
+        {onOpen && (
+          <TooltipButton variant="ghost" size="sm" onClick={onOpen} tooltip="Open file (Ctrl+O)">
+            Open
+          </TooltipButton>
+        )}
+        {onSave && (
+          <TooltipButton variant="ghost" size="sm" onClick={onSave} tooltip="Save file (Ctrl+S)">
+            Save
+          </TooltipButton>
+        )}
+      </div>
+
+      <div className="flex-1" />
+
+      {onTogglePlugins && (
+        <TooltipButton variant="ghost" size="icon" onClick={onTogglePlugins} tooltip="Plugins">
+          <Puzzle className="h-4 w-4" />
+        </TooltipButton>
       )}
 
       {onToggleSettings && (
-        <button
-          onClick={onToggleSettings}
-          style={{
-            ...styles.button,
-            fontSize: 12,
-            padding: "4px 12px",
-          }}
-          title="Settings"
-        >
-          Settings
-        </button>
+        <TooltipButton variant="ghost" size="icon" onClick={onToggleSettings} tooltip="Settings">
+          <Settings className="h-4 w-4" />
+        </TooltipButton>
       )}
 
-      {onTogglePlugins && (
-        <button
-          onClick={onTogglePlugins}
-          style={{
-            ...styles.button,
-            fontSize: 12,
-            padding: "4px 12px",
-          }}
-          title="Plugins"
+      {hasRightPanels && (
+        <TooltipButton
+          variant={sidebarOpen.right ? "secondary" : "ghost"}
+          size="icon"
+          onClick={() => toggleSidebar("right")}
+          tooltip={sidebarOpen.right ? "Hide right sidebar" : "Show right sidebar"}
         >
-          Plugins
-        </button>
+          <PanelRight className="h-4 w-4" />
+        </TooltipButton>
       )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  toolbar: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "8px 16px",
-    borderBottom: "1px solid #e2e8f0",
-    background: "#f8fafc",
-    flexShrink: 0,
-  },
-  group: {
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-  },
-  button: {
-    padding: "4px 8px",
-    fontSize: 16,
-    border: "1px solid #e2e8f0",
-    borderRadius: 4,
-    background: "#fff",
-    cursor: "pointer",
-    minWidth: 32,
-    height: 32,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  active: {
-    background: "#2563eb",
-    color: "#fff",
-    borderColor: "#2563eb",
-  },
-  divider: {
-    width: 1,
-    height: 24,
-    background: "#e2e8f0",
-    margin: "0 4px",
-  },
-};

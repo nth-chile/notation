@@ -7,11 +7,15 @@ export interface ViewConfig {
   partsToShow: number[] | "all";
   staffType: Record<number, "standard" | "tab">; // per part index
   showAnnotations: AnnotationFilter[];
-  layoutConfig: {
-    compact: boolean;
-    measuresPerLine?: number;
-    showPartNames: boolean;
-  };
+  layoutConfig: ViewLayoutConfig;
+}
+
+export interface ViewLayoutConfig {
+  compact: boolean;
+  measuresPerLine?: number;
+  showPartNames: boolean;
+  /** When true, render score with page breaks (US Letter layout) */
+  pageLayout?: boolean;
 }
 
 /** Full Score: all parts, full detail (default) */

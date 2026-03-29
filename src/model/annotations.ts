@@ -27,4 +27,25 @@ export interface TempoMark {
   text?: string; // "Allegro", etc.
 }
 
-export type Annotation = ChordSymbol | Lyric | RehearsalMark | TempoMark;
+export type DynamicLevel = "pp" | "p" | "mp" | "mf" | "f" | "ff" | "sfz" | "fp";
+
+export interface DynamicMark {
+  kind: "dynamic";
+  level: DynamicLevel;
+  noteEventId: NoteEventId;
+}
+
+export interface Hairpin {
+  kind: "hairpin";
+  type: "crescendo" | "diminuendo";
+  startEventId: NoteEventId;
+  endEventId: NoteEventId;
+}
+
+export interface Slur {
+  kind: "slur";
+  startEventId: NoteEventId;
+  endEventId: NoteEventId;
+}
+
+export type Annotation = ChordSymbol | Lyric | RehearsalMark | TempoMark | DynamicMark | Hairpin | Slur;

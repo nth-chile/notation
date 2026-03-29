@@ -9,7 +9,6 @@ import {
   extractScoreFromResponse,
 } from "../ai/ScoreContext";
 import { applyAIEdit } from "../ai/DiffApply";
-import { expandPreset } from "../ai/presets";
 import { useEditorStore } from "./EditorState";
 
 export type ProviderType = "anthropic" | "openai" | "gemini";
@@ -22,6 +21,7 @@ interface ChatStore {
   error: string | null;
 
   sendMessage(text: string): Promise<void>;
+  addMessage(msg: ChatMessage): void;
   setProvider(p: ProviderType): void;
   setApiKey(key: string): void;
   clearMessages(): void;
@@ -75,9 +75,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
         return;
       }
 
-      // Check for preset commands
-      const expandedPrompt = expandPreset(text);
-      const userText = expandedPrompt ?? text;
+      const userText = text;
 
       // Add user message
       const userMessage: ChatMessage = { role: "user", content: text };
@@ -98,7 +96,8 @@ export const useChatStore = create<ChatStore>((set, get) => {
 
         // Build context
         const score = useEditorStore.getState().score;
-        const systemPrompt = buildSystemPrompt();
+        const { getCommandLabels } = await import("../plugins/PluginManager");
+        const systemPrompt = buildSystemPrompt(getCommandLabels());
         const scoreContext = buildScoreContext(score);
 
         // Build message list
@@ -119,7 +118,6 @@ export const useChatStore = create<ChatStore>((set, get) => {
           if (result.ok) {
             // Apply to editor state
             useEditorStore.getState().setScore(result.score);
-            useEditorStore.setState({ isDirty: true });
 
             // Build a display message: strip code block, add status
             const displayText = stripCodeBlock(responseText);
@@ -156,8 +154,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
               const retryResult = applyAIEdit(score, retryJson);
               if (retryResult.ok) {
                 useEditorStore.getState().setScore(retryResult.score);
-                useEditorStore.setState({ isDirty: true });
-
+    
                 const displayText = stripCodeBlock(retryText);
                 const summary = buildApplySummary(retryJson);
                 const content = displayText.trim()
@@ -219,6 +216,10 @@ export const useChatStore = create<ChatStore>((set, get) => {
     setApiKey(key: string) {
       set({ apiKey: key });
       saveSettings(get().provider, key);
+    },
+
+    addMessage(msg: ChatMessage) {
+      set((state) => ({ messages: [...state.messages, msg] }));
     },
 
     clearMessages() {

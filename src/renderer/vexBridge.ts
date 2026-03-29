@@ -1,7 +1,8 @@
-import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector, Barline, Repetition, Volta as VexVolta } from "vexflow";
+import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector, Barline, Repetition, Volta as VexVolta, StaveTie, MultiMeasureRest, Tuplet as VexTuplet, Articulation as VexArticulation } from "vexflow";
 import type { Measure, NoteEvent, NoteEventId } from "../model";
 import type { BarlineType } from "../model/time";
 import type { Annotation } from "../model/annotations";
+import type { ArticulationKind } from "../model/note";
 import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
 import { durationToTicks as durationToTicksFn, measureCapacity } from "../model/duration";
@@ -18,6 +19,10 @@ export interface NoteBox {
   y: number;
   width: number;
   height: number;
+  partIndex: number;
+  measureIndex: number;
+  voiceIndex: number;
+  eventIndex: number;
 }
 
 export interface MeasureRenderResult {
@@ -43,6 +48,25 @@ const DUR_VEX: Record<string, string> = {
   "32nd": "32",
   "64th": "64",
 };
+
+const ARTICULATION_VEX: Partial<Record<ArticulationKind, string>> = {
+  staccato: "a.",
+  accent: "a>",
+  tenuto: "a-",
+  fermata: "afermata",
+  marcato: "a^",
+};
+
+function addArticulations(sn: StaveNote, event: NoteEvent): void {
+  if ((event.kind === "note" || event.kind === "chord") && event.articulations) {
+    for (const art of event.articulations) {
+      const code = ARTICULATION_VEX[art.kind];
+      if (code) {
+        sn.addModifier(new VexArticulation(code));
+      }
+    }
+  }
+}
 
 export function initRenderer(canvas: HTMLCanvasElement): RenderContext {
   const renderer = new Renderer(canvas, Renderer.Backends.CANVAS);
@@ -77,6 +101,7 @@ function eventToStaveNote(
       for (let i = 0; i < event.duration.dots; i++) {
         Dot.buildAndAttach([sn], { all: true });
       }
+      addArticulations(sn, event);
       return sn;
     }
     case "chord": {
@@ -98,6 +123,7 @@ function eventToStaveNote(
       for (let i = 0; i < event.duration.dots; i++) {
         Dot.buildAndAttach([sn], { all: true });
       }
+      addArticulations(sn, event);
       return sn;
     }
     case "rest": {
@@ -189,7 +215,9 @@ export function renderMeasure(
   showClef: boolean,
   showTimeSig: boolean,
   showKeySig: boolean,
-  stylesheet?: Partial<Stylesheet>
+  stylesheet?: Partial<Stylesheet>,
+  partIndex = 0,
+  measureIndex = 0
 ): MeasureRenderResult {
   const style = resolveStylesheet(stylesheet);
 
@@ -238,6 +266,7 @@ export function renderMeasure(
   const noteBoxes: NoteBox[] = [];
   const vfVoices: Voice[] = [];
   const allBeams: Beam[] = [];
+  const allTuplets: VexTuplet[] = [];
 
   // Build VexFlow voices for all model voices that have events
   for (let vi = 0; vi < m.voices.length; vi++) {
@@ -258,7 +287,7 @@ export function renderMeasure(
 
     if (staveNotes.length > 0) {
       const totalTicks = modelVoice.events.reduce((sum, e) => {
-        return sum + durationToTicksFn(e.duration);
+        return sum + durationToTicksFn(e.duration, e.tuplet);
       }, 0);
       const beats = totalTicks / 480;
 
@@ -282,9 +311,40 @@ export function renderMeasure(
         }
       }
 
-      // Store staveNotes + eventIds for bounding box collection after draw
-      (vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] }).__staveNotes = staveNotes;
-      (vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] }).__eventIds = eventIds;
+      // Detect tuplet groups: consecutive events with matching tuplet fields
+      let tupletStart = -1;
+      for (let ei = 0; ei <= modelVoice.events.length; ei++) {
+        const event = ei < modelVoice.events.length ? modelVoice.events[ei] : null;
+        const tuplet = event?.tuplet;
+
+        if (tupletStart >= 0) {
+          const prevTuplet = modelVoice.events[tupletStart].tuplet!;
+          const matches = tuplet && tuplet.actual === prevTuplet.actual && tuplet.normal === prevTuplet.normal;
+          if (!matches) {
+            // End of a tuplet group
+            const tupletNotes = staveNotes.slice(tupletStart, ei);
+            if (tupletNotes.length >= 2) {
+              try {
+                allTuplets.push(new VexTuplet(tupletNotes, {
+                  numNotes: prevTuplet.actual,
+                  notesOccupied: prevTuplet.normal,
+                }));
+              } catch {
+                // VexFlow may reject if notes are incompatible
+              }
+            }
+            tupletStart = tuplet ? ei : -1;
+          }
+        } else if (tuplet) {
+          tupletStart = ei;
+        }
+      }
+
+      // Store staveNotes + eventIds + voiceIndex for bounding box collection after draw
+      const meta = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number };
+      meta.__staveNotes = staveNotes;
+      meta.__eventIds = eventIds;
+      meta.__voiceIndex = vi;
     }
   }
 
@@ -301,7 +361,7 @@ export function renderMeasure(
       vfVoice.draw(ctx.context, stave);
 
       // Collect bounding boxes
-      const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] };
+      const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number };
       data.__staveNotes.forEach((sn, idx) => {
         const bb = sn.getBoundingBox();
         if (bb) {
@@ -311,6 +371,10 @@ export function renderMeasure(
             y: bb.getY(),
             width: bb.getW(),
             height: bb.getH(),
+            partIndex,
+            measureIndex,
+            voiceIndex: data.__voiceIndex,
+            eventIndex: idx,
           });
         }
       });
@@ -319,6 +383,79 @@ export function renderMeasure(
     // Draw beams after voices
     for (const beam of allBeams) {
       beam.setContext(ctx.context).draw();
+    }
+
+    // Draw tuplet brackets after beams
+    for (const tuplet of allTuplets) {
+      tuplet.setContext(ctx.context).draw();
+    }
+
+    // Draw ties between consecutive tied notes within each voice
+    for (let vi = 0; vi < m.voices.length; vi++) {
+      const modelVoice = m.voices[vi];
+      if (!modelVoice || modelVoice.events.length === 0) continue;
+
+      // Find the matching vfVoice for this voice index
+      const vfVoice = vfVoices.find((v) => {
+        const meta = v as unknown as { __voiceIndex: number };
+        return meta.__voiceIndex === vi;
+      });
+      if (!vfVoice) continue;
+
+      const staveNotes = (vfVoice as unknown as { __staveNotes: StaveNote[] }).__staveNotes;
+      const events = modelVoice.events;
+
+      for (let i = 0; i < events.length - 1; i++) {
+        const ev = events[i];
+        if (ev.kind === "note" && ev.head.tied) {
+          new StaveTie({
+            firstNote: staveNotes[i],
+            lastNote: staveNotes[i + 1],
+          }).setContext(ctx.context).draw();
+        } else if (ev.kind === "chord") {
+          // For chords, check each head individually
+          const tiedIndices = ev.heads
+            .map((h, idx) => (h.tied ? idx : -1))
+            .filter((idx) => idx >= 0);
+          if (tiedIndices.length > 0) {
+            for (const headIdx of tiedIndices) {
+              new StaveTie({
+                firstNote: staveNotes[i],
+                lastNote: staveNotes[i + 1],
+                firstIndexes: [headIdx],
+                lastIndexes: [headIdx],
+              }).setContext(ctx.context).draw();
+            }
+          }
+        }
+      }
+    }
+
+    // Draw slurs for same-measure slur annotations
+    for (const annotation of m.annotations) {
+      if (annotation.kind !== "slur") continue;
+
+      let startNote: StaveNote | null = null;
+      let endNote: StaveNote | null = null;
+
+      for (const vfVoice of vfVoices) {
+        const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number };
+        for (let idx = 0; idx < data.__eventIds.length; idx++) {
+          if (data.__eventIds[idx] === annotation.startEventId) startNote = data.__staveNotes[idx];
+          if (data.__eventIds[idx] === annotation.endEventId) endNote = data.__staveNotes[idx];
+        }
+      }
+
+      if (startNote && endNote) {
+        try {
+          new StaveTie({
+            firstNote: startNote,
+            lastNote: endNote,
+          }).setContext(ctx.context).draw();
+        } catch {
+          // VexFlow may reject in edge cases; skip gracefully
+        }
+      }
     }
   }
 
@@ -369,12 +506,14 @@ export function renderMeasure(
             const boxPadding = 4;
             rawCtx.strokeStyle = "#000";
             rawCtx.lineWidth = 1.5;
-            rawCtx.strokeRect(
+            rawCtx.beginPath();
+            rawCtx.rect(
               x + 2 - boxPadding,
               y - 6 - boxPadding,
               textWidth + boxPadding * 2,
               14 + boxPadding * 2
             );
+            rawCtx.stroke();
             rawCtx.fillText(annotation.text, x + 2, y + 6);
             rawCtx.restore();
             break;
@@ -388,6 +527,51 @@ export function renderMeasure(
               : `${annotation.beatUnit} = ${annotation.bpm}`;
             rawCtx.fillText(label, x + 2, y - 4);
             rawCtx.restore();
+            break;
+          }
+          case "dynamic": {
+            // Find the StaveNote attached to this dynamic via noteEventId
+            const box = noteBoxes.find((nb) => nb.id === annotation.noteEventId);
+            if (box) {
+              rawCtx.save();
+              rawCtx.font = "italic bold 16px serif";
+              rawCtx.fillStyle = "#000";
+              rawCtx.textAlign = "center";
+              rawCtx.fillText(annotation.level, box.x + box.width / 2, y + 75);
+              rawCtx.textAlign = "start";
+              rawCtx.restore();
+            }
+            break;
+          }
+          case "hairpin": {
+            // Draw a wedge (crescendo or diminuendo) between start and end notes
+            const startBox = noteBoxes.find((nb) => nb.id === annotation.startEventId);
+            const endBox = noteBoxes.find((nb) => nb.id === annotation.endEventId);
+            if (startBox && endBox) {
+              rawCtx.save();
+              rawCtx.strokeStyle = "#000";
+              rawCtx.lineWidth = 1.5;
+              const hairpinY = y + 75;
+              const spread = 5; // half-height of the wedge opening
+              const startX = startBox.x + startBox.width;
+              const endX = endBox.x;
+              rawCtx.beginPath();
+              if (annotation.type === "crescendo") {
+                // Two lines diverging from left to right: < shape
+                rawCtx.moveTo(startX, hairpinY);
+                rawCtx.lineTo(endX, hairpinY - spread);
+                rawCtx.moveTo(startX, hairpinY);
+                rawCtx.lineTo(endX, hairpinY + spread);
+              } else {
+                // Two lines converging from left to right: > shape
+                rawCtx.moveTo(startX, hairpinY - spread);
+                rawCtx.lineTo(endX, hairpinY);
+                rawCtx.moveTo(startX, hairpinY + spread);
+                rawCtx.lineTo(endX, hairpinY);
+              }
+              rawCtx.stroke();
+              rawCtx.restore();
+            }
             break;
           }
         }
@@ -476,6 +660,38 @@ export function renderBrace(
     rawCtx.stroke();
     rawCtx.restore();
   }
+}
+
+/**
+ * Render a multi-measure rest: a single wide stave with a thick horizontal bar and count.
+ */
+export function renderMultiMeasureRest(
+  ctx: RenderContext,
+  m: Measure,
+  x: number,
+  y: number,
+  width: number,
+  numberOfMeasures: number,
+  showClef: boolean,
+  showKeySig: boolean,
+): MeasureRenderResult {
+  const stave = new Stave(x, y, width);
+  if (showClef) stave.addClef(CLEF_VEX[m.clef.type] || "treble");
+  if (showKeySig) {
+    const keySig = KEY_SIG_MAP[m.keySignature.fifths] ?? "C";
+    stave.addKeySignature(keySig);
+  }
+  stave.setContext(ctx.context).draw();
+
+  const mmr = new MultiMeasureRest(numberOfMeasures, {
+    numberOfMeasures,
+    showNumber: true,
+  });
+  mmr.setStave(stave);
+  mmr.setContext(ctx.context as unknown as import("vexflow").RenderContext);
+  mmr.draw();
+
+  return { noteBoxes: [], staveY: y, staveX: x, width };
 }
 
 export function clearCanvas(ctx: RenderContext, canvas: HTMLCanvasElement): void {

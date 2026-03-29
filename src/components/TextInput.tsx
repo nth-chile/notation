@@ -1,11 +1,13 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import { useEditorStore } from "../state";
+import { Input } from "./ui/input";
 
 export function TextInput() {
   const textInputMode = useEditorStore((s) => s.inputState.textInputMode);
   const commitTextInput = useEditorStore((s) => s.commitTextInput);
   const cancelTextInput = useEditorStore((s) => s.cancelTextInput);
   const cursor = useEditorStore((s) => s.inputState.cursor);
+  const noteBoxes = useEditorStore((s) => s.noteBoxes);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -14,6 +16,24 @@ export function TextInput() {
       inputRef.current.value = "";
     }
   }, [textInputMode, cursor.measureIndex, cursor.eventIndex]);
+
+  // Find the position of the current note for lyric mode positioning
+  const notePosition = useMemo(() => {
+    if (textInputMode !== "lyric") return null;
+
+    // Look up the note box matching the current cursor position
+    for (const box of noteBoxes.values()) {
+      if (
+        box.partIndex === cursor.partIndex &&
+        box.measureIndex === cursor.measureIndex &&
+        box.voiceIndex === cursor.voiceIndex &&
+        box.eventIndex === cursor.eventIndex
+      ) {
+        return { x: box.x + box.width / 2, y: box.y + box.height };
+      }
+    }
+    return null;
+  }, [textInputMode, noteBoxes, cursor.partIndex, cursor.measureIndex, cursor.voiceIndex, cursor.eventIndex]);
 
   if (!textInputMode) return null;
 
@@ -27,65 +47,55 @@ export function TextInput() {
       e.preventDefault();
       cancelTextInput();
     } else if (e.key === "Tab" && textInputMode === "lyric") {
-      // Tab advances to next note in lyric mode
+      e.preventDefault();
+      commitTextInput(inputRef.current?.value ?? "");
+    } else if (e.key === " " && textInputMode === "lyric") {
       e.preventDefault();
       commitTextInput(inputRef.current?.value ?? "");
     }
   }
 
+  // Position near the note in lyric mode, otherwise at the bottom center
+  const useNotePosition = textInputMode === "lyric" && notePosition;
+
+  // Get the score container's bounding rect for offset calculation
+  const scoreContainer = document.querySelector("[data-score-container]");
+  const containerRect = scoreContainer?.getBoundingClientRect();
+
+  const positionStyle = useNotePosition && containerRect
+    ? {
+        position: "fixed" as const,
+        left: `${containerRect.left + notePosition.x}px`,
+        top: `${containerRect.top + notePosition.y + 8}px`,
+        transform: "translateX(-50%)",
+        zIndex: 1000,
+      }
+    : {
+        position: "fixed" as const,
+        bottom: "40px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 1000,
+      };
+
   return (
-    <div style={styles.overlay}>
-      <div style={styles.container}>
-        <span style={styles.label}>{label}</span>
-        <input
+    <div style={positionStyle}>
+      <div className="flex items-center gap-2 bg-popover border-2 border-primary rounded-md px-3 py-1.5 shadow-lg">
+        <span className="font-semibold text-sm text-primary">{label}</span>
+        <Input
           ref={inputRef}
           type="text"
-          style={styles.input}
+          className="min-w-[150px] h-7"
           placeholder={textInputMode === "chord" ? "e.g. Cmaj7" : "e.g. hel-"}
           onKeyDown={handleKeyDown}
           onBlur={() => cancelTextInput()}
         />
-        <span style={styles.hint}>
-          Enter to confirm{textInputMode === "lyric" ? ", Tab to advance" : ""}, Esc to cancel
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {textInputMode === "lyric"
+            ? "Enter/Space/Tab to advance, Esc to exit"
+            : "Enter to confirm, Esc to cancel"}
         </span>
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: "fixed",
-    bottom: 40,
-    left: "50%",
-    transform: "translateX(-50%)",
-    zIndex: 1000,
-  },
-  container: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    background: "#fff",
-    border: "2px solid #2563eb",
-    borderRadius: 6,
-    padding: "6px 12px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-  },
-  label: {
-    fontWeight: 600,
-    fontSize: 13,
-    color: "#2563eb",
-  },
-  input: {
-    border: "1px solid #ccc",
-    borderRadius: 4,
-    padding: "4px 8px",
-    fontSize: 14,
-    minWidth: 150,
-    outline: "none",
-  },
-  hint: {
-    fontSize: 11,
-    color: "#888",
-  },
-};

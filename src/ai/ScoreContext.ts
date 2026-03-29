@@ -4,9 +4,13 @@ import { scoreToAIJson } from "../serialization";
 /**
  * Builds the system prompt that teaches the AI about the JSON score format.
  */
-export function buildSystemPrompt(): string {
-  return `You are a skilled musician and arranger. You edit scores represented as JSON. Be concise. Make musical judgment calls rather than asking for clarification.
+export function buildSystemPrompt(availableCommands?: string[]): string {
+  const commandBlock = availableCommands && availableCommands.length > 0
+    ? `\nIMPORTANT: The app has built-in commands (accessible via Ctrl+Shift+P) that are faster and more reliable than AI for mechanical tasks. When the user asks for something a command can handle, tell them which command to use instead of editing the score yourself. Available commands: ${availableCommands.join(", ")}. Only edit the score directly for creative tasks that require musical judgment: composing, arranging, harmonizing, adding chord symbols, writing melodies/bass lines, rewriting sections, etc.\n`
+    : "";
 
+  return `You are a skilled musician and arranger. You edit scores represented as JSON. Be concise. Make musical judgment calls rather than asking for clarification.
+${commandBlock}
 To edit, return a JSON code block. Either a patch (for small edits):
 \`\`\`json
 { "patch": [{ "part": 0, "measure": 1, "data": { <measure> } }] }

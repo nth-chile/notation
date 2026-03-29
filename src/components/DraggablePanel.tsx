@@ -1,18 +1,26 @@
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useLayoutStore } from "../state/LayoutState";
+import { cn } from "@/lib/utils";
+import { ChevronDown, GripVertical, MoreVertical } from "lucide-react";
+
+import type { PanelMenuItem } from "../plugins/PluginAPI";
 
 interface DraggablePanelProps {
   id: string;
   title: string;
   children: React.ReactNode;
   isOverlay?: boolean;
+  menuItems?: PanelMenuItem[];
+  fill?: boolean;
 }
 
-export function DraggablePanel({ id, title, children, isOverlay }: DraggablePanelProps) {
+export function DraggablePanel({ id, title, children, isOverlay, menuItems, fill }: DraggablePanelProps) {
   const collapsed = useLayoutStore((s) => s.panelCollapsed[id] ?? false);
   const toggleCollapsed = useLayoutStore((s) => s.togglePanelCollapsed);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const {
     attributes,
@@ -26,108 +34,87 @@ export function DraggablePanel({ id, title, children, isOverlay }: DraggablePane
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
-    marginBottom: 4,
-    borderRadius: 6,
-    border: "1px solid #e2e8f0",
-    background: "#fff",
-    boxShadow: isOverlay ? "0 4px 16px rgba(0,0,0,0.15)" : "none",
-    overflow: "hidden",
   };
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
+
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
-      <div style={styles.header}>
-        <span style={styles.title}>{title}</span>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "bg-background overflow-hidden flex flex-col",
+        fill && "flex-1 min-h-0",
+        isDragging && "opacity-40",
+        isOverlay && "shadow-lg border rounded-md"
+      )}
+      {...attributes}
+    >
+      <div className="flex items-center gap-1 px-2 py-1.5 bg-card select-none">
+        <div className="cursor-grab p-0.5 rounded-sm hover:bg-accent" {...listeners} title="Drag to reorder">
+          <GripVertical className="h-3 w-3 text-muted-foreground" />
+        </div>
+
+        <span
+          className="flex-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider truncate cursor-pointer"
+          onClick={() => toggleCollapsed(id)}
+        >
+          {title}
+        </span>
 
         <button
           onClick={() => toggleCollapsed(id)}
-          style={styles.collapseButton}
+          className="p-0.5 rounded-sm hover:bg-accent cursor-pointer"
           title={collapsed ? "Expand panel" : "Collapse panel"}
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="#64748b"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{
-              transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)",
-              transition: "transform 0.15s ease",
-            }}
-          >
-            <polyline points="2,4 6,8 10,4" />
-          </svg>
+          <ChevronDown
+            className={cn(
+              "h-3 w-3 text-muted-foreground transition-transform duration-150",
+              collapsed && "-rotate-90"
+            )}
+          />
         </button>
 
-        {/* Drag handle on the right */}
-        <div style={styles.dragHandle} {...listeners} title="Drag to reorder">
-          <svg width="10" height="16" viewBox="0 0 10 16" fill="#94a3b8">
-            <circle cx="2" cy="2" r="1.5" />
-            <circle cx="8" cy="2" r="1.5" />
-            <circle cx="2" cy="8" r="1.5" />
-            <circle cx="8" cy="8" r="1.5" />
-            <circle cx="2" cy="14" r="1.5" />
-            <circle cx="8" cy="14" r="1.5" />
-          </svg>
-        </div>
+        {menuItems && menuItems.length > 0 && (
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="p-0.5 rounded-sm hover:bg-accent cursor-pointer"
+              title="Panel options"
+            >
+              <MoreVertical className="h-3 w-3 text-muted-foreground" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-popover border rounded-md shadow-md z-50 py-1 min-w-[120px]">
+                {menuItems.map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => { item.onClick(); setMenuOpen(false); }}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent cursor-pointer"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {!collapsed && (
-        <div style={styles.content}>
+        <div className={cn("overflow-auto", fill && "flex-1 min-h-0")}>
           {children}
         </div>
       )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  header: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "6px 8px",
-    background: "#f8fafc",
-    borderBottom: "1px solid #e2e8f0",
-    cursor: "default",
-    userSelect: "none",
-  },
-  dragHandle: {
-    cursor: "grab",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "2px 2px",
-    borderRadius: 3,
-    flexShrink: 0,
-  },
-  title: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#334155",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.03em",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  collapseButton: {
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    padding: 2,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 3,
-    flexShrink: 0,
-  },
-  content: {
-    overflow: "auto",
-  },
-};

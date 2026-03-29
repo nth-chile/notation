@@ -49,24 +49,31 @@ export const TransposePlugin: NotationPlugin = {
   id: "notation.transpose",
   name: "Transpose",
   version: "1.0.0",
-  description: "Transpose notes up or down by a half step",
+  description: "Transpose notes by various intervals",
 
   activate(api: PluginAPI) {
-    api.registerCommand("notation.transpose-up", "Transpose Up (Half Step)", () => {
-      const score = api.getScore();
-      const selection = api.getSelection();
-      const newScore = transposeScore(score, 1, selection);
-      api.applyScore(newScore);
-      api.showNotification("Transposed up by a half step", "success");
-    });
+    const commands: Array<[string, string, number, string]> = [
+      ["notation.transpose-up", "Transpose Up (Half Step)", 1, "up by a half step"],
+      ["notation.transpose-down", "Transpose Down (Half Step)", -1, "down by a half step"],
+      ["notation.transpose-up-whole", "Transpose Up (Whole Step)", 2, "up by a whole step"],
+      ["notation.transpose-down-whole", "Transpose Down (Whole Step)", -2, "down by a whole step"],
+      ["notation.transpose-up-minor3", "Transpose Up (Minor 3rd)", 3, "up by a minor 3rd"],
+      ["notation.transpose-up-major3", "Transpose Up (Major 3rd)", 4, "up by a major 3rd"],
+      ["notation.transpose-up-perfect4", "Transpose Up (Perfect 4th)", 5, "up by a perfect 4th"],
+      ["notation.transpose-up-perfect5", "Transpose Up (Perfect 5th)", 7, "up by a perfect 5th"],
+      ["notation.transpose-up-octave", "Transpose Up (Octave)", 12, "up by an octave"],
+      ["notation.transpose-down-octave", "Transpose Down (Octave)", -12, "down by an octave"],
+    ];
 
-    api.registerCommand("notation.transpose-down", "Transpose Down (Half Step)", () => {
-      const score = api.getScore();
-      const selection = api.getSelection();
-      const newScore = transposeScore(score, -1, selection);
-      api.applyScore(newScore);
-      api.showNotification("Transposed down by a half step", "success");
-    });
+    for (const [id, label, semitones, desc] of commands) {
+      api.registerCommand(id, label, () => {
+        const score = api.getScore();
+        const selection = api.getSelection();
+        const newScore = transposeScore(score, semitones, selection);
+        api.applyScore(newScore);
+        api.showNotification(`Transposed ${desc}`, "success");
+      });
+    }
   },
 };
 

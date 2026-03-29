@@ -8,11 +8,19 @@ export interface Selection {
   measureEnd: number;
 }
 
+export interface PanelMenuItem {
+  label: string;
+  onClick: () => void;
+}
+
 export interface PanelConfig {
   title: string;
   location: "sidebar-left" | "sidebar-right" | "toolbar" | "bottom";
   component: () => React.ReactNode;
   defaultEnabled?: boolean;
+  menuItems?: PanelMenuItem[];
+  /** When true, the panel fills remaining sidebar height instead of sizing to content */
+  fill?: boolean;
 }
 
 export interface ViewRegistration {
@@ -73,4 +81,7 @@ export interface PluginAPI {
   // File importers/exporters
   registerImporter(id: string, config: ImporterConfig): void;
   registerExporter(id: string, config: ExporterConfig): void;
+
+  // Plugin settings UI
+  registerSettings(component: () => React.ReactNode): void;
 }

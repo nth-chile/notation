@@ -1,5 +1,5 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
-import type { NoteEvent, NoteHead, Articulation } from "../model/note";
+import type { NoteEvent, NoteHead, Articulation, TupletRatio } from "../model/note";
 import type { Pitch, Accidental } from "../model/pitch";
 import type { Duration } from "../model/duration";
 import type { Annotation } from "../model/annotations";
@@ -59,6 +59,7 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
       if (e.stemDirection) obj.stem = e.stemDirection;
       if (e.tabInfo) obj.tab = { string: e.tabInfo.string, fret: e.tabInfo.fret };
       if (e.articulations?.length) obj.articulations = e.articulations.map(articulationToJson);
+      if (e.tuplet) obj.tuplet = { actual: e.tuplet.actual, normal: e.tuplet.normal };
       return obj;
     }
     case "chord": {
@@ -75,13 +76,18 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
       if (e.stemDirection) obj.stem = e.stemDirection;
       if (e.tabInfo) obj.tab = { string: e.tabInfo.string, fret: e.tabInfo.fret };
       if (e.articulations?.length) obj.articulations = e.articulations.map(articulationToJson);
+      if (e.tuplet) obj.tuplet = { actual: e.tuplet.actual, normal: e.tuplet.normal };
       return obj;
     }
     case "rest": {
-      return { type: "rest", duration: dur };
+      const obj: Record<string, unknown> = { type: "rest", duration: dur };
+      if (e.tuplet) obj.tuplet = { actual: e.tuplet.actual, normal: e.tuplet.normal };
+      return obj;
     }
     case "slash": {
-      return { type: "slash", duration: dur };
+      const obj: Record<string, unknown> = { type: "slash", duration: dur };
+      if (e.tuplet) obj.tuplet = { actual: e.tuplet.actual, normal: e.tuplet.normal };
+      return obj;
     }
   }
 }
@@ -105,6 +111,12 @@ function annotationToJson(a: Annotation): Record<string, unknown> {
       if (a.text) obj.text = a.text;
       return obj;
     }
+    case "dynamic":
+      return { type: "dynamic", level: a.level, noteEventId: a.noteEventId };
+    case "hairpin":
+      return { type: "hairpin", hairpinType: a.type, startEventId: a.startEventId, endEventId: a.endEventId };
+    case "slur":
+      return { type: "slur", startEventId: a.startEventId, endEventId: a.endEventId };
   }
 }
 
@@ -204,18 +216,33 @@ function parseArticulations(arr: string[]): Articulation[] {
   });
 }
 
+function parseTuplet(e: Record<string, unknown>): TupletRatio | undefined {
+  if (e.tuplet && typeof e.tuplet === "object") {
+    const t = e.tuplet as Record<string, unknown>;
+    const actual = t.actual as number;
+    const normal = t.normal as number;
+    if (actual && normal) return { actual, normal };
+  }
+  return undefined;
+}
+
 function parseEvent(e: Record<string, unknown>): NoteEvent {
   const id = newId<NoteEventId>("evt");
   const type = e.type as string;
   const durStr = (e.duration as string) || "quarter";
   const duration = parseDurationStr(durStr);
+  const tuplet = parseTuplet(e);
 
   if (type === "rest") {
-    return { kind: "rest", id, duration };
+    const rest: NoteEvent = { kind: "rest", id, duration };
+    if (tuplet) (rest as unknown as Record<string, unknown>).tuplet = tuplet;
+    return rest;
   }
 
   if (type === "slash") {
-    return { kind: "slash", id, duration };
+    const slash: NoteEvent = { kind: "slash", id, duration };
+    if (tuplet) (slash as unknown as Record<string, unknown>).tuplet = tuplet;
+    return slash;
   }
 
   if (type === "chord" && Array.isArray(e.pitches)) {
@@ -229,6 +256,7 @@ function parseEvent(e: Record<string, unknown>): NoteEvent {
     if (Array.isArray(e.articulations)) {
       (result as unknown as Record<string, unknown>).articulations = parseArticulations(e.articulations as string[]);
     }
+    if (tuplet) (result as unknown as Record<string, unknown>).tuplet = tuplet;
     return result;
   }
 
@@ -256,6 +284,7 @@ function parseEvent(e: Record<string, unknown>): NoteEvent {
   if (Array.isArray(e.articulations)) {
     (note as unknown as Record<string, unknown>).articulations = parseArticulations(e.articulations as string[]);
   }
+  if (tuplet) (note as unknown as Record<string, unknown>).tuplet = tuplet;
   return note;
 }
 
@@ -289,6 +318,28 @@ function parseAnnotation(a: Record<string, unknown>): Annotation | null {
       bpm: (a.bpm as number) ?? 120,
       beatUnit: (a.beatUnit as DurationType) || "quarter",
       text: a.text as string | undefined,
+    };
+  }
+  if (type === "dynamic") {
+    return {
+      kind: "dynamic",
+      level: (a.level as string) as import("../model/annotations").DynamicLevel,
+      noteEventId: ((a.noteEventId as string) || "") as unknown as NoteEventId,
+    };
+  }
+  if (type === "hairpin") {
+    return {
+      kind: "hairpin",
+      type: (a.hairpinType as "crescendo" | "diminuendo") || "crescendo",
+      startEventId: ((a.startEventId as string) || "") as unknown as NoteEventId,
+      endEventId: ((a.endEventId as string) || "") as unknown as NoteEventId,
+    };
+  }
+  if (type === "slur") {
+    return {
+      kind: "slur",
+      startEventId: ((a.startEventId as string) || "") as unknown as NoteEventId,
+      endEventId: ((a.endEventId as string) || "") as unknown as NoteEventId,
     };
   }
   return null;

@@ -52,7 +52,7 @@ export function getBeamGroups(
 
   for (let i = 0; i < events.length; i++) {
     const event = events[i];
-    const ticks = durationToTicks(event.duration);
+    const ticks = durationToTicks(event.duration, event.tuplet);
 
     // Determine which beat group this event starts in
     const groupBoundary = currentGroupStart + groupSize;
