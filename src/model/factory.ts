@@ -1,5 +1,5 @@
 import type { Score, Part, Measure, Voice } from "./score";
-import type { Note, Chord, Rest, Slash, NoteHead } from "./note";
+import type { Note, Chord, Rest, Slash, GraceNote, NoteHead } from "./note";
 import type { Pitch, PitchClass, Accidental, Octave } from "./pitch";
 import type { Duration, DurationType } from "./duration";
 import type { Clef, TimeSignature, KeySignature } from "./time";
@@ -53,6 +53,21 @@ export function rest(duration: Duration): Rest {
     kind: "rest",
     id: newId<NoteEventId>("evt"),
     duration,
+  };
+}
+
+export function graceNote(
+  pitchClass: PitchClass,
+  octave: Octave,
+  accidental: Accidental = "natural",
+  slash = true,
+): GraceNote {
+  return {
+    kind: "grace",
+    id: newId<NoteEventId>("evt"),
+    duration: { type: "eighth", dots: 0 },
+    head: { pitch: pitch(pitchClass, octave, accidental) },
+    slash,
   };
 }
 

@@ -39,6 +39,7 @@ function getTabPositions(
     }
     case "rest":
     case "slash":
+    case "grace":
       return [];
   }
 }

@@ -89,6 +89,16 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
       if (e.tuplet) obj.tuplet = { actual: e.tuplet.actual, normal: e.tuplet.normal };
       return obj;
     }
+    case "grace": {
+      const obj: Record<string, unknown> = {
+        type: "grace",
+        pitch: pitchToStr(e.head.pitch),
+        duration: dur,
+      };
+      if (e.head.pitch.accidental !== "natural") obj.accidental = e.head.pitch.accidental;
+      if (e.slash === false) obj.slash = false;
+      return obj;
+    }
   }
 }
 
@@ -244,6 +254,24 @@ function parseEvent(e: Record<string, unknown>): NoteEvent {
     const slash: NoteEvent = { kind: "slash", id, duration };
     if (tuplet) (slash as unknown as Record<string, unknown>).tuplet = tuplet;
     return slash;
+  }
+
+  if (type === "grace") {
+    const pitchStr = (e.pitch as string) || "C4";
+    const { pitchClass, octave, accidental: parsedAcc } = parsePitchStr(pitchStr);
+    const explicitAcc = e.accidental as string | undefined;
+    let accidental: Accidental = parsedAcc;
+    if (explicitAcc === "sharp") accidental = "sharp";
+    else if (explicitAcc === "flat") accidental = "flat";
+    else if (explicitAcc === "double-sharp") accidental = "double-sharp";
+    else if (explicitAcc === "double-flat") accidental = "double-flat";
+    return {
+      kind: "grace",
+      id,
+      duration,
+      head: { pitch: { pitchClass, accidental, octave } },
+      slash: (e.slash as boolean) ?? true,
+    };
   }
 
   if (type === "chord" && Array.isArray(e.pitches)) {

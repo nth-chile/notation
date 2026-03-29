@@ -55,6 +55,6 @@ export const DURATION_TYPES_ORDERED: DurationType[] = [
 /**
  * Calculates total ticks used by all events in a voice.
  */
-export function voiceTicksUsed(events: { duration: Duration; tuplet?: { actual: number; normal: number } }[]): number {
-  return events.reduce((sum, e) => sum + durationToTicks(e.duration, e.tuplet), 0);
+export function voiceTicksUsed(events: { kind?: string; duration: Duration; tuplet?: { actual: number; normal: number } }[]): number {
+  return events.reduce((sum, e) => e.kind === "grace" ? sum : sum + durationToTicks(e.duration, e.tuplet), 0);
 }
