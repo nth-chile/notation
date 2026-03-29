@@ -19,6 +19,7 @@ export function ScoreCanvas() {
   const playbackTick = useEditorStore((s) => s.playbackTick);
   const viewConfig = useEditorStore((s) => s.viewConfig);
   const selection = useEditorStore((s) => s.selection);
+  const noteSelection = useEditorStore((s) => s.noteSelection);
   const showTitle = useEditorStore((s) => s.showTitle);
   const showComposer = useEditorStore((s) => s.showComposer);
   const editingTitle = useEditorStore((s) => s.editingTitle);
@@ -69,10 +70,31 @@ export function ScoreCanvas() {
 
     const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, viewConfig, width, selection);
 
+    // Draw note-level selection highlights
+    if (noteSelection) {
+      const voice = score.parts[noteSelection.partIndex]?.measures[noteSelection.measureIndex]?.voices[noteSelection.voiceIndex];
+      if (voice) {
+        rawCtx.save();
+        rawCtx.scale(dpr, dpr);
+        rawCtx.fillStyle = "#3b82f6";
+        rawCtx.globalAlpha = 0.2;
+        const pad = 3;
+        for (let i = noteSelection.startEvent; i <= noteSelection.endEvent && i < voice.events.length; i++) {
+          const box = result.noteBoxes.get(voice.events[i].id);
+          if (box) {
+            rawCtx.beginPath();
+            rawCtx.roundRect(box.x - pad, box.y - pad, box.width + pad * 2, box.height + pad * 2, 4);
+            rawCtx.fill();
+          }
+        }
+        rawCtx.restore();
+      }
+    }
+
     setNoteBoxes(result.noteBoxes);
     setAnnotationBoxes(result.annotationBoxes);
     setMeasurePositions(result.measurePositions);
-  }, [score, inputState.cursor, playbackTick, viewConfig, containerWidth, selection, showTitle, showComposer, editingTitle, editingComposer, setNoteBoxes, setAnnotationBoxes, setMeasurePositions]);
+  }, [score, inputState.cursor, playbackTick, viewConfig, containerWidth, selection, noteSelection, showTitle, showComposer, editingTitle, editingComposer, setNoteBoxes, setAnnotationBoxes, setMeasurePositions]);
 
   return (
     <div

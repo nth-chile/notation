@@ -22,6 +22,7 @@ export function ScoreOverlay({ width, height }: Props) {
   const setEditingComposer = useEditorStore((s) => s.setEditingComposer);
   const setCursorDirect = useEditorStore((s) => s.setCursorDirect);
   const setSelection = useEditorStore((s) => s.setSelection);
+  const setNoteSelection = useEditorStore((s) => s.setNoteSelection);
   const editAnnotation = useEditorStore((s) => s.editAnnotation);
   const setTitle = useEditorStore((s) => s.setTitle);
   const setComposer = useEditorStore((s) => s.setComposer);
@@ -33,8 +34,9 @@ export function ScoreOverlay({ width, height }: Props) {
   const titleRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLInputElement>(null);
 
-  // Selection anchor
+  // Selection anchors
   const anchorRef = useRef<{ partIndex: number; measureIndex: number } | null>(null);
+  const noteAnchorRef = useRef<{ partIndex: number; measureIndex: number; voiceIndex: number; eventIndex: number } | null>(null);
 
   useEffect(() => {
     if (editingTitle) titleRef.current?.focus();
@@ -93,13 +95,27 @@ export function ScoreOverlay({ width, height }: Props) {
         };
         setCursorDirect(cursor);
 
-        if (e.shiftKey && anchorRef.current) {
+        if (e.shiftKey && noteAnchorRef.current &&
+            noteAnchorRef.current.partIndex === nb.partIndex &&
+            noteAnchorRef.current.measureIndex === nb.measureIndex &&
+            noteAnchorRef.current.voiceIndex === nb.voiceIndex) {
+          // Note-level selection within same measure/voice
+          setNoteSelection({
+            partIndex: nb.partIndex,
+            measureIndex: nb.measureIndex,
+            voiceIndex: nb.voiceIndex,
+            startEvent: Math.min(noteAnchorRef.current.eventIndex, nb.eventIndex),
+            endEvent: Math.max(noteAnchorRef.current.eventIndex, nb.eventIndex),
+          });
+        } else if (e.shiftKey && anchorRef.current) {
+          // Measure-level selection across measures
           setSelection({
             partIndex: nb.partIndex,
             measureStart: Math.min(anchorRef.current.measureIndex, nb.measureIndex),
             measureEnd: Math.max(anchorRef.current.measureIndex, nb.measureIndex),
           });
         } else {
+          noteAnchorRef.current = { partIndex: nb.partIndex, measureIndex: nb.measureIndex, voiceIndex: nb.voiceIndex, eventIndex: nb.eventIndex };
           anchorRef.current = { partIndex: nb.partIndex, measureIndex: nb.measureIndex };
           setSelection(null);
         }
@@ -130,7 +146,7 @@ export function ScoreOverlay({ width, height }: Props) {
         return;
       }
     }
-  }, [noteBoxes, annotationBoxes, measurePositions, score, width, titleRect, composerRect, setCursorDirect, setSelection, editAnnotation, setEditingTitle, setEditingComposer, showTitle, showComposer]);
+  }, [noteBoxes, annotationBoxes, measurePositions, score, width, titleRect, composerRect, setCursorDirect, setSelection, setNoteSelection, editAnnotation, setEditingTitle, setEditingComposer, showTitle, showComposer]);
 
   const commitTitle = useCallback(() => {
     setTitle(titleValue);

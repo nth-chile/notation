@@ -105,8 +105,7 @@ describe("Undo/Redo for new commands", () => {
   testUndoRedo("SetLyric", (snap) => {
     const history = new CommandHistory();
     const before = structuredClone(snap);
-    const evtId = snap.score.parts[0].measures[0].voices[0].events[0].id;
-    const after = history.execute(new SetLyric("la", evtId), snap);
+    const after = history.execute(new SetLyric("la"), snap);
     return { history, after, before };
   });
 

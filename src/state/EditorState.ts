@@ -19,7 +19,7 @@ import { durationToTicks as durationToTicksFn } from "../model/duration";
 import { factory } from "../model";
 import { defaultInputState, type InputState, type CursorPosition } from "../input/InputState";
 import { CommandHistory } from "../commands/CommandHistory";
-import type { Selection } from "../plugins/PluginAPI";
+import type { Selection, NoteSelection } from "../plugins/PluginAPI";
 import { InsertNote } from "../commands/InsertNote";
 import { InsertRest } from "../commands/InsertRest";
 import { DeleteNote } from "../commands/DeleteNote";
@@ -74,6 +74,7 @@ interface EditorStore {
   editingTitle: boolean;
   editingComposer: boolean;
   selection: Selection | null;
+  noteSelection: NoteSelection | null;
   clipboardMeasures: Measure[] | null;
 
   // Actions
@@ -97,6 +98,10 @@ interface EditorStore {
   setEditingTitle(editing: boolean): void;
   setEditingComposer(editing: boolean): void;
   setSelection(selection: Selection | null): void;
+  setNoteSelection(sel: NoteSelection | null): void;
+  extendNoteSelection(direction: "left" | "right"): void;
+  selectNoteAtCursor(): void;
+  deleteNoteSelection(): void;
   extendSelection(direction: "left" | "right"): void;
   deleteSelectedMeasures(): void;
   copySelection(): void;
@@ -199,6 +204,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   editingTitle: false,
   editingComposer: false,
   selection: null,
+  noteSelection: null,
   clipboardMeasures: null,
   isPlaying: false,
   playbackTick: null,
@@ -377,7 +383,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   setDuration(type: DurationType) {
     const state = get();
-    if (state.selection && !state.inputState.stepEntry) {
+    // Note-level selection: change duration of selected events
+    if (state.noteSelection) {
+      const ns = state.noteSelection;
+      const score = structuredClone(state.score);
+      const voice = score.parts[ns.partIndex]?.measures[ns.measureIndex]?.voices[ns.voiceIndex];
+      if (voice) {
+        for (let i = ns.startEvent; i <= ns.endEvent && i < voice.events.length; i++) {
+          voice.events[i] = { ...voice.events[i], duration: { type, dots: 0 } };
+        }
+        set({ score });
+      }
+    } else if (state.selection && !state.inputState.stepEntry) {
       const { partIndex, measureStart, measureEnd } = state.selection;
       const score = structuredClone(state.score);
       const part = score.parts[partIndex];
@@ -529,7 +546,64 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setSelection(selection) {
-    set({ selection });
+    set({ selection, noteSelection: null });
+  },
+
+  setNoteSelection(sel) {
+    set({ noteSelection: sel, selection: null });
+  },
+
+  selectNoteAtCursor() {
+    const { cursor } = get().inputState;
+    const voice = get().score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+    if (!voice || cursor.eventIndex >= voice.events.length) return;
+    set({
+      noteSelection: {
+        partIndex: cursor.partIndex,
+        measureIndex: cursor.measureIndex,
+        voiceIndex: cursor.voiceIndex,
+        startEvent: cursor.eventIndex,
+        endEvent: cursor.eventIndex,
+      },
+      selection: null,
+    });
+  },
+
+  extendNoteSelection(direction) {
+    set((s) => {
+      const { cursor } = s.inputState;
+      const voice = s.score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+      if (!voice) return s;
+
+      const ns = s.noteSelection ?? {
+        partIndex: cursor.partIndex,
+        measureIndex: cursor.measureIndex,
+        voiceIndex: cursor.voiceIndex,
+        startEvent: cursor.eventIndex,
+        endEvent: cursor.eventIndex,
+      };
+
+      const newNs = { ...ns };
+      if (direction === "right" && newNs.endEvent < voice.events.length - 1) {
+        newNs.endEvent++;
+      } else if (direction === "left" && newNs.startEvent > 0) {
+        newNs.startEvent--;
+      }
+      return { noteSelection: newNs, selection: null };
+    });
+  },
+
+  deleteNoteSelection() {
+    const state = get();
+    const ns = state.noteSelection;
+    if (!ns) return;
+    const score = structuredClone(state.score);
+    const voice = score.parts[ns.partIndex]?.measures[ns.measureIndex]?.voices[ns.voiceIndex];
+    if (!voice) return;
+    voice.events.splice(ns.startEvent, ns.endEvent - ns.startEvent + 1);
+    const input = structuredClone(state.inputState);
+    input.cursor.eventIndex = Math.min(ns.startEvent, voice.events.length);
+    set({ score, inputState: input, noteSelection: null });
   },
 
   extendSelection(direction: "left" | "right") {

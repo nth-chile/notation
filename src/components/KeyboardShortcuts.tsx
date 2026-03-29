@@ -37,7 +37,11 @@ export function KeyboardShortcuts() {
   const popover = useEditorStore((s) => s.popover);
   const setPopover = useEditorStore((s) => s.setPopover);
   const selection = useEditorStore((s) => s.selection);
+  const noteSelection = useEditorStore((s) => s.noteSelection);
   const setSelection = useEditorStore((s) => s.setSelection);
+  const setNoteSelection = useEditorStore((s) => s.setNoteSelection);
+  const extendNoteSelection = useEditorStore((s) => s.extendNoteSelection);
+  const deleteNoteSelection = useEditorStore((s) => s.deleteNoteSelection);
   const extendSelection = useEditorStore((s) => s.extendSelection);
   const deleteSelectedMeasures = useEditorStore((s) => s.deleteSelectedMeasures);
   const copySelection = useEditorStore((s) => s.copySelection);
@@ -57,7 +61,8 @@ export function KeyboardShortcuts() {
       "note:g": () => insertNote("G" as PitchClass),
       "insert-rest": () => insertRest(),
       "delete": () => {
-        if (selection) deleteSelectedMeasures();
+        if (noteSelection) deleteNoteSelection();
+        else if (selection) deleteSelectedMeasures();
         else deleteNote();
       },
 
@@ -80,8 +85,8 @@ export function KeyboardShortcuts() {
       "accidental:flat": () => setAccidental("flat"),
 
       // Navigation
-      "cursor:left": () => { if (selection) setSelection(null); moveCursor("left"); },
-      "cursor:right": () => { if (selection) setSelection(null); moveCursor("right"); },
+      "cursor:left": () => { if (selection) setSelection(null); if (noteSelection) setNoteSelection(null); moveCursor("left"); },
+      "cursor:right": () => { if (selection) setSelection(null); if (noteSelection) setNoteSelection(null); moveCursor("right"); },
       "octave:up": () => changeOctave("up"),
       "octave:down": () => changeOctave("down"),
       "part:up": () => moveCursorPart("up"),
@@ -90,7 +95,9 @@ export function KeyboardShortcuts() {
       // Selection
       "select:left": () => extendSelection("left"),
       "select:right": () => extendSelection("right"),
-      "escape": () => setSelection(null),
+      "select-note:left": () => extendNoteSelection("left"),
+      "select-note:right": () => extendNoteSelection("right"),
+      "escape": () => { setSelection(null); setNoteSelection(null); },
       "copy": () => { if (selection) copySelection(); },
       "paste": () => { if (clipboardMeasures) pasteAtCursor(); },
       "cut": () => { if (selection) { copySelection(); deleteSelectedMeasures(); } },
@@ -163,7 +170,8 @@ export function KeyboardShortcuts() {
     pause, stopPlayback, toggleMetronome, moveCursorPart, setViewMode, selection,
     copySelection, pasteAtCursor, clipboardMeasures, deleteSelectedMeasures,
     toggleArticulation, toggleStepEntry, toggleGraceNoteMode, toggleSlur, popover, setPopover,
-    setSelection, extendSelection,
+    setSelection, setNoteSelection, extendSelection, extendNoteSelection,
+    noteSelection, deleteNoteSelection,
   ]);
 
   return null;

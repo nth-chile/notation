@@ -8,6 +8,14 @@ export interface Selection {
   measureEnd: number;
 }
 
+export interface NoteSelection {
+  partIndex: number;
+  measureIndex: number;
+  voiceIndex: number;
+  startEvent: number;
+  endEvent: number; // inclusive
+}
+
 export interface PanelMenuItem {
   label: string;
   onClick: () => void;
