@@ -3,7 +3,7 @@ import { useEditorStore } from "../state";
 import { initRenderer } from "../renderer";
 import { renderScore, calculateContentHeight } from "../renderer";
 import { ScoreOverlay } from "./ScoreOverlay";
-import { DynamicsPopover } from "./DynamicsPopover";
+import { AnnotationPopover } from "./DynamicsPopover";
 
 export function ScoreCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -82,7 +82,7 @@ export function ScoreCanvas() {
     >
       <canvas ref={canvasRef} style={{ display: "block" }} />
       <ScoreOverlay width={containerWidth} height={canvasHeight} />
-      <DynamicsPopover />
+      <AnnotationPopover />
     </div>
   );
 }

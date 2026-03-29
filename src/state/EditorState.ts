@@ -156,10 +156,12 @@ interface EditorStore {
   setVolta(volta: Volta | null): void;
   setNavigationMark(markType: NavigationMarkType, value?: string | boolean): void;
 
-  // Dynamics
-  dynamicsPopoverOpen: boolean;
-  setDynamicsPopoverOpen(open: boolean): void;
+  // Popovers
+  popover: "dynamics" | "tempo" | "time-sig" | "key-sig" | "rehearsal" | "barline" | null;
+  setPopover(popover: EditorStore["popover"]): void;
   setDynamic(level: import("../model/annotations").DynamicLevel | null): void;
+  setTempoMark(bpm: number, beatUnit?: DurationType, text?: string): void;
+  setRehearsalMark(text: string): void;
 
   // Plugin display toggles
   showTitle: boolean;
@@ -206,10 +208,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   showTitle: true,
   showComposer: false,
   showLyrics: true,
-  dynamicsPopoverOpen: false,
+  popover: null,
 
-  setDynamicsPopoverOpen(open: boolean) {
-    set({ dynamicsPopoverOpen: open });
+  setPopover(popover: EditorStore["popover"]) {
+    set({ popover });
   },
 
   setDynamic(level: import("../model/annotations").DynamicLevel | null) {
@@ -221,7 +223,21 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (!evt) return;
     const cmd = new SetDynamic(level, evt.id);
     const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
-    set({ score: result.score, inputState: result.inputState, dynamicsPopoverOpen: false });
+    set({ score: result.score, inputState: result.inputState, popover: null });
+  },
+
+  setTempoMark(bpm: number, beatUnit: DurationType = "quarter", text?: string) {
+    const state = get();
+    const cmd = new SetTempo(bpm, beatUnit, text);
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState, popover: null });
+  },
+
+  setRehearsalMark(text: string) {
+    const state = get();
+    const cmd = new SetRehearsalMark(text);
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState, popover: null });
   },
 
   insertNote(pitchClass: PitchClass) {

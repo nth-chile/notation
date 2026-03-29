@@ -31,8 +31,8 @@ export function KeyboardShortcuts() {
   const setViewMode = useEditorStore((s) => s.setViewMode);
   const toggleArticulation = useEditorStore((s) => s.toggleArticulation);
   const toggleStepEntry = useEditorStore((s) => s.toggleStepEntry);
-  const setDynamicsPopoverOpen = useEditorStore((s) => s.setDynamicsPopoverOpen);
-  const dynamicsPopoverOpen = useEditorStore((s) => s.dynamicsPopoverOpen);
+  const popover = useEditorStore((s) => s.popover);
+  const setPopover = useEditorStore((s) => s.setPopover);
   const selection = useEditorStore((s) => s.selection);
   const setSelection = useEditorStore((s) => s.setSelection);
   const extendSelection = useEditorStore((s) => s.extendSelection);
@@ -110,7 +110,12 @@ export function KeyboardShortcuts() {
       // Annotation
       "chord-mode": () => enterChordMode(),
       "lyric-mode": () => { if (showLyrics) enterLyricMode(); },
-      "dynamics-popover": () => setDynamicsPopoverOpen(!dynamicsPopoverOpen),
+      "dynamics-popover": () => setPopover(popover === "dynamics" ? null : "dynamics"),
+      "tempo-popover": () => setPopover(popover === "tempo" ? null : "tempo"),
+      "time-sig-popover": () => setPopover(popover === "time-sig" ? null : "time-sig"),
+      "key-sig-popover": () => setPopover(popover === "key-sig" ? null : "key-sig"),
+      "rehearsal-popover": () => setPopover(popover === "rehearsal" ? null : "rehearsal"),
+      "barline-popover": () => setPopover(popover === "barline" ? null : "barline"),
 
       // Articulations
       "articulation:accent": () => toggleArticulation("accent"),
@@ -151,7 +156,7 @@ export function KeyboardShortcuts() {
     enterChordMode, enterLyricMode, showLyrics, textInputMode, isPlaying, play,
     pause, stopPlayback, toggleMetronome, moveCursorPart, setViewMode, selection,
     copySelection, pasteAtCursor, clipboardMeasures, deleteSelectedMeasures,
-    toggleArticulation, toggleStepEntry, setDynamicsPopoverOpen, dynamicsPopoverOpen,
+    toggleArticulation, toggleStepEntry, popover, setPopover,
     setSelection, extendSelection,
   ]);
 

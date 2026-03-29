@@ -83,6 +83,11 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "chord-mode", label: "Chord input", category: "Annotation", defaultBinding: { key: "c", shift: true } },
   { id: "lyric-mode", label: "Lyric input", category: "Annotation", defaultBinding: { key: "l", shift: true } },
   { id: "dynamics-popover", label: "Dynamics", category: "Annotation", defaultBinding: { key: "d", shift: true } },
+  { id: "tempo-popover", label: "Tempo marking", category: "Annotation", defaultBinding: { key: "t", ctrl: true, shift: true } },
+  { id: "time-sig-popover", label: "Time signature", category: "Annotation", defaultBinding: { key: "t", ctrl: true } },
+  { id: "key-sig-popover", label: "Key signature", category: "Annotation", defaultBinding: { key: "k", ctrl: true } },
+  { id: "rehearsal-popover", label: "Rehearsal mark", category: "Annotation", defaultBinding: { key: "r", shift: true } },
+  { id: "barline-popover", label: "Barline", category: "Annotation", defaultBinding: { key: "b", shift: true } },
 
   // Articulations
   { id: "articulation:accent", label: "Accent", category: "Articulations", defaultBinding: { key: ">", shift: true } },
