@@ -51,6 +51,7 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
     case "note": {
       const obj: Record<string, unknown> = {
         type: "note",
+        id: e.id,
         pitch: pitchToStr(e.head.pitch),
         duration: dur,
       };
@@ -65,6 +66,7 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
     case "chord": {
       const obj: Record<string, unknown> = {
         type: "chord",
+        id: e.id,
         pitches: e.heads.map((h) => pitchToStr(h.pitch)),
         duration: dur,
       };
@@ -80,18 +82,19 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
       return obj;
     }
     case "rest": {
-      const obj: Record<string, unknown> = { type: "rest", duration: dur };
+      const obj: Record<string, unknown> = { type: "rest", id: e.id, duration: dur };
       if (e.tuplet) obj.tuplet = { actual: e.tuplet.actual, normal: e.tuplet.normal };
       return obj;
     }
     case "slash": {
-      const obj: Record<string, unknown> = { type: "slash", duration: dur };
+      const obj: Record<string, unknown> = { type: "slash", id: e.id, duration: dur };
       if (e.tuplet) obj.tuplet = { actual: e.tuplet.actual, normal: e.tuplet.normal };
       return obj;
     }
     case "grace": {
       const obj: Record<string, unknown> = {
         type: "grace",
+        id: e.id,
         pitch: pitchToStr(e.head.pitch),
         duration: dur,
       };
@@ -238,7 +241,7 @@ function parseTuplet(e: Record<string, unknown>): TupletRatio | undefined {
 }
 
 function parseEvent(e: Record<string, unknown>): NoteEvent {
-  const id = newId<NoteEventId>("evt");
+  const id = (e.id as NoteEventId) || newId<NoteEventId>("evt");
   const type = e.type as string;
   const durStr = (e.duration as string) || "quarter";
   const duration = parseDurationStr(durStr);
