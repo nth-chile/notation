@@ -106,6 +106,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "toggle-metronome", label: "Toggle metronome", category: "Playback", defaultBinding: { key: "m", shift: true } },
 
   // File
+  { id: "file:new", label: "New score", category: "File", defaultBinding: { key: "n", ctrl: true } },
   { id: "file:open", label: "Open file", category: "File", defaultBinding: { key: "o", ctrl: true } },
   { id: "file:save", label: "Save file", category: "File", defaultBinding: { key: "s", ctrl: true } },
 

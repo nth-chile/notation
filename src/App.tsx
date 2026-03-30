@@ -13,6 +13,7 @@ import { useEditorStore } from "./state";
 import { useLayoutStore } from "./state/LayoutState";
 import { saveScore } from "./fileio/save";
 import { loadScore } from "./fileio/load";
+import { emptyScore } from "./model/factory";
 import { getSettings, matchesBinding } from "./settings";
 import { useEffect, useCallback, useState, useSyncExternalStore, useRef } from "react";
 import {
@@ -105,6 +106,12 @@ export function App() {
     }
   }, [score, filePath, setFilePath]);
 
+  const handleNew = useCallback(() => {
+    setScore(emptyScore());
+    setFilePath(null);
+    localStorage.removeItem("NOTATION_AUTOSAVE");
+  }, [setScore, setFilePath]);
+
   const handleOpen = useCallback(async () => {
     try {
       const result = await loadScore();
@@ -119,6 +126,7 @@ export function App() {
   // File & UI shortcuts (uses customizable keybindings)
   useEffect(() => {
     const handlers: Record<string, () => void> = {
+      "file:new": () => handleNew(),
       "file:save": () => handleSave(),
       "file:open": () => handleOpen(),
       "toggle-settings": () => setSettingsVisible((v) => !v),
@@ -151,6 +159,7 @@ export function App() {
       <Toolbar
         onToggleSettings={() => setSettingsVisible((v) => !v)}
         onTogglePlugins={() => setPluginsVisible((v) => !v)}
+        onNew={handleNew}
         onOpen={handleOpen}
         onSave={handleSave}
         toolbarPanels={toolbarPanels}

@@ -68,10 +68,19 @@ class SmplrPlayer implements NotePlayer {
     return loadPromise;
   }
 
+  async resume(): Promise<void> {
+    if (this.ctx.state === "suspended") {
+      await this.ctx.resume();
+    }
+  }
+
   play(midi: number, duration: number, time: number, instrumentId?: string): void {
     const gmName = resolveInstrument(instrumentId ?? "");
     const instrument = this.instruments.get(gmName) ?? this.instruments.values().next().value;
     if (!instrument) return;
+
+    // Only play if the AudioContext is running
+    if (this.ctx.state !== "running") return;
 
     instrument.start({
       note: midi,

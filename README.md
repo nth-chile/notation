@@ -21,6 +21,11 @@ VITE_CLEAN_SETTINGS=1 npm run dev
 VITE_CLEAN_SETTINGS=1 npm run tauri dev
 ```
 
+### Claude Code Skills
+
+- `/test-changes` — After a feature or bug fix, finds untested changes, writes unit tests, and creates/updates GitHub issues (label: `manual-test`) for anything requiring manual verification.
+- `/test-matrix` — Comprehensive scan of all features vs test coverage. Writes missing unit tests and creates GitHub issues for manual-only items.
+
 ## License
 
 AGPL-3.0 — see [LICENSE](LICENSE) for details.

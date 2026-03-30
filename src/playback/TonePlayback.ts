@@ -19,6 +19,8 @@ export interface TransportOptions {
 export interface NotePlayer {
   play(midi: number, duration: number, time: number, instrumentId?: string): void;
   stop(): void;
+  resume?(): Promise<void>;
+  preloadForScore?(instrumentIds: string[]): Promise<void>;
 }
 
 interface PlayEvent {
@@ -110,7 +112,7 @@ function secToTicks(sec: number, bpm: number): number {
   return (sec * bpm * TICKS_PER_QUARTER) / 60;
 }
 
-function getTempoForMeasure(score: Score, mi: number): number {
+function getTempoForMeasure(score: Score, mi: number, fallbackBpm?: number): number {
   for (const part of score.parts) {
     const m = part.measures[mi];
     if (!m) continue;
@@ -118,7 +120,7 @@ function getTempoForMeasure(score: Score, mi: number): number {
       if (ann.kind === "tempo-mark") return (ann as TempoMark).bpm;
     }
   }
-  return globalBpm;
+  return fallbackBpm ?? globalBpm;
 }
 
 function getMeasureIndexForTick(tick: number): number {
@@ -288,6 +290,13 @@ export async function play(score: Score): Promise<void> {
   if (state === "playing") return;
   await Tone.start();
 
+  // Resume custom player's AudioContext and preload instruments
+  if (customPlayer) {
+    await customPlayer.resume?.();
+    const instrumentIds = score.parts.map((p) => p.instrumentId);
+    await customPlayer.preloadForScore?.(instrumentIds.length > 0 ? instrumentIds : [""]);
+  }
+
   currentScore = score;
   globalBpm = score.tempo;
   buildEvents(score);
@@ -397,7 +406,7 @@ export function getScoreDuration(score: Score): number {
   for (let mi = 0; mi <= lastMi; mi++) {
     const m0 = score.parts[0]?.measures[mi];
     if (!m0) continue;
-    const bpm = getTempoForMeasure(score, mi);
+    const bpm = getTempoForMeasure(score, mi, score.tempo);
     const mTicks = (TICKS_PER_QUARTER * 4 * m0.timeSignature.numerator) / m0.timeSignature.denominator;
     time += ticksToSec(mTicks, bpm);
   }

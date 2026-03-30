@@ -35,14 +35,24 @@ For any feature marked "Untested" that CAN be unit tested (pure logic, command e
 
 Run `npm run test` after writing to verify they pass.
 
-## Step 5: Output
+## Step 5: GitHub Issues for Manual Tests
+
+For features marked "Manual only" or "Untested" that cannot be unit tested:
+
+1. First check existing issues: `gh issue list --label manual-test --state open --limit 100`
+2. If an existing open issue already covers this feature, **add a comment** noting it was identified in the test matrix scan. Use `gh issue comment <number> --body "..."`.
+3. If no existing issue covers it, **create a new issue** with label `manual-test`. Include clear steps, expected behavior, and what to look for.
+4. Do NOT create duplicates.
+
+## Step 6: Output
 
 Print a summary table:
 ```
-Feature | Type | Unit | E2E | Notes
---------|------|------|-----|------
+Feature | Type | Unit | E2E | Manual Issue | Notes
+--------|------|------|-----|-------------|------
 ```
 
-Then print a **Manual Testing Checklist** — only things that cannot be automated. Keep it short and actionable.
-
-Finally, report the test count before and after.
+Then report:
+- Test count before and after
+- GitHub issues created or updated (with links)
+- Overall coverage assessment

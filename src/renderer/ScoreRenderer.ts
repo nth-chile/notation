@@ -123,6 +123,11 @@ export function renderScore(
 ): ScoreRenderResult {
   clearCanvas(ctx, canvas);
 
+  // Compute active playback notes once for the entire render pass
+  const activeNoteIds = (playbackTick != null && playbackTick >= 0)
+    ? getActiveNoteIds(score, playbackTick)
+    : undefined;
+
   // Determine which parts to render based on viewConfig
   const visiblePartIndices = getVisiblePartIndices(score, viewConfig);
   const annotationFilter = viewConfig?.showAnnotations;
@@ -344,7 +349,8 @@ export function renderScore(
               isFirstInLine,
               score.stylesheet,
               originalPi,
-              mi
+              mi,
+              activeNoteIds
             );
           }
 
@@ -437,9 +443,8 @@ export function renderScore(
     drawCursor(ctx, score, cursor, measurePositions, config, allNoteBoxes);
   }
 
-  // Draw playback note highlights and cursor
+  // Draw playback cursor
   if (playbackTick != null && playbackTick >= 0) {
-    drawPlaybackHighlights(rawCtx, score, playbackTick, allNoteBoxes);
     drawPlaybackCursor(ctx, score, playbackTick, measurePositions, config);
   }
 
@@ -557,29 +562,6 @@ function getActiveNoteIds(score: Score, playbackTick: number): Set<NoteEventId> 
     }
   }
   return active;
-}
-
-function drawPlaybackHighlights(
-  rawCtx: CanvasRenderingContext2D,
-  score: Score,
-  playbackTick: number,
-  noteBoxes: Map<NoteEventId, NoteBox>,
-): void {
-  const activeIds = getActiveNoteIds(score, playbackTick);
-  if (activeIds.size === 0) return;
-
-  rawCtx.save();
-  rawCtx.fillStyle = "#ef467e";
-  rawCtx.globalAlpha = 0.18;
-  const pad = 3;
-  for (const id of activeIds) {
-    const box = noteBoxes.get(id);
-    if (!box) continue;
-    rawCtx.beginPath();
-    rawCtx.roundRect(box.x - pad, box.y - pad, box.width + pad * 2, box.height + pad * 2, 4);
-    rawCtx.fill();
-  }
-  rawCtx.restore();
 }
 
 function drawPlaybackCursor(
