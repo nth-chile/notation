@@ -82,8 +82,13 @@ export function ScoreCanvas() {
         for (let i = noteSelection.startEvent; i <= noteSelection.endEvent && i < voice.events.length; i++) {
           const box = result.noteBoxes.get(voice.events[i].id);
           if (box) {
+            const bx = box.x - pad, by = box.y - pad, bw = box.width + pad * 2, bh = box.height + pad * 2;
             rawCtx.beginPath();
-            rawCtx.roundRect(box.x - pad, box.y - pad, box.width + pad * 2, box.height + pad * 2, 4);
+            if (rawCtx.roundRect) {
+              rawCtx.roundRect(bx, by, bw, bh, 4);
+            } else {
+              rawCtx.rect(bx, by, bw, bh);
+            }
             rawCtx.fill();
           }
         }

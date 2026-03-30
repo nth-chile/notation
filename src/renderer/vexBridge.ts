@@ -258,7 +258,8 @@ export function renderMeasure(
   showKeySig: boolean,
   stylesheet?: Partial<Stylesheet>,
   partIndex = 0,
-  measureIndex = 0
+  measureIndex = 0,
+  activeNoteIds?: Set<NoteEventId>
 ): MeasureRenderResult {
   const style = resolveStylesheet(stylesheet);
 
@@ -402,13 +403,41 @@ export function renderMeasure(
   // Format and draw all voices together
   if (vfVoices.length > 0) {
     const formatter = new Formatter();
-    formatter.joinVoices(vfVoices);
+    try {
+      formatter.joinVoices(vfVoices);
+    } catch {
+      // Voices have mismatched tick totals — join each independently so rendering doesn't crash
+      for (const v of vfVoices) {
+        try { formatter.joinVoices([v]); } catch { /* skip broken voice */ }
+      }
+    }
 
     // Use proportional spacing via softmax factor scaled by stylesheet spacingFactor
     const formattingWidth = width - (stave.getNoteStartX() - x) - 10;
-    formatter.format(vfVoices, formattingWidth * style.spacingFactor);
+    try {
+      formatter.format(vfVoices, formattingWidth * style.spacingFactor);
+    } catch {
+      // Tick mismatch in format — format each voice independently
+      for (const v of vfVoices) {
+        try {
+          const f = new Formatter();
+          f.joinVoices([v]);
+          f.format([v], formattingWidth * style.spacingFactor);
+        } catch { /* skip broken voice */ }
+      }
+    }
 
     for (const vfVoice of vfVoices) {
+      // Color active playback notes
+      if (activeNoteIds?.size) {
+        const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] };
+        data.__staveNotes.forEach((sn, idx) => {
+          if (activeNoteIds.has(data.__eventIds[idx])) {
+            sn.setStyle({ fillStyle: "#4a7dff", strokeStyle: "#4a7dff" });
+          }
+        });
+      }
+
       vfVoice.draw(ctx.context, stave);
 
       // Collect bounding boxes

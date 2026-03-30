@@ -39,6 +39,7 @@ export interface ToolbarGroup {
 interface ToolbarProps {
   onToggleSettings?: () => void;
   onTogglePlugins?: () => void;
+  onNew?: () => void;
   onOpen?: () => void;
   onSave?: () => void;
   toolbarPanels?: PanelRegistration[];
@@ -247,7 +248,7 @@ function DraggableToolbarRow({
   );
 }
 
-export function Toolbar({ onToggleSettings, onTogglePlugins, onOpen, onSave, toolbarPanels = [], views = [] }: ToolbarProps) {
+export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSave, toolbarPanels = [], views = [] }: ToolbarProps) {
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
   const hotkey = useHotkey();
@@ -321,6 +322,11 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onOpen, onSave, too
             <Separator orientation="vertical" />
 
             <div className="flex items-center gap-1">
+              {onNew && (
+                <TooltipButton variant="ghost" size="sm" onClick={onNew} tooltip={`New score (${hotkey("file:new")})`}>
+                  New
+                </TooltipButton>
+              )}
               {onOpen && (
                 <TooltipButton variant="ghost" size="sm" onClick={onOpen} tooltip={`Open file (${hotkey("file:open")})`}>
                   Open
