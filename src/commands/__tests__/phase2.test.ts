@@ -263,6 +263,28 @@ describe("ChangeTimeSig", () => {
       denominator: 8,
     });
   });
+
+  it("applies to all parts at the same measure", () => {
+    const measures1 = [factory.measure([factory.voice([])]), factory.measure([factory.voice([])])];
+    const measures2 = [factory.measure([factory.voice([])]), factory.measure([factory.voice([])])];
+    const input = defaultInputState();
+    input.cursor.measureIndex = 1;
+    const snap: EditorSnapshot = {
+      score: factory.score("Test", "", [
+        factory.part("Piano", "Pno.", measures1),
+        factory.part("Bass", "Bs.", measures2),
+      ]),
+      inputState: input,
+    };
+
+    const cmd = new ChangeTimeSig({ numerator: 3, denominator: 4 });
+    const result = cmd.execute(snap);
+
+    expect(result.score.parts[0].measures[1].timeSignature).toEqual({ numerator: 3, denominator: 4 });
+    expect(result.score.parts[1].measures[1].timeSignature).toEqual({ numerator: 3, denominator: 4 });
+    // First measure should be unchanged
+    expect(result.score.parts[0].measures[0].timeSignature).toEqual({ numerator: 4, denominator: 4 });
+  });
 });
 
 describe("ChangeKeySig", () => {
@@ -273,6 +295,28 @@ describe("ChangeKeySig", () => {
     const result = cmd.execute(snap);
 
     expect(result.score.parts[0].measures[0].keySignature).toEqual({ fifths: 3 });
+  });
+
+  it("applies to all parts at the same measure", () => {
+    const measures1 = [factory.measure([factory.voice([])]), factory.measure([factory.voice([])])];
+    const measures2 = [factory.measure([factory.voice([])]), factory.measure([factory.voice([])])];
+    const input = defaultInputState();
+    input.cursor.measureIndex = 1;
+    const snap: EditorSnapshot = {
+      score: factory.score("Test", "", [
+        factory.part("Piano", "Pno.", measures1),
+        factory.part("Bass", "Bs.", measures2),
+      ]),
+      inputState: input,
+    };
+
+    const cmd = new ChangeKeySig({ fifths: -2 });
+    const result = cmd.execute(snap);
+
+    expect(result.score.parts[0].measures[1].keySignature).toEqual({ fifths: -2 });
+    expect(result.score.parts[1].measures[1].keySignature).toEqual({ fifths: -2 });
+    // First measure should be unchanged
+    expect(result.score.parts[0].measures[0].keySignature).toEqual({ fifths: 0 });
   });
 });
 

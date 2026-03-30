@@ -5,7 +5,7 @@ import type { Annotation } from "../model/annotations";
 import type { ArticulationKind } from "../model/note";
 import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
-import { durationToTicks as durationToTicksFn } from "../model/duration";
+import { durationToTicks as durationToTicksFn, measureCapacity as measureCapacityFn, voiceTicksUsed as voiceTicksUsedFn } from "../model/duration";
 import { getBeamGroups } from "./beaming";
 import { useEditorStore } from "../state/EditorState";
 
@@ -713,6 +713,24 @@ export function renderMeasure(
         rawCtx.textAlign = "start";
         rawCtx.restore();
       }
+    }
+  }
+
+  // Draw red/orange barline for overfill/underfill (Dorico-style)
+  const capacity = measureCapacityFn(m.timeSignature.numerator, m.timeSignature.denominator);
+  const maxTicks = Math.max(...m.voices.map((v) => voiceTicksUsedFn(v.events)), 0);
+  if (maxTicks > 0 && maxTicks !== capacity) {
+    const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+    if (rawCtx.save) {
+      rawCtx.save();
+      rawCtx.strokeStyle = maxTicks > capacity ? "#ef4444" : "#f59e0b";
+      rawCtx.lineWidth = 2.5;
+      const barX = x + width;
+      rawCtx.beginPath();
+      rawCtx.moveTo(barX, y);
+      rawCtx.lineTo(barX, y + 40);
+      rawCtx.stroke();
+      rawCtx.restore();
     }
   }
 
