@@ -338,6 +338,16 @@ export function renderScore(
               mi
             );
           } else {
+            // Show time/key sig on first measure or when they change
+            const prevMeasure = mi > 0 ? part.measures[mi - 1] : undefined;
+            const timeSigChanged = mi === 0 || (prevMeasure != null && (
+              m.timeSignature.numerator !== prevMeasure.timeSignature.numerator ||
+              m.timeSignature.denominator !== prevMeasure.timeSignature.denominator
+            ));
+            const keySigChanged = isFirstInLine || (prevMeasure != null &&
+              m.keySignature.fifths !== prevMeasure.keySignature.fifths
+            );
+
             result = renderMeasure(
               ctx,
               measureToRender,
@@ -345,8 +355,8 @@ export function renderScore(
               layout.y,
               layout.width,
               isFirstInLine,
-              mi === 0,
-              isFirstInLine,
+              timeSigChanged,
+              keySigChanged,
               score.stylesheet,
               originalPi,
               mi,

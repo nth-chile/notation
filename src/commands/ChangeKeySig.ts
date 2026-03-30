@@ -9,12 +9,15 @@ export class ChangeKeySig implements Command {
   execute(state: EditorSnapshot): EditorSnapshot {
     const score = structuredClone(state.score);
     const input = structuredClone(state.inputState);
-    const { partIndex, measureIndex } = input.cursor;
+    const { measureIndex } = input.cursor;
 
-    const measure = score.parts[partIndex]?.measures[measureIndex];
-    if (!measure) return state;
-
-    measure.keySignature = { ...this.keySignature };
+    // Key signature changes apply to all parts at this measure
+    for (const part of score.parts) {
+      const measure = part.measures[measureIndex];
+      if (measure) {
+        measure.keySignature = { ...this.keySignature };
+      }
+    }
 
     return { score, inputState: input };
   }
