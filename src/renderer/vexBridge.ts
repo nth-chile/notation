@@ -620,7 +620,7 @@ export function renderMeasure(
                   ? annotation.text + "-"
                   : annotation.text;
               const lyricX = box.x + box.width / 2;
-              const lyricY = y + 105;
+              const lyricY = stave.getBottomY() + 22;
               const lyricMetrics = rawCtx.measureText(lyricText);
               rawCtx.fillText(lyricText, lyricX, lyricY);
               rawCtx.textAlign = "start";
@@ -670,7 +670,7 @@ export function renderMeasure(
               rawCtx.font = "italic bold 16px serif";
               rawCtx.fillStyle = "#000";
               rawCtx.textAlign = "center";
-              const dynY = stave.getBottomY() + 14;
+              const dynY = stave.getBottomY() + 4;
               rawCtx.fillText(annotation.level, box.x + box.width / 2, dynY);
               rawCtx.textAlign = "start";
               rawCtx.restore();
@@ -685,7 +685,7 @@ export function renderMeasure(
               rawCtx.save();
               rawCtx.strokeStyle = "#000";
               rawCtx.lineWidth = 1.5;
-              const hairpinY = stave.getBottomY() + 10;
+              const hairpinY = stave.getBottomY() + 2;
               const spread = 5; // half-height of the wedge opening
               const startX = startBox.x + startBox.width;
               const endX = endBox.x;
