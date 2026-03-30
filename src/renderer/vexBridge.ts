@@ -20,6 +20,11 @@ export interface NoteBox {
   y: number;
   width: number;
   height: number;
+  /** Tighter bounds for visual highlights (cursor/selection), excluding grace notes */
+  headX: number;
+  headY: number;
+  headWidth: number;
+  headHeight: number;
   partIndex: number;
   measureIndex: number;
   voiceIndex: number;
@@ -456,12 +461,27 @@ export function renderMeasure(
       data.__staveNotes.forEach((sn, idx) => {
         const bb = sn.getBoundingBox();
         if (bb) {
+          // Full bounding box for hit testing (includes grace notes etc.)
+          const x = bb.getX(), y = bb.getY(), w = bb.getW(), h = bb.getH();
+          // Tighter note head bounds for visual highlights
+          const nhX = sn.getNoteHeadBeginX();
+          const nhEndX = sn.getNoteHeadEndX();
+          const nhWidth = nhEndX - nhX;
+          let headY = y, headH = h;
+          try {
+            const nhBounds = sn.getNoteHeadBounds();
+            if (nhBounds.y_top != null && nhBounds.y_bottom != null) {
+              headY = nhBounds.y_top;
+              headH = nhBounds.y_bottom - nhBounds.y_top;
+            }
+          } catch { /* pre-render or missing stave */ }
           noteBoxes.push({
             id: data.__eventIds[idx],
-            x: bb.getX(),
-            y: bb.getY(),
-            width: bb.getW(),
-            height: bb.getH(),
+            x, y, width: w, height: h,
+            headX: nhWidth > 0 ? nhX : x,
+            headY,
+            headWidth: nhWidth > 0 ? nhWidth : w,
+            headHeight: Math.max(headH, 10),
             partIndex,
             measureIndex,
             voiceIndex: data.__voiceIndex,
