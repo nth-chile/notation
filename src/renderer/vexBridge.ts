@@ -716,20 +716,19 @@ export function renderMeasure(
     }
   }
 
-  // Draw red/orange barline for overfill/underfill (Dorico-style)
+  // Show overfill/underfill indicator (MuseScore-style + or –)
   const capacity = measureCapacityFn(m.timeSignature.numerator, m.timeSignature.denominator);
   const maxTicks = Math.max(...m.voices.map((v) => voiceTicksUsedFn(v.events)), 0);
   if (maxTicks > 0 && maxTicks !== capacity) {
     const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
     if (rawCtx.save) {
       rawCtx.save();
-      rawCtx.strokeStyle = maxTicks > capacity ? "#ef4444" : "#f59e0b";
-      rawCtx.lineWidth = 2.5;
-      const barX = x + width;
-      rawCtx.beginPath();
-      rawCtx.moveTo(barX, y);
-      rawCtx.lineTo(barX, y + 40);
-      rawCtx.stroke();
+      const isOver = maxTicks > capacity;
+      rawCtx.fillStyle = isOver ? "#ef4444" : "#f59e0b";
+      rawCtx.font = "bold 12px sans-serif";
+      rawCtx.textAlign = "right";
+      rawCtx.fillText(isOver ? "+" : "\u2013", x + width - 3, y + 10);
+      rawCtx.textAlign = "start";
       rawCtx.restore();
     }
   }
