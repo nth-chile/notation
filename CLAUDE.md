@@ -103,3 +103,5 @@ Key signatures (fifths): -7 to 7. Barlines: single, double, final, repeat-start,
 - **GitHub issues are linked.** Related issues have "Related: #X, #Y" comments. Always read issue comments before starting work — fix related issues together.
 - **Run `/test-changes` after finishing work.** It writes unit tests and updates GitHub issues.
 - **Run `/triage-issues` after closing issues.** It catches unaddressed items in comments and links related issues.
+- **Work on a branch, not main.** Create a branch named after the issue group (e.g., `fix/voice-bugs`, `fix/selection`). Submit a PR when done. This prevents parallel agents from stepping on each other.
+- **Push back on bad fixes.** Don't force a change just because an issue says so. If the current behavior is correct or the fix would make things worse, explain your reasoning to the user and comment on the GitHub issue — don't silently skip it.

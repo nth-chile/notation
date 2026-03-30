@@ -19,8 +19,16 @@ export class InsertNote implements Command {
     const { partIndex, measureIndex, voiceIndex, eventIndex } = input.cursor;
 
     const measure = score.parts[partIndex]?.measures[measureIndex];
-    const voice = measure?.voices[voiceIndex];
-    if (!voice || !measure) return state;
+    if (!measure) return state;
+
+    // Auto-create voices up to the requested index
+    while (measure.voices.length <= voiceIndex) {
+      measure.voices.push({
+        id: newId<import("../model/ids").VoiceId>("vce"),
+        events: [],
+      });
+    }
+    const voice = measure.voices[voiceIndex];
 
     // Check measure capacity
     const cap = measureCapacity(

@@ -454,10 +454,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const cursor = { ...s.inputState.cursor };
       const voice =
         s.score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
-      if (!voice) return s;
+      // Allow navigation even when voice doesn't exist in current measure
+      const eventCount = voice?.events.length ?? 0;
 
       if (direction === "right") {
-        if (cursor.eventIndex < voice.events.length) {
+        if (cursor.eventIndex < eventCount) {
           cursor.eventIndex++;
         } else {
           // Move to next measure
