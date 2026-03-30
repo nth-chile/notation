@@ -167,5 +167,65 @@ export const ScoreEditorPlugin: NotationPlugin = {
     api.registerCommand("notation.toggle-pickup", "Toggle pickup measure", () => {
       useEditorStore.getState().togglePickup();
     });
+
+    // Editing
+    api.registerCommand("notation.insert-rest", "Insert rest", () => {
+      useEditorStore.getState().insertRest();
+    });
+    api.registerCommand("notation.delete", "Delete note", () => {
+      useEditorStore.getState().deleteNote();
+    });
+    api.registerCommand("notation.insert-measure", "Insert measure", () => {
+      useEditorStore.getState().insertMeasure();
+    });
+    api.registerCommand("notation.delete-measure", "Delete measure", () => {
+      useEditorStore.getState().deleteMeasure();
+    });
+    api.registerCommand("notation.undo", "Undo", () => {
+      useEditorStore.getState().undo();
+    });
+    api.registerCommand("notation.redo", "Redo", () => {
+      useEditorStore.getState().redo();
+    });
+
+    // Annotation modes
+    api.registerCommand("notation.chord-mode", "Enter chord input", () => {
+      useEditorStore.getState().enterChordMode();
+    });
+    api.registerCommand("notation.lyric-mode", "Enter lyric input", () => {
+      useEditorStore.getState().enterLyricMode();
+    });
+    api.registerCommand("notation.toggle-slur", "Toggle slur", () => {
+      useEditorStore.getState().toggleSlur();
+    });
+    api.registerCommand("notation.toggle-step-entry", "Toggle step entry", () => {
+      useEditorStore.getState().toggleStepEntry();
+    });
+    api.registerCommand("notation.toggle-grace-note", "Toggle grace note mode", () => {
+      useEditorStore.getState().toggleGraceNoteMode();
+    });
+
+    // Popovers
+    api.registerCommand("notation.dynamics", "Dynamics...", () => {
+      useEditorStore.getState().setPopover("dynamics");
+    });
+    api.registerCommand("notation.tempo", "Tempo...", () => {
+      useEditorStore.getState().setPopover("tempo");
+    });
+    api.registerCommand("notation.time-signature", "Time signature...", () => {
+      useEditorStore.getState().setPopover("time-sig");
+    });
+    api.registerCommand("notation.key-signature", "Key signature...", () => {
+      useEditorStore.getState().setPopover("key-sig");
+    });
+    api.registerCommand("notation.rehearsal-mark", "Rehearsal mark...", () => {
+      useEditorStore.getState().setPopover("rehearsal");
+    });
+    api.registerCommand("notation.barline", "Barline...", () => {
+      useEditorStore.getState().setPopover("barline");
+    });
+    api.registerCommand("notation.toggle-metronome", "Toggle metronome", () => {
+      useEditorStore.getState().toggleMetronome();
+    });
   },
 };
