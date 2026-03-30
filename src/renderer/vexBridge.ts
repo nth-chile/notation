@@ -1,7 +1,7 @@
 import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector, Barline, Repetition, Volta as VexVolta, StaveTie, MultiMeasureRest, Tuplet as VexTuplet, Articulation as VexArticulation, Ornament as VexOrnament, GraceNote as VexGraceNote, GraceNoteGroup } from "vexflow";
 import type { Measure, NoteEvent, NoteEventId } from "../model";
 import type { BarlineType } from "../model/time";
-import type { Annotation } from "../model/annotations";
+import type { Annotation, TempoMark } from "../model/annotations";
 import type { ArticulationKind } from "../model/note";
 import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
@@ -301,6 +301,16 @@ export function renderMeasure(
     } catch {
       // Fallback handled via text rendering below
     }
+  }
+
+  // Add tempo mark via VexFlow if present
+  const tempoAnn = m.annotations.find((a) => a.kind === "tempo-mark") as TempoMark | undefined;
+  if (tempoAnn) {
+    const vfDur: Record<string, string> = { whole: "w", half: "h", quarter: "q", eighth: "8", "16th": "16", "32nd": "32" };
+    stave.setTempo(
+      { name: tempoAnn.text ?? "", duration: vfDur[tempoAnn.beatUnit] ?? "q", bpm: tempoAnn.bpm },
+      -20
+    );
   }
 
   stave.setContext(ctx.context).draw();
@@ -628,20 +638,9 @@ export function renderMeasure(
             rawCtx.restore();
             break;
           }
-          case "tempo-mark": {
-            rawCtx.save();
-            rawCtx.fillStyle = "#000";
-            const noteGlyph: Record<string, string> = {
-              whole: "o", half: "d", quarter: "♩",
-              eighth: "♪", "16th": "♬", "32nd": "♬",
-            };
-            const glyph = noteGlyph[annotation.beatUnit] ?? annotation.beatUnit;
-            const tempoText = annotation.text ? `${annotation.text} (${glyph} = ${annotation.bpm})` : `${glyph} = ${annotation.bpm}`;
-            rawCtx.font = "bold 12px sans-serif";
-            rawCtx.fillText(tempoText, x + 2, y - 4);
-            rawCtx.restore();
+          case "tempo-mark":
+            // Rendered via VexFlow stave.setTempo() above
             break;
-          }
           case "dynamic": {
             // Find the StaveNote attached to this dynamic via noteEventId
             const box = noteBoxes.find((nb) => nb.id === annotation.noteEventId);
