@@ -1,6 +1,6 @@
 export type ViewModeType = "full-score" | "lead-sheet" | "songwriter" | "tab";
 
-export type AnnotationFilter = "chord-symbol" | "lyric" | "rehearsal-mark" | "tempo-mark";
+export type AnnotationFilter = "chord-symbol" | "lyric" | "rehearsal-mark" | "tempo-mark" | "dynamic" | "hairpin" | "slur";
 
 export interface ViewConfig {
   type: ViewModeType;
@@ -24,7 +24,7 @@ export function fullScoreConfig(): ViewConfig {
     type: "full-score",
     partsToShow: "all",
     staffType: {},
-    showAnnotations: ["chord-symbol", "lyric", "rehearsal-mark", "tempo-mark"],
+    showAnnotations: ["chord-symbol", "lyric", "rehearsal-mark", "tempo-mark", "dynamic", "hairpin", "slur"],
     layoutConfig: {
       compact: false,
       showPartNames: true,
@@ -38,7 +38,7 @@ export function leadSheetConfig(): ViewConfig {
     type: "lead-sheet",
     partsToShow: [0],
     staffType: { 0: "standard" },
-    showAnnotations: ["chord-symbol", "lyric", "rehearsal-mark", "tempo-mark"],
+    showAnnotations: ["chord-symbol", "lyric", "rehearsal-mark", "tempo-mark", "dynamic", "hairpin", "slur"],
     layoutConfig: {
       compact: true,
       measuresPerLine: 4,
@@ -53,7 +53,7 @@ export function songwriterConfig(): ViewConfig {
     type: "songwriter",
     partsToShow: [0],
     staffType: { 0: "standard" },
-    showAnnotations: ["chord-symbol", "lyric"],
+    showAnnotations: ["chord-symbol", "lyric", "dynamic", "hairpin", "slur"],
     layoutConfig: {
       compact: true,
       measuresPerLine: 4,
@@ -72,7 +72,7 @@ export function tabConfig(guitarPartIndices: number[] = [0]): ViewConfig {
     type: "tab",
     partsToShow: "all",
     staffType,
-    showAnnotations: ["chord-symbol", "lyric", "rehearsal-mark", "tempo-mark"],
+    showAnnotations: ["chord-symbol", "lyric", "rehearsal-mark", "tempo-mark", "dynamic", "hairpin", "slur"],
     layoutConfig: {
       compact: false,
       showPartNames: true,
