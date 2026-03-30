@@ -534,7 +534,7 @@ function drawCursor(
 
     rawCtx.save();
     rawCtx.strokeStyle = cursorColor;
-    rawCtx.lineWidth = 2;
+    rawCtx.lineWidth = 3;
     rawCtx.setLineDash([4, 4]);
     rawCtx.beginPath();
     rawCtx.moveTo(cursorX, mp.y);
