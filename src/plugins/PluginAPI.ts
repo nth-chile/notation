@@ -14,6 +14,8 @@ export interface NoteSelection {
   voiceIndex: number;
   startEvent: number;
   endEvent: number; // inclusive
+  /** The fixed end of the selection. Left/right move the other end. */
+  anchorEvent?: number;
 }
 
 export interface PanelMenuItem {

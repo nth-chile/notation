@@ -70,7 +70,7 @@ describe("Note-level selection", () => {
     expect(ns.endEvent).toBe(1);
   });
 
-  it("extendNoteSelection extends left from later position", () => {
+  it("extendNoteSelection left reverses direction from single-note selection", () => {
     useEditorStore.setState((s) => ({
       inputState: { ...s.inputState, cursor: { ...s.inputState.cursor, eventIndex: 2 } },
     }));
@@ -81,11 +81,12 @@ describe("Note-level selection", () => {
     expect(ns.endEvent).toBe(2);
   });
 
-  it("extendNoteSelection does not go below 0", () => {
+  it("extendNoteSelection left does not go below 0", () => {
     useEditorStore.getState().selectNoteAtCursor();
     useEditorStore.getState().extendNoteSelection("left");
     const ns = useEditorStore.getState().noteSelection!;
     expect(ns.startEvent).toBe(0);
+    expect(ns.endEvent).toBe(0);
   });
 
   it("extendNoteSelection does not go past last event", () => {
@@ -129,6 +130,43 @@ describe("Note-level selection", () => {
     const events = useEditorStore.getState().score.parts[0].measures[0].voices[0].events;
     expect(events[0].duration.type).toBe("half");
     expect(events[1].duration.type).toBe("half");
+    expect(events[2].duration.type).toBe("quarter"); // unchanged
+  });
+
+  it("extendNoteSelection left retracts moving end after extending right", () => {
+    // Start at event 1, extend right twice: anchor=1, movingEnd=3, selection = 1-3
+    useEditorStore.setState((s) => ({
+      inputState: { ...s.inputState, cursor: { ...s.inputState.cursor, eventIndex: 1 } },
+    }));
+    useEditorStore.getState().selectNoteAtCursor();
+    useEditorStore.getState().extendNoteSelection("right");
+    useEditorStore.getState().extendNoteSelection("right");
+    expect(useEditorStore.getState().noteSelection!.endEvent).toBe(3);
+
+    // Left should retract movingEnd to 2
+    useEditorStore.getState().extendNoteSelection("left");
+    const ns = useEditorStore.getState().noteSelection!;
+    expect(ns.startEvent).toBe(1);
+    expect(ns.endEvent).toBe(2);
+
+    // Keep going left past anchor — selection reverses
+    useEditorStore.getState().extendNoteSelection("left");
+    useEditorStore.getState().extendNoteSelection("left");
+    const ns2 = useEditorStore.getState().noteSelection!;
+    expect(ns2.startEvent).toBe(0);
+    expect(ns2.endEvent).toBe(1); // anchor stays at 1
+  });
+
+  it("setDuration changes note at cursor without selection", () => {
+    // Cursor at event 1, no selection
+    useEditorStore.setState((s) => ({
+      inputState: { ...s.inputState, cursor: { ...s.inputState.cursor, eventIndex: 1 } },
+    }));
+    useEditorStore.getState().setDuration("half");
+
+    const events = useEditorStore.getState().score.parts[0].measures[0].voices[0].events;
+    expect(events[1].duration.type).toBe("half");
+    expect(events[0].duration.type).toBe("quarter"); // unchanged
     expect(events[2].duration.type).toBe("quarter"); // unchanged
   });
 

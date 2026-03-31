@@ -334,10 +334,13 @@ export function renderMeasure(
     const staveNotes: StaveNote[] = [];
     const eventIds: NoteEventId[] = [];
     let pendingGraceNotes: VexGraceNote[] = [];
+    let pendingGraceIds: NoteEventId[] = [];
+    const graceNoteMap: { graceNotes: VexGraceNote[]; ids: NoteEventId[] }[] = [];
 
     for (const event of modelVoice.events) {
       if (event.kind === "grace") {
         pendingGraceNotes.push(eventToGraceNote(event));
+        pendingGraceIds.push(event.id);
         continue;
       }
       const sn = eventToStaveNote(event, stemDir);
@@ -345,7 +348,9 @@ export function renderMeasure(
         if (pendingGraceNotes.length > 0) {
           const graceGroup = new GraceNoteGroup(pendingGraceNotes, true);
           sn.addModifier(graceGroup);
+          graceNoteMap.push({ graceNotes: pendingGraceNotes, ids: pendingGraceIds });
           pendingGraceNotes = [];
+          pendingGraceIds = [];
         }
         staveNotes.push(sn);
         eventIds.push(event.id);
@@ -409,10 +414,11 @@ export function renderMeasure(
       }
 
       // Store staveNotes + eventIds + voiceIndex for bounding box collection after draw
-      const meta = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number };
+      const meta = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number; __graceNoteMap: typeof graceNoteMap };
       meta.__staveNotes = staveNotes;
       meta.__eventIds = eventIds;
       meta.__voiceIndex = vi;
+      meta.__graceNoteMap = graceNoteMap;
     }
   }
 
@@ -457,7 +463,7 @@ export function renderMeasure(
       vfVoice.draw(ctx.context, stave);
 
       // Collect bounding boxes
-      const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number };
+      const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number; __graceNoteMap: { graceNotes: VexGraceNote[]; ids: NoteEventId[] }[] };
       data.__staveNotes.forEach((sn, idx) => {
         const bb = sn.getBoundingBox();
         if (bb) {
@@ -470,9 +476,9 @@ export function renderMeasure(
           let headY = y, headH = h;
           try {
             const nhBounds = sn.getNoteHeadBounds();
-            if (nhBounds.y_top != null && nhBounds.y_bottom != null) {
-              headY = nhBounds.y_top;
-              headH = nhBounds.y_bottom - nhBounds.y_top;
+            if (nhBounds.yTop != null && nhBounds.yBottom != null) {
+              headY = nhBounds.yTop;
+              headH = nhBounds.yBottom - nhBounds.yTop;
             }
           } catch { /* pre-render or missing stave */ }
           noteBoxes.push({
@@ -489,6 +495,27 @@ export function renderMeasure(
           });
         }
       });
+
+      // Collect bounding boxes for grace notes
+      for (const { graceNotes, ids } of data.__graceNoteMap) {
+        graceNotes.forEach((gn, gi) => {
+          try {
+            const gbb = gn.getBoundingBox();
+            if (gbb) {
+              const gx = gbb.getX(), gy = gbb.getY(), gw = gbb.getW(), gh = gbb.getH();
+              noteBoxes.push({
+                id: ids[gi],
+                x: gx, y: gy, width: gw, height: gh,
+                headX: gx, headY: gy, headWidth: gw, headHeight: Math.max(gh, 10),
+                partIndex,
+                measureIndex,
+                voiceIndex: data.__voiceIndex,
+                eventIndex: -1, // grace notes don't have a staveNote index
+              });
+            }
+          } catch { /* grace note may not have position info */ }
+        });
+      }
     }
 
     // Draw beams after voices

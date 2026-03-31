@@ -470,35 +470,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (direction === "right") {
         if (cursor.eventIndex < eventCount) {
           cursor.eventIndex++;
-          // Skip grace notes — they're rendered as modifiers, not standalone
-          while (cursor.eventIndex < eventCount && voice?.events[cursor.eventIndex]?.kind === "grace") {
-            cursor.eventIndex++;
-          }
         } else {
           // Move to next measure
           if (part && cursor.measureIndex < part.measures.length - 1) {
             cursor.measureIndex++;
             cursor.eventIndex = 0;
-            // Skip leading grace notes in new measure
-            const newVoice = part.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
-            while (newVoice && cursor.eventIndex < newVoice.events.length && newVoice.events[cursor.eventIndex]?.kind === "grace") {
-              cursor.eventIndex++;
-            }
           }
         }
       } else {
         if (cursor.eventIndex > 0) {
           cursor.eventIndex--;
-          // Skip grace notes going left
-          while (cursor.eventIndex > 0 && voice?.events[cursor.eventIndex]?.kind === "grace") {
-            cursor.eventIndex--;
-          }
-          // If we landed on a grace note at position 0, move to the append position of previous measure
-          if (cursor.eventIndex === 0 && voice?.events[0]?.kind === "grace" && cursor.measureIndex > 0) {
-            cursor.measureIndex--;
-            const prevVoice = part?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
-            cursor.eventIndex = prevVoice?.events.length ?? 0;
-          }
         } else if (cursor.measureIndex > 0) {
           cursor.measureIndex--;
           const prevVoice = part?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];

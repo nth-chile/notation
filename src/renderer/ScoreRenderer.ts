@@ -497,16 +497,15 @@ function drawCursor(
   }
 
   if (targetBox) {
-    // Highlight the note with a rounded rect
+    // Highlight the note with a rounded rect (use head bounds for tight visual)
     rawCtx.save();
     rawCtx.strokeStyle = cursorColor;
     rawCtx.lineWidth = 2;
     const pad = 3;
-    const rx = targetBox.x - pad;
-    const ry = targetBox.y - pad;
-    const rw = targetBox.width + pad * 2;
-    const rh = targetBox.height + pad * 2;
-    const r = 4;
+    const rx = targetBox.headX - pad;
+    const ry = targetBox.headY - pad;
+    const rw = targetBox.headWidth + pad * 2;
+    const rh = targetBox.headHeight + pad * 2;
     rawCtx.beginPath();
     rawCtx.rect(rx, ry, rw, rh);
     rawCtx.stroke();
@@ -514,8 +513,8 @@ function drawCursor(
     // Also draw the cursor line at the note's x position
     rawCtx.setLineDash([4, 4]);
     rawCtx.beginPath();
-    rawCtx.moveTo(targetBox.x + targetBox.width / 2, mp.y);
-    rawCtx.lineTo(targetBox.x + targetBox.width / 2, mp.y + config.staffHeight);
+    rawCtx.moveTo(targetBox.headX + targetBox.headWidth / 2, mp.y);
+    rawCtx.lineTo(targetBox.headX + targetBox.headWidth / 2, mp.y + config.staffHeight);
     rawCtx.stroke();
     rawCtx.restore();
   } else {
