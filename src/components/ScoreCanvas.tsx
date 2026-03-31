@@ -75,14 +75,13 @@ export function ScoreCanvas() {
       const voice = score.parts[noteSelection.partIndex]?.measures[noteSelection.measureIndex]?.voices[noteSelection.voiceIndex];
       if (voice) {
         rawCtx.save();
-        rawCtx.scale(dpr, dpr);
         rawCtx.fillStyle = "#3b82f6";
         rawCtx.globalAlpha = 0.2;
         const pad = 3;
         for (let i = noteSelection.startEvent; i <= noteSelection.endEvent && i < voice.events.length; i++) {
           const box = result.noteBoxes.get(voice.events[i].id);
           if (box) {
-            const bx = box.x - pad, by = box.y - pad, bw = box.width + pad * 2, bh = box.height + pad * 2;
+            const bx = box.headX - pad, by = box.headY - pad, bw = box.headWidth + pad * 2, bh = box.headHeight + pad * 2;
             rawCtx.beginPath();
             if (rawCtx.roundRect) {
               rawCtx.roundRect(bx, by, bw, bh, 4);
