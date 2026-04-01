@@ -182,6 +182,25 @@ describe("calculateMeasureWidth", () => {
     expect(w).toBeGreaterThanOrEqual(200);
     expect(w).toBeLessThanOrEqual(300);
   });
+
+  it("pickup measure is narrower than regular measure with same events (#133)", () => {
+    // Use enough events that both widths exceed minWidth, so the difference shows
+    const events = [makeNote("eighth"), makeNote("eighth"), makeNote("eighth"), makeNote("eighth")];
+    const regular = makeMeasure(events);
+    const pickup: Measure = { ...makeMeasure(events), isPickup: true };
+    const wRegular = calculateMeasureWidth(regular);
+    const wPickup = calculateMeasureWidth(pickup);
+    expect(wPickup).toBeLessThan(wRegular);
+  });
+
+  it("pickup measure uses reduced base (40 vs 100) (#133)", () => {
+    // 4 events: regular = 100 + 4*35 = 240, pickup = 40 + 4*35 = 180
+    const events = [makeNote("eighth"), makeNote("eighth"), makeNote("eighth"), makeNote("eighth")];
+    const pickup: Measure = { ...makeMeasure(events), isPickup: true };
+    const w = calculateMeasureWidth(pickup);
+    // Should be 40 + 4*35 = 180
+    expect(w).toBe(180);
+  });
 });
 
 // ---- Spacing tests ----

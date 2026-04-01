@@ -339,11 +339,15 @@ export function renderScore(
             );
           } else {
             // Show time/key sig on first measure or when they change
+            // Pickup measures don't show time sig — it goes on the next measure
             const prevMeasure = mi > 0 ? part.measures[mi - 1] : undefined;
-            const timeSigChanged = mi === 0 || (prevMeasure != null && (
-              m.timeSignature.numerator !== prevMeasure.timeSignature.numerator ||
-              m.timeSignature.denominator !== prevMeasure.timeSignature.denominator
-            ));
+            const isPickup = m.isPickup;
+            const prevIsPickup = prevMeasure?.isPickup;
+            const timeSigChanged = isPickup ? false :
+              (mi === 0 || prevIsPickup || (prevMeasure != null && (
+                m.timeSignature.numerator !== prevMeasure.timeSignature.numerator ||
+                m.timeSignature.denominator !== prevMeasure.timeSignature.denominator
+              )));
             const keySigChanged = isFirstInLine || (prevMeasure != null &&
               m.keySignature.fifths !== prevMeasure.keySignature.fifths
             );

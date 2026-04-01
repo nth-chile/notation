@@ -48,5 +48,11 @@ export function calculateMeasureWidth(
     width += 15;
   }
 
+  // Pickup measures use a smaller base — they only need space for their events,
+  // not the full measure baseline
+  if (measure.isPickup) {
+    width = 40 + eventCount * PER_EVENT;
+  }
+
   return Math.max(minWidth, Math.min(maxWidth, width));
 }
