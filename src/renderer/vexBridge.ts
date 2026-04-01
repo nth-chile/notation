@@ -1,4 +1,4 @@
-import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector, Barline, Repetition, Volta as VexVolta, StaveTie, MultiMeasureRest, Tuplet as VexTuplet, Articulation as VexArticulation, Ornament as VexOrnament, GraceNote as VexGraceNote, GraceNoteGroup } from "vexflow";
+import { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Dot, Beam, StaveConnector, Barline, Repetition, Volta as VexVolta, StaveTie, MultiMeasureRest, Tuplet as VexTuplet, Articulation as VexArticulation, Ornament as VexOrnament, GraceNote as VexGraceNote, GraceNoteGroup, GhostNote } from "vexflow";
 import type { Measure, NoteEvent, NoteEventId } from "../model";
 import type { BarlineType } from "../model/time";
 import type { Annotation, TempoMark } from "../model/annotations";
@@ -163,7 +163,13 @@ function eventToStaveNote(
     }
     case "rest": {
       const dur = DUR_VEX[event.duration.type] + "r";
-      const sn = new StaveNote({ keys: ["b/4"], duration: dur });
+      const opts: { keys: string[]; duration: string; stemDirection?: number } = {
+        keys: [stemDirection === "down" ? "d/4" : stemDirection === "up" ? "f/5" : "b/4"],
+        duration: dur,
+      };
+      if (stemDirection === "up") opts.stemDirection = 1;
+      else if (stemDirection === "down") opts.stemDirection = -1;
+      const sn = new StaveNote(opts);
       for (let i = 0; i < event.duration.dots; i++) {
         Dot.buildAndAttach([sn], { all: true });
       }
@@ -223,11 +229,10 @@ const KEY_SIG_MAP: Record<number, string> = {
   "7": "C#",
 };
 
-/** Stem direction per voice index: 0=auto (undefined), 1=up, 2=down */
-function voiceStemDirection(voiceIndex: number): "up" | "down" | undefined {
-  if (voiceIndex === 1) return "up";
-  if (voiceIndex === 2) return "down";
-  return undefined;
+/** Stem direction per voice index when multiple voices are active: even=up, odd=down */
+function voiceStemDirection(voiceIndex: number, multiVoice: boolean): "up" | "down" | undefined {
+  if (!multiVoice) return undefined;
+  return voiceIndex % 2 === 0 ? "up" : "down";
 }
 
 function applyBarline(stave: Stave, barlineType: BarlineType): void {
@@ -329,11 +334,13 @@ export function renderMeasure(
   const allTuplets: VexTuplet[] = [];
 
   // Build VexFlow voices for all model voices that have events
+  const activeVoiceCount = m.voices.filter(v => v && v.events.length > 0).length;
+  const multiVoice = activeVoiceCount > 1;
   for (let vi = 0; vi < m.voices.length; vi++) {
     const modelVoice = m.voices[vi];
     if (!modelVoice || modelVoice.events.length === 0) continue;
 
-    const stemDir = voiceStemDirection(vi);
+    const stemDir = voiceStemDirection(vi, multiVoice);
     const staveNotes: StaveNote[] = [];
     const eventIds: NoteEventId[] = [];
     let pendingGraceNotes: VexGraceNote[] = [];
@@ -364,13 +371,27 @@ export function renderMeasure(
       const totalTicks = modelVoice.events.reduce((sum, e) => {
         return sum + durationToTicksFn(e.duration, e.tuplet);
       }, 0);
-      const beats = totalTicks / 480;
+      const capacity = measureCapacityFn(m.timeSignature.numerator, m.timeSignature.denominator);
+      const beats = Math.max(totalTicks, capacity) / 480;
 
       const vfVoice = new Voice({
         numBeats: beats,
         beatValue: 4,
       }).setStrict(false);
       vfVoice.addTickables(staveNotes);
+
+      // Pad with ghost notes so all voices have the same total ticks
+      let remaining = capacity - totalTicks;
+      if (remaining > 0) {
+        const ghostDurs: [number, string][] = [[1920, "w"], [960, "h"], [480, "q"], [240, "8"], [120, "16"], [60, "32"]];
+        while (remaining > 0) {
+          const entry = ghostDurs.find(([t]) => t <= remaining);
+          if (!entry) break;
+          vfVoice.addTickable(new GhostNote({ duration: entry[1] }));
+          remaining -= entry[0];
+        }
+      }
+
       vfVoices.push(vfVoice);
 
       // Compute beam groups — filter out grace notes since they aren't in staveNotes
@@ -427,12 +448,14 @@ export function renderMeasure(
 
   // Format and draw all voices together
   if (vfVoices.length > 0) {
-    // Join each voice individually (internal consistency), then format all together
-    // (shared horizontal alignment). This handles voices with different tick totals
-    // while still aligning notes on the same beat across voices.
     const formatter = new Formatter();
-    for (const v of vfVoices) {
-      try { formatter.joinVoices([v]); } catch { /* skip broken voice */ }
+    try {
+      formatter.joinVoices(vfVoices);
+    } catch {
+      // Voices have mismatched tick totals — join each independently so rendering doesn't crash
+      for (const v of vfVoices) {
+        try { formatter.joinVoices([v]); } catch { /* skip broken voice */ }
+      }
     }
 
     // Use proportional spacing via softmax factor scaled by stylesheet spacingFactor
