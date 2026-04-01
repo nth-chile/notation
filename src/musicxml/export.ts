@@ -1,5 +1,5 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
-import type { NoteEvent, NoteHead, TupletRatio } from "../model/note";
+import type { NoteEvent, NoteHead, TupletRatio, Articulation } from "../model/note";
 import type { Pitch } from "../model/pitch";
 import type { Duration } from "../model/duration";
 import type { Annotation, ChordSymbol, Lyric, DynamicMark, Hairpin, Slur } from "../model/annotations";
@@ -79,8 +79,33 @@ function tieXml(tied: boolean | undefined, isChordTag: boolean): string {
   return xml;
 }
 
-function notationsXml(tied: boolean | undefined, tupletPosition?: "start" | "stop", slurPositions?: ("start" | "stop")[]): string {
-  if (!tied && !tupletPosition && (!slurPositions || slurPositions.length === 0)) return "";
+// Map our articulation kinds to MusicXML element names
+const ART_TO_XML: Record<string, { parent: "articulations" | "ornaments" | "notations"; tag: string }> = {
+  staccato: { parent: "articulations", tag: "staccato" },
+  staccatissimo: { parent: "articulations", tag: "staccatissimo" },
+  accent: { parent: "articulations", tag: "accent" },
+  tenuto: { parent: "articulations", tag: "tenuto" },
+  marcato: { parent: "articulations", tag: "strong-accent" },
+  fermata: { parent: "notations", tag: "fermata" },
+  "up-bow": { parent: "articulations", tag: "up-bow" },
+  "down-bow": { parent: "articulations", tag: "down-bow" },
+  "open-string": { parent: "articulations", tag: "open-string" },
+  stopped: { parent: "articulations", tag: "stopped" },
+  trill: { parent: "ornaments", tag: "trill-mark" },
+  mordent: { parent: "ornaments", tag: "mordent" },
+  turn: { parent: "ornaments", tag: "turn" },
+};
+
+function notationsXml(
+  tied: boolean | undefined,
+  tupletPosition?: "start" | "stop",
+  slurPositions?: ("start" | "stop")[],
+  articulations?: Articulation[]
+): string {
+  const hasSlurs = slurPositions && slurPositions.length > 0;
+  const hasArts = articulations && articulations.length > 0;
+  if (!tied && !tupletPosition && !hasSlurs && !hasArts) return "";
+
   let xml = `        <notations>\n`;
   if (tied) {
     xml += `          <tied type="start"/>\n`;
@@ -88,9 +113,30 @@ function notationsXml(tied: boolean | undefined, tupletPosition?: "start" | "sto
   if (tupletPosition) {
     xml += `          <tuplet type="${tupletPosition}"/>\n`;
   }
-  if (slurPositions) {
-    for (const pos of slurPositions) {
+  if (hasSlurs) {
+    for (const pos of slurPositions!) {
       xml += `          <slur type="${pos}"/>\n`;
+    }
+  }
+  if (hasArts) {
+    const artXmls: string[] = [];
+    const ornXmls: string[] = [];
+    for (const art of articulations!) {
+      const mapping = ART_TO_XML[art.kind];
+      if (!mapping) continue;
+      if (mapping.parent === "articulations") {
+        artXmls.push(`            <${mapping.tag}/>\n`);
+      } else if (mapping.parent === "ornaments") {
+        ornXmls.push(`            <${mapping.tag}/>\n`);
+      } else if (mapping.parent === "notations") {
+        xml += `          <${mapping.tag}/>\n`;
+      }
+    }
+    if (artXmls.length > 0) {
+      xml += `          <articulations>\n${artXmls.join("")}          </articulations>\n`;
+    }
+    if (ornXmls.length > 0) {
+      xml += `          <ornaments>\n${ornXmls.join("")}          </ornaments>\n`;
     }
   }
   xml += `        </notations>\n`;
@@ -209,12 +255,24 @@ function exportNoteEvent(
     if (a.endEventId === event.id) slurPositions.push("stop");
   }
 
+  const arts = (event.kind === "note" || event.kind === "chord" || event.kind === "grace")
+    ? event.articulations : undefined;
+
   if (event.kind === "rest") {
     xml += `      <note>\n`;
     xml += `        <rest/>\n`;
     xml += durationXml(event.duration, tuplet);
     xml += `        <voice>${voiceNumber}</voice>\n`;
     xml += notationsXml(undefined, tupletPosition, slurPositions);
+    xml += `      </note>\n`;
+  } else if (event.kind === "grace") {
+    xml += `      <note>\n`;
+    xml += `        <grace${event.slash ? ' slash="yes"' : ''}/>\n`;
+    xml += pitchXml(event.head.pitch);
+    xml += durationXml(event.duration);
+    xml += `        <voice>${voiceNumber}</voice>\n`;
+    xml += accidentalXml(event.head.pitch);
+    xml += notationsXml(undefined, undefined, undefined, arts);
     xml += `      </note>\n`;
   } else if (event.kind === "note") {
     const head = event.head;
@@ -224,7 +282,7 @@ function exportNoteEvent(
     xml += tieXml(head.tied, false);
     xml += `        <voice>${voiceNumber}</voice>\n`;
     xml += accidentalXml(head.pitch);
-    xml += notationsXml(head.tied, tupletPosition, slurPositions);
+    xml += notationsXml(head.tied, tupletPosition, slurPositions, arts);
     const lyrics = findLyricForEvent(annotations, event.id);
     xml += lyricXml(lyrics);
     xml += `      </note>\n`;
@@ -241,7 +299,7 @@ function exportNoteEvent(
       xml += tieXml(head.tied, i > 0);
       xml += `        <voice>${voiceNumber}</voice>\n`;
       xml += accidentalXml(head.pitch);
-      xml += notationsXml(head.tied, i === 0 ? tupletPosition : undefined, i === 0 ? slurPositions : undefined);
+      xml += notationsXml(head.tied, i === 0 ? tupletPosition : undefined, i === 0 ? slurPositions : undefined, i === 0 ? arts : undefined);
       if (i === 0) {
         const lyrics = findLyricForEvent(annotations, event.id);
         xml += lyricXml(lyrics);
@@ -314,6 +372,46 @@ function exportMeasure(
       xml += `        </clef>\n`;
     }
     xml += `      </attributes>\n`;
+  }
+
+  // Navigation marks (segno, coda, fine, D.S., D.C.)
+  if (measure.navigation) {
+    const nav = measure.navigation;
+    if (nav.segno) {
+      xml += `      <direction placement="above">\n`;
+      xml += `        <direction-type>\n          <segno/>\n        </direction-type>\n`;
+      xml += `        <sound segno="segno"/>\n`;
+      xml += `      </direction>\n`;
+    }
+    if (nav.coda) {
+      xml += `      <direction placement="above">\n`;
+      xml += `        <direction-type>\n          <coda/>\n        </direction-type>\n`;
+      xml += `        <sound coda="coda"/>\n`;
+      xml += `      </direction>\n`;
+    }
+    if (nav.toCoda) {
+      xml += `      <direction placement="above">\n`;
+      xml += `        <direction-type>\n          <words>To Coda</words>\n        </direction-type>\n`;
+      xml += `      </direction>\n`;
+    }
+    if (nav.fine) {
+      xml += `      <direction placement="above">\n`;
+      xml += `        <direction-type>\n          <words>Fine</words>\n        </direction-type>\n`;
+      xml += `        <sound fine="yes"/>\n`;
+      xml += `      </direction>\n`;
+    }
+    if (nav.dsText) {
+      xml += `      <direction placement="above">\n`;
+      xml += `        <direction-type>\n          <words>${esc(nav.dsText)}</words>\n        </direction-type>\n`;
+      xml += `        <sound dalsegno="segno"/>\n`;
+      xml += `      </direction>\n`;
+    }
+    if (nav.dcText) {
+      xml += `      <direction placement="above">\n`;
+      xml += `        <direction-type>\n          <words>${esc(nav.dcText)}</words>\n        </direction-type>\n`;
+      xml += `        <sound dacapo="yes"/>\n`;
+      xml += `      </direction>\n`;
+    }
   }
 
   // Rehearsal marks
@@ -399,8 +497,9 @@ function exportMeasure(
     }
   }
 
-  // Barline
-  if (measure.barlineEnd !== "single") {
+  // Barline and volta
+  const hasVolta = measure.navigation?.volta;
+  if (measure.barlineEnd !== "single" || hasVolta) {
     xml += `      <barline location="right">\n`;
     switch (measure.barlineEnd) {
       case "double":
@@ -417,6 +516,12 @@ function exportMeasure(
         xml += `        <bar-style>light-heavy</bar-style>\n`;
         xml += `        <repeat direction="backward"/>\n`;
         break;
+    }
+    if (hasVolta) {
+      const volta = measure.navigation!.volta!;
+      const number = volta.endings.join(",");
+      const label = volta.label ?? volta.endings.join(", ") + ".";
+      xml += `        <ending number="${number}" type="start">${esc(label)}</ending>\n`;
     }
     xml += `      </barline>\n`;
   }
