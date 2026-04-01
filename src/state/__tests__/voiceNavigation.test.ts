@@ -86,6 +86,6 @@ describe("Voice navigation across measures", () => {
 
     expect(cursor.measureIndex).toBe(0);
     expect(cursor.voiceIndex).toBe(1); // voice preserved
-    expect(cursor.eventIndex).toBe(1); // end of voice 1 in measure 0
+    expect(cursor.eventIndex).toBe(0); // last note of voice 1 in measure 0 (no append position in nav mode)
   });
 });

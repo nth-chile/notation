@@ -458,7 +458,7 @@ export function renderScore(
 
   // Draw playback cursor
   if (playbackTick != null && playbackTick >= 0) {
-    drawPlaybackCursor(ctx, score, playbackTick, measurePositions, config);
+    drawPlaybackCursor(ctx, score, playbackTick, measurePositions, config, allNoteBoxes);
   }
 
   const contentHeight = totalContentHeight(score, config);
@@ -496,34 +496,15 @@ function drawCursor(
     }
   }
 
+  // Determine cursor X position
+  let cursorX: number;
   if (targetBox) {
-    // Highlight the note with a rounded rect (use head bounds for tight visual)
-    rawCtx.save();
-    rawCtx.strokeStyle = cursorColor;
-    rawCtx.lineWidth = 2;
-    const pad = 3;
-    const rx = targetBox.headX - pad;
-    const ry = targetBox.headY - pad;
-    const rw = targetBox.headWidth + pad * 2;
-    const rh = targetBox.headHeight + pad * 2;
-    rawCtx.beginPath();
-    rawCtx.rect(rx, ry, rw, rh);
-    rawCtx.stroke();
-
-    // Also draw the cursor line at the note's x position
-    rawCtx.setLineDash([4, 4]);
-    rawCtx.beginPath();
-    rawCtx.moveTo(targetBox.headX + targetBox.headWidth / 2, mp.y);
-    rawCtx.lineTo(targetBox.headX + targetBox.headWidth / 2, mp.y + config.staffHeight);
-    rawCtx.stroke();
-    rawCtx.restore();
+    cursorX = targetBox.headX + targetBox.headWidth / 2;
   } else {
-    // Fallback: draw cursor line at end of measure (for append position)
+    // Append position: after the last note in the measure
     const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
     const eventCount = voice?.events.length ?? 0;
-
-    // Find the last noteBox in this measure to position after it
-    let cursorX = mp.x + 60;
+    cursorX = mp.x + 60;
     if (noteBoxes && voice) {
       for (let i = eventCount - 1; i >= 0; i--) {
         const nb = noteBoxes.get(voice.events[i].id);
@@ -533,17 +514,44 @@ function drawCursor(
         }
       }
     }
-
-    rawCtx.save();
-    rawCtx.strokeStyle = cursorColor;
-    rawCtx.lineWidth = 3;
-    rawCtx.setLineDash([4, 4]);
-    rawCtx.beginPath();
-    rawCtx.moveTo(cursorX, mp.y);
-    rawCtx.lineTo(cursorX, mp.y + config.staffHeight);
-    rawCtx.stroke();
-    rawCtx.restore();
   }
+
+  const staffTop = mp.y;
+  const staffBottom = mp.y + config.staffHeight;
+
+  rawCtx.save();
+
+  // Draw note highlight rect if on a note
+  if (targetBox) {
+    rawCtx.strokeStyle = cursorColor;
+    rawCtx.lineWidth = 2;
+    const pad = 3;
+    rawCtx.beginPath();
+    rawCtx.rect(targetBox.headX - pad, targetBox.headY - pad, targetBox.headWidth + pad * 2, targetBox.headHeight + pad * 2);
+    rawCtx.stroke();
+  }
+
+  // Draw vertical cursor line spanning full staff.
+  // Draw bottom-to-top so the dash pattern starts flush with the bottom staff line.
+  rawCtx.strokeStyle = cursorColor;
+  rawCtx.lineWidth = 2;
+  rawCtx.setLineDash(targetBox ? [4, 4] : [6, 4]);
+  rawCtx.beginPath();
+  rawCtx.moveTo(cursorX, staffBottom);
+  rawCtx.lineTo(cursorX, staffTop);
+  rawCtx.stroke();
+
+  // Draw inverted caret (triangle) sitting on the top staff line
+  rawCtx.setLineDash([]);
+  rawCtx.fillStyle = cursorColor;
+  rawCtx.beginPath();
+  rawCtx.moveTo(cursorX - 5, staffTop);
+  rawCtx.lineTo(cursorX + 5, staffTop);
+  rawCtx.lineTo(cursorX, staffTop + 8);
+  rawCtx.closePath();
+  rawCtx.fill();
+
+  rawCtx.restore();
 }
 
 function getActiveNoteIds(score: Score, playbackTick: number): Set<NoteEventId> {
@@ -581,7 +589,8 @@ function drawPlaybackCursor(
   score: Score,
   playbackTick: number,
   measurePositions: ScoreRenderResult["measurePositions"],
-  config: LayoutConfig
+  config: LayoutConfig,
+  noteBoxes: Map<NoteEventId, NoteBox>,
 ): void {
   const part = score.parts[0];
   if (!part) return;
@@ -611,23 +620,64 @@ function drawPlaybackCursor(
   );
   if (!mp) return;
 
+  // Smoothly interpolate between note positions
+  const measureNotes = Array.from(noteBoxes.values())
+    .filter((nb) => nb.partIndex === 0 && nb.measureIndex === targetMeasureIndex && nb.voiceIndex === 0)
+    .sort((a, b) => a.eventIndex - b.eventIndex);
+
   const ts = part.measures[targetMeasureIndex].timeSignature;
   const measureTicks =
     (TICKS_PER_QUARTER * 4 * ts.numerator) / ts.denominator;
-  const fraction = Math.min(tickInMeasure / measureTicks, 1);
-  const usableWidth = mp.width - 60;
-  const cursorX = mp.x + 60 + fraction * usableWidth;
+
+  let cursorX: number;
+  if (measureNotes.length > 0) {
+    const voice = part.measures[targetMeasureIndex]?.voices[0];
+    const events = voice?.events ?? [];
+
+    // Build tick→x mapping from actual note positions
+    const tickXPairs: { tick: number; x: number }[] = [];
+    let tick = 0;
+    for (let i = 0; i < events.length; i++) {
+      const nb = measureNotes.find((n) => n.eventIndex === i);
+      if (nb) tickXPairs.push({ tick, x: nb.headX });
+      tick += durationToTicks(events[i].duration);
+    }
+    // End-of-measure position
+    tickXPairs.push({ tick: measureTicks, x: mp.x + mp.width - 10 });
+
+    if (tickXPairs.length >= 2) {
+      // Find the two points to interpolate between
+      let lo = tickXPairs[0], hi = tickXPairs[tickXPairs.length - 1];
+      for (let i = 0; i < tickXPairs.length - 1; i++) {
+        if (tickInMeasure >= tickXPairs[i].tick && tickInMeasure < tickXPairs[i + 1].tick) {
+          lo = tickXPairs[i];
+          hi = tickXPairs[i + 1];
+          break;
+        }
+      }
+      const range = hi.tick - lo.tick;
+      const t = range > 0 ? (tickInMeasure - lo.tick) / range : 0;
+      cursorX = lo.x + t * (hi.x - lo.x);
+    } else {
+      cursorX = tickXPairs[0]?.x ?? mp.x + 60;
+    }
+  } else {
+    // Fallback to linear interpolation for empty measures
+    const fraction = Math.min(tickInMeasure / measureTicks, 1);
+    const usableWidth = mp.width - 60;
+    cursorX = mp.x + 60 + fraction * usableWidth;
+  }
 
   const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
   if (rawCtx.strokeStyle !== undefined) {
     rawCtx.save();
-    rawCtx.strokeStyle = "#ef467e";
+    rawCtx.strokeStyle = "#888";
     rawCtx.lineWidth = 2.5;
     rawCtx.setLineDash([]);
-    rawCtx.globalAlpha = 0.8;
+    rawCtx.globalAlpha = 0.7;
     rawCtx.beginPath();
-    rawCtx.moveTo(cursorX, mp.y + 10);
-    rawCtx.lineTo(cursorX, mp.y + config.staffHeight - 10);
+    rawCtx.moveTo(cursorX, mp.y);
+    rawCtx.lineTo(cursorX, mp.y + config.staffHeight);
     rawCtx.stroke();
     rawCtx.restore();
   }

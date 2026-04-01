@@ -27,10 +27,11 @@ export function ScoreCanvas() {
   const editingComposer = useEditorStore((s) => s.editingComposer);
   const measurePositions = useEditorStore((s) => s.measurePositions);
 
-  // Auto-scroll to keep cursor visible
+  // Auto-scroll to keep editing cursor visible (disabled during playback)
+  const isPlaying = useEditorStore((s) => s.isPlaying);
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || measurePositions.length === 0) return;
+    if (!container || measurePositions.length === 0 || isPlaying) return;
     const mp = measurePositions.find(
       (p) => p.partIndex === inputState.cursor.partIndex && p.measureIndex === inputState.cursor.measureIndex,
     );
@@ -48,7 +49,7 @@ export function ScoreCanvas() {
     if (mp.y < scrollTop || mp.y + (mp.height || 80) > scrollTop + rect.height) {
       container.scrollTo({ top: Math.max(0, mp.y - 40), behavior: "smooth" });
     }
-  }, [inputState.cursor.partIndex, inputState.cursor.measureIndex, measurePositions]);
+  }, [inputState.cursor.partIndex, inputState.cursor.measureIndex, measurePositions, isPlaying]);
 
   // Track container size
   useEffect(() => {
