@@ -1013,4 +1013,109 @@ describe("MusicXML Round-trip", () => {
     expect(imported.parts[0].name).toBe("Violin I");
     expect(imported.parts[0].abbreviation).toBe("Vln. I");
   });
+
+  it("should round-trip articulations", () => {
+    const n1 = factory.note("C", 4, factory.dur("quarter"));
+    n1.articulations = [{ kind: "staccato" }, { kind: "accent" }];
+    const n2 = factory.note("D", 4, factory.dur("quarter"));
+    n2.articulations = [{ kind: "fermata" }];
+    const n3 = factory.note("E", 4, factory.dur("half"));
+    n3.articulations = [{ kind: "trill" }];
+    const m = factory.measure([factory.voice([n1, n2, n3])]);
+    const s = factory.score("Test", "", [factory.part("Piano", "Pno", [m])]);
+
+    const xml = exportToMusicXML(s);
+    expect(xml).toContain("<staccato/>");
+    expect(xml).toContain("<accent/>");
+    expect(xml).toContain("<fermata/>");
+    expect(xml).toContain("<trill-mark/>");
+
+    const reimported = importFromMusicXML(xml);
+    const events = reimported.parts[0].measures[0].voices[0].events;
+    expect(events[0].kind === "note" && events[0].articulations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "staccato" }), expect.objectContaining({ kind: "accent" })])
+    );
+    expect(events[1].kind === "note" && events[1].articulations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "fermata" })])
+    );
+    expect(events[2].kind === "note" && events[2].articulations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "trill" })])
+    );
+  });
+
+  it("should round-trip grace notes", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <key><fifths>0</fifths></key>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note>
+        <grace slash="yes"/>
+        <pitch><step>B</step><octave>3</octave></pitch>
+        <type>eighth</type><voice>1</voice>
+      </note>
+      <note>
+        <pitch><step>C</step><octave>4</octave></pitch>
+        <duration>1920</duration><type>whole</type><voice>1</voice>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+    const imported = importFromMusicXML(xml);
+    const events = imported.parts[0].measures[0].voices[0].events;
+    expect(events).toHaveLength(2);
+    expect(events[0].kind).toBe("grace");
+    if (events[0].kind === "grace") {
+      expect(events[0].head.pitch.pitchClass).toBe("B");
+      expect(events[0].slash).toBe(true);
+    }
+
+    // Re-export and verify
+    const reExported = exportToMusicXML(imported);
+    expect(reExported).toContain('<grace slash="yes"/>');
+
+    const reimported = importFromMusicXML(reExported);
+    expect(reimported.parts[0].measures[0].voices[0].events[0].kind).toBe("grace");
+  });
+
+  it("should round-trip navigation marks (segno, coda, fine)", () => {
+    const m1 = factory.measure([factory.voice([factory.note("C", 4, factory.dur("whole"))])]);
+    m1.navigation = { segno: true };
+    const m2 = factory.measure([factory.voice([factory.note("D", 4, factory.dur("whole"))])]);
+    m2.navigation = { fine: true, dsText: "D.S. al Fine" };
+    const s = factory.score("Test", "", [factory.part("Piano", "Pno", [m1, m2])]);
+
+    const xml = exportToMusicXML(s);
+    expect(xml).toContain("<segno/>");
+    expect(xml).toContain("Fine");
+    expect(xml).toContain("D.S. al Fine");
+
+    const reimported = importFromMusicXML(xml);
+    expect(reimported.parts[0].measures[0].navigation?.segno).toBe(true);
+    expect(reimported.parts[0].measures[1].navigation?.fine).toBe(true);
+    expect(reimported.parts[0].measures[1].navigation?.dsText).toBe("D.S. al Fine");
+  });
+
+  it("should round-trip volta brackets", () => {
+    const m1 = factory.measure([factory.voice([factory.note("C", 4, factory.dur("whole"))])]);
+    m1.navigation = { volta: { endings: [1], label: "1." } };
+    m1.barlineEnd = "repeat-end";
+    const m2 = factory.measure([factory.voice([factory.note("D", 4, factory.dur("whole"))])]);
+    m2.navigation = { volta: { endings: [2], label: "2." } };
+    const s = factory.score("Test", "", [factory.part("Piano", "Pno", [m1, m2])]);
+
+    const xml = exportToMusicXML(s);
+    expect(xml).toContain('ending number="1"');
+    expect(xml).toContain('ending number="2"');
+
+    const reimported = importFromMusicXML(xml);
+    expect(reimported.parts[0].measures[0].navigation?.volta?.endings).toEqual([1]);
+    expect(reimported.parts[0].measures[1].navigation?.volta?.endings).toEqual([2]);
+  });
 });

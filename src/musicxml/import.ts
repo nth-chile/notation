@@ -1,8 +1,9 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
-import type { NoteEvent, NoteHead, Note, Chord, Rest, TupletRatio } from "../model/note";
+import type { NoteEvent, NoteHead, Note, Chord, Rest, GraceNote, TupletRatio, Articulation, ArticulationKind } from "../model/note";
 import type { Pitch, PitchClass, Accidental, Octave } from "../model/pitch";
 import { durationToTicks, type Duration, type DurationType } from "../model/duration";
 import type { Clef, ClefType, TimeSignature, KeySignature, BarlineType } from "../model/time";
+import type { NavigationMarks, Volta } from "../model/navigation";
 import type { Annotation, ChordSymbol, Lyric, DynamicMark, Hairpin, Slur, DynamicLevel } from "../model/annotations";
 import { newId, type ScoreId, type PartId, type MeasureId, type VoiceId, type NoteEventId } from "../model/ids";
 import {
@@ -172,27 +173,39 @@ function parseLyric(noteEl: Element, eventId: NoteEventId): Lyric[] {
   return lyrics;
 }
 
-function parseBarline(measureEl: Element): BarlineType {
-  const barlineEl = getDirectChild(measureEl, "barline");
-  if (!barlineEl) return "single";
+function parseBarline(measureEl: Element): { barlineEnd: BarlineType; volta?: Volta } {
+  const barlineEls = getDirectChildren(measureEl, "barline");
+  let barlineEnd: BarlineType = "single";
+  let volta: Volta | undefined = undefined;
 
-  const barStyle = getTextContent(barlineEl, "bar-style");
-  const repeatEl = getDirectChild(barlineEl, "repeat");
+  for (const barlineEl of barlineEls) {
+    const barStyle = getTextContent(barlineEl, "bar-style");
+    const repeatEl = getDirectChild(barlineEl, "repeat");
 
-  if (repeatEl) {
-    const direction = repeatEl.getAttribute("direction");
-    if (direction === "forward") return "repeat-start";
-    if (direction === "backward") return "repeat-end";
+    if (repeatEl) {
+      const direction = repeatEl.getAttribute("direction");
+      if (direction === "forward") barlineEnd = "repeat-start";
+      if (direction === "backward") barlineEnd = "repeat-end";
+    } else if (barStyle === "light-light") {
+      barlineEnd = "double";
+    } else if (barStyle === "light-heavy") {
+      barlineEnd = "final";
+    }
+
+    // Parse volta (ending) brackets
+    const endingEl = getDirectChild(barlineEl, "ending");
+    if (endingEl) {
+      const endingType = endingEl.getAttribute("type");
+      if (endingType === "start") {
+        const number = endingEl.getAttribute("number") ?? "1";
+        const endings = number.split(",").map((n) => parseInt(n.trim(), 10)).filter((n) => !isNaN(n));
+        const label = endingEl.textContent?.trim() || undefined;
+        volta = { endings, label };
+      }
+    }
   }
 
-  switch (barStyle) {
-    case "light-light":
-      return "double";
-    case "light-heavy":
-      return "final";
-    default:
-      return "single";
-  }
+  return { barlineEnd, volta };
 }
 
 function parseMeasure(
@@ -229,12 +242,32 @@ function parseMeasure(
   // Track open slurs: slur number -> start event id
   const openSlurs = new Map<number, NoteEventId>();
 
+  // Track articulations parsed from notations
+  let pendingArticulations: Articulation[] = [];
+
+  // Navigation marks for the measure
+  let navigation: NavigationMarks | undefined = undefined;
+
   const DYNAMIC_LEVELS: Set<string> = new Set(["pp", "p", "mp", "mf", "f", "ff", "sfz", "fp"]);
+
+  // MusicXML articulation name → our ArticulationKind
+  const ARTICULATION_MAP: Record<string, ArticulationKind> = {
+    staccato: "staccato", staccatissimo: "staccatissimo",
+    accent: "accent", tenuto: "tenuto", "strong-accent": "marcato",
+    fermata: "fermata", "up-bow": "up-bow", "down-bow": "down-bow",
+    "open-string": "open-string", stopped: "stopped",
+  };
+  const ORNAMENT_MAP: Record<string, ArticulationKind> = {
+    "trill-mark": "trill", trill: "trill", mordent: "mordent", turn: "turn",
+  };
 
   function flushPendingChord() {
     if (pendingChordHeads.length > 0 && pendingChordDuration) {
       const voiceNum = pendingVoiceNum;
       if (!voiceEvents.has(voiceNum)) voiceEvents.set(voiceNum, []);
+
+      const arts = pendingArticulations.length > 0 ? pendingArticulations : undefined;
+      pendingArticulations = [];
 
       if (pendingChordHeads.length === 1) {
         const note: Note = {
@@ -243,6 +276,7 @@ function parseMeasure(
           duration: pendingChordDuration,
           head: pendingChordHeads[0],
           tuplet: pendingChordTuplet,
+          articulations: arts,
         };
         voiceEvents.get(voiceNum)!.push(note);
       } else {
@@ -252,6 +286,7 @@ function parseMeasure(
           duration: pendingChordDuration,
           heads: pendingChordHeads,
           tuplet: pendingChordTuplet,
+          articulations: arts,
         };
         voiceEvents.get(voiceNum)!.push(chord);
       }
@@ -313,6 +348,7 @@ function parseMeasure(
       case "note": {
         const isChord = getDirectChild(el, "chord") !== null;
         const isRest = getDirectChild(el, "rest") !== null;
+        const isGrace = getDirectChild(el, "grace") !== null;
         const voiceText = getTextContent(el, "voice");
         const voiceNum = voiceText ? parseInt(voiceText, 10) : 1;
 
@@ -325,6 +361,36 @@ function parseMeasure(
         const durationDivs = getNumberContent(el, "duration") ?? 0;
         const tuplet = parseTimeModification(el);
 
+        // Parse articulations and ornaments from <notations>
+        const notationsEl = getDirectChild(el, "notations");
+        const noteArticulations: Articulation[] = [];
+        if (notationsEl) {
+          const artEl = getDirectChild(notationsEl, "articulations");
+          if (artEl) {
+            for (let a = 0; a < artEl.childNodes.length; a++) {
+              const artChild = artEl.childNodes[a];
+              if (artChild.nodeType === 1) {
+                const kind = ARTICULATION_MAP[(artChild as Element).tagName];
+                if (kind) noteArticulations.push({ kind } as Articulation);
+              }
+            }
+          }
+          // Fermata is a direct child of <notations>, not <articulations>
+          if (getDirectChild(notationsEl, "fermata")) {
+            noteArticulations.push({ kind: "fermata" });
+          }
+          const ornEl = getDirectChild(notationsEl, "ornaments");
+          if (ornEl) {
+            for (let o = 0; o < ornEl.childNodes.length; o++) {
+              const ornChild = ornEl.childNodes[o];
+              if (ornChild.nodeType === 1) {
+                const kind = ORNAMENT_MAP[(ornChild as Element).tagName];
+                if (kind) noteArticulations.push({ kind } as Articulation);
+              }
+            }
+          }
+        }
+
         if (isRest) {
           if (!voiceEvents.has(voiceNum)) voiceEvents.set(voiceNum, []);
           const rest: Rest = {
@@ -335,6 +401,22 @@ function parseMeasure(
           };
           voiceEvents.get(voiceNum)!.push(rest);
           currentTick += durationDivs;
+        } else if (isGrace) {
+          // Grace note — no duration consumed
+          const pitch = parsePitch(el);
+          if (!pitch) break;
+          const graceEl = getDirectChild(el, "grace")!;
+          const slash = graceEl.getAttribute("slash") === "yes";
+          if (!voiceEvents.has(voiceNum)) voiceEvents.set(voiceNum, []);
+          const grace: GraceNote = {
+            kind: "grace",
+            id: newId<NoteEventId>("evt"),
+            duration,
+            head: { pitch },
+            slash: slash || undefined,
+            articulations: noteArticulations.length > 0 ? noteArticulations : undefined,
+          };
+          voiceEvents.get(voiceNum)!.push(grace);
         } else {
           const pitch = parsePitch(el);
           if (!pitch) break;
@@ -356,7 +438,6 @@ function parseMeasure(
           if (isChord) {
             // Add to pending chord
             pendingChordHeads.push(head);
-            // Lyrics from first note of chord were already captured
           } else {
             pendingChordHeads = [head];
             pendingChordDuration = duration;
@@ -364,11 +445,11 @@ function parseMeasure(
             pendingChordLyrics = lyrics;
             pendingChordTuplet = tuplet;
             pendingVoiceNum = voiceNum;
+            pendingArticulations = noteArticulations;
             currentTick += durationDivs;
           }
 
           // Parse slur elements inside <notations>
-          const notationsEl = getDirectChild(el, "notations");
           if (notationsEl) {
             const slurEls = getDirectChildren(notationsEl, "slur");
             const slurEventId = isChord ? pendingChordEventId! : eventId;
@@ -465,6 +546,59 @@ function parseMeasure(
           }
         }
 
+        // Parse navigation marks (segno, coda)
+        if (getDirectChild(dirTypeEl, "segno")) {
+          if (!navigation) navigation = {};
+          navigation.segno = true;
+        }
+        if (getDirectChild(dirTypeEl, "coda")) {
+          if (!navigation) navigation = {};
+          navigation.coda = true;
+        }
+        // Parse fine, D.S., D.C. from <words> or <sound>
+        const dirWordsEl = getDirectChild(dirTypeEl, "words");
+        const dirWords = dirWordsEl?.textContent?.trim()?.toLowerCase() ?? "";
+        if (dirWords.includes("fine")) {
+          if (!navigation) navigation = {};
+          navigation.fine = true;
+        }
+        if (dirWords.includes("d.s.") || dirWords.includes("dal segno")) {
+          if (!navigation) navigation = {};
+          navigation.dsText = dirWordsEl?.textContent?.trim();
+        }
+        if (dirWords.includes("d.c.") || dirWords.includes("da capo")) {
+          if (!navigation) navigation = {};
+          navigation.dcText = dirWordsEl?.textContent?.trim();
+        }
+        if (dirWords.includes("to coda") || dirWords.includes("al coda")) {
+          if (!navigation) navigation = {};
+          navigation.toCoda = true;
+        }
+        // Also check <sound> for segno/coda/fine/dacapo/dalsegno
+        const dirSoundEl = getDirectChild(el, "sound");
+        if (dirSoundEl) {
+          if (dirSoundEl.getAttribute("segno")) {
+            if (!navigation) navigation = {};
+            navigation.segno = true;
+          }
+          if (dirSoundEl.getAttribute("coda")) {
+            if (!navigation) navigation = {};
+            navigation.coda = true;
+          }
+          if (dirSoundEl.getAttribute("fine") === "yes") {
+            if (!navigation) navigation = {};
+            navigation.fine = true;
+          }
+          if (dirSoundEl.getAttribute("dacapo") === "yes") {
+            if (!navigation) navigation = {};
+            navigation.dcText = navigation.dcText ?? "D.C.";
+          }
+          if (dirSoundEl.getAttribute("dalsegno")) {
+            if (!navigation) navigation = {};
+            navigation.dsText = navigation.dsText ?? "D.S.";
+          }
+        }
+
         // Parse wedge (hairpin)
         const wedgeEl = getDirectChild(dirTypeEl, "wedge");
         if (wedgeEl) {
@@ -512,7 +646,14 @@ function parseMeasure(
     voices.push({ id: newId<VoiceId>("vce"), events: [] });
   }
 
-  const barlineEnd = parseBarline(measureEl);
+  const barlineResult = parseBarline(measureEl);
+  const barlineEnd = barlineResult.barlineEnd;
+
+  // Add volta to navigation if present
+  if (barlineResult.volta) {
+    if (!navigation) navigation = {};
+    navigation.volta = barlineResult.volta;
+  }
 
   // Match chord symbols to note events by tick position (voice 1)
   const v1Events = voices[0]?.events ?? [];
@@ -543,6 +684,7 @@ function parseMeasure(
     timeSignature: timeSig,
     keySignature: keySig,
     barlineEnd,
+    navigation,
     annotations,
     voices,
     isPickup: isPickup || undefined,
