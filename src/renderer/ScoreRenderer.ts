@@ -464,7 +464,7 @@ export function renderScore(
 
   // Draw cursor
   if (cursor) {
-    drawCursor(ctx, score, cursor, measurePositions, config, allNoteBoxes);
+    drawCursor(ctx, canvas, score, cursor, measurePositions, config, allNoteBoxes);
   }
 
   // Draw playback cursor
@@ -493,8 +493,12 @@ function drawCursor(
   );
   if (!mp) return;
 
-  const rawCtx = canvas.getContext("2d");
-  if (!rawCtx) return;
+  // Use VexFlow's context for coordinates (handles DPR scaling),
+  // but reach into the real canvas context to set lineWidth directly
+  // (VexFlow's wrapper ignores lineWidth assignments).
+  const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+  const canvasCtx = canvas.getContext("2d");
+  if (!rawCtx.strokeStyle) return;
 
   const cursorColor = VOICE_COLORS[cursor.voiceIndex] ?? VOICE_COLORS[0];
 
@@ -530,10 +534,8 @@ function drawCursor(
 
   const staffTop = mp.y;
   const staffBottom = mp.y + config.staffHeight;
-  const dpr = window.devicePixelRatio || 1;
 
   rawCtx.save();
-  rawCtx.scale(dpr, dpr);
 
   // Draw note highlight rect if on a note
   if (targetBox) {
@@ -546,10 +548,12 @@ function drawCursor(
   }
 
   // Draw vertical cursor line spanning full staff.
-  // Draw bottom-to-top so the dash pattern starts flush with the bottom staff line.
+  // Set lineWidth on the real canvas context so it actually takes effect
+  // (VexFlow's context wrapper ignores lineWidth assignments).
   rawCtx.strokeStyle = cursorColor;
-  rawCtx.lineWidth = 3;
-  rawCtx.setLineDash(targetBox ? [4, 4] : [6, 4]);
+  rawCtx.lineWidth = 1;
+  if (canvasCtx) canvasCtx.lineWidth = 1 * (window.devicePixelRatio || 1);
+  rawCtx.setLineDash([6, 4]);
   rawCtx.beginPath();
   rawCtx.moveTo(cursorX, staffBottom);
   rawCtx.lineTo(cursorX, staffTop);
