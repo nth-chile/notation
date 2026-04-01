@@ -85,6 +85,24 @@ function savePluginStates(states: Record<string, boolean>): void {
   }
 }
 
+function pluginStorageKey(pluginId: string): string {
+  return `notation-plugin-data:${pluginId}`;
+}
+
+function loadPluginData(pluginId: string): Record<string, unknown> {
+  try {
+    const raw = localStorage.getItem(pluginStorageKey(pluginId));
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return {};
+}
+
+function savePluginData(pluginId: string, data: Record<string, unknown>): void {
+  try {
+    localStorage.setItem(pluginStorageKey(pluginId), JSON.stringify(data));
+  } catch { /* ignore */ }
+}
+
 export class PluginManager {
   private plugins: Map<string, PluginEntry> = new Map();
   private commandRegistry: Map<string, PluginCommand> = new Map();
@@ -186,6 +204,15 @@ export class PluginManager {
         if (entry) {
           entry.settingsComponent = component;
         }
+      },
+      getStorage<T = unknown>(key: string): T | undefined {
+        const data = loadPluginData(pluginId);
+        return data[key] as T | undefined;
+      },
+      setStorage<T = unknown>(key: string, value: T): void {
+        const data = loadPluginData(pluginId);
+        data[key] = value;
+        savePluginData(pluginId, data);
       },
     };
   }
