@@ -317,15 +317,8 @@ export function renderMeasure(
     }
   }
 
-  // Add tempo mark via VexFlow if present
+  // Tempo mark — rendered as Annotation on first note (not setTempo) so it stacks with chord symbols
   const tempoAnn = m.annotations.find((a) => a.kind === "tempo-mark") as TempoMark | undefined;
-  if (tempoAnn) {
-    const vfDur: Record<string, string> = { whole: "w", half: "h", quarter: "q", eighth: "8", "16th": "16", "32nd": "32" };
-    stave.setTempo(
-      { name: tempoAnn.text ?? "", duration: vfDur[tempoAnn.beatUnit] ?? "q", bpm: tempoAnn.bpm },
-      -20
-    );
-  }
 
   stave.setContext(ctx.context).draw();
 
@@ -339,7 +332,6 @@ export function renderMeasure(
   const aboveStaveCtx = ctx.context as unknown as CanvasRenderingContext2D;
   let aboveY = y - 6; // just above stave top
   if (m.navigation?.volta) aboveY -= 22; // volta bracket takes ~22px
-  if (tempoAnn) aboveY -= 22; // tempo mark takes ~22px
   if (m.navigation?.segno || m.navigation?.coda) aboveY -= 20; // segno/coda glyph
 
   // Rehearsal marks — boxed text (Dorico/MuseScore style)
@@ -422,28 +414,50 @@ export function renderMeasure(
           pendingGraceIds = [];
         }
 
-        // Attach annotations as VexFlow modifiers so VexFlow handles collision avoidance
+        // Attach annotations as VexFlow modifiers — order matters for stacking.
+        // TOP: chord symbols (closest to staff), then tempo mark (above chords)
+        // BOTTOM: dynamics first (closest to staff), then lyrics
         for (const ann of m.annotations) {
           if (ann.kind === "chord-symbol" && ann.noteEventId === event.id) {
-            const vAnn = new VexAnnotation(ann.text)
+            sn.addModifier(new VexAnnotation(ann.text)
               .setVerticalJustification(VexAnnotation.VerticalJustify.TOP)
-              .setFont("sans-serif", style.chordSymbolSize, "bold");
-            sn.addModifier(vAnn);
+              .setFont("sans-serif", style.chordSymbolSize, "bold"));
           }
-          if (ann.kind === "dynamic" && ann.noteEventId === event.id) {
-            const vAnn = new VexAnnotation(ann.level)
-              .setVerticalJustification(VexAnnotation.VerticalJustify.BOTTOM)
-              .setFont("serif", 16, "bold", "italic");
-            sn.addModifier(vAnn);
-          }
-          if (ann.kind === "lyric" && ann.noteEventId === event.id) {
-            const lyricText = ann.syllableType === "begin" || ann.syllableType === "middle"
-              ? ann.text + "-" : ann.text;
-            const vAnn = new VexAnnotation(lyricText)
-              .setVerticalJustification(VexAnnotation.VerticalJustify.BOTTOM)
-              .setFont(style.fontFamily, style.lyricSize, "normal", "italic");
-            sn.addModifier(vAnn);
-          }
+        }
+        // Tempo mark on first note only (above chord symbols)
+        if (tempoAnn && staveNotes.length === 0) {
+          const tempoText = tempoAnn.text
+            ? `${tempoAnn.text} (♩= ${tempoAnn.bpm})`
+            : `♩= ${tempoAnn.bpm}`;
+          sn.addModifier(new VexAnnotation(tempoText)
+            .setVerticalJustification(VexAnnotation.VerticalJustify.TOP)
+            .setFont("serif", 12, "bold"));
+        }
+        // Below staff: dynamics then lyrics. Add spacers for consistent stacking.
+        const hasMeasureDynamics = m.annotations.some((a) => a.kind === "dynamic");
+        const hasMeasureLyrics = m.annotations.some((a) => a.kind === "lyric");
+        const eventDynamic = m.annotations.find((a) => a.kind === "dynamic" && a.noteEventId === event.id);
+        const eventLyric = m.annotations.find((a) => a.kind === "lyric" && a.noteEventId === event.id);
+
+        // Dynamic layer (or spacer if other notes have dynamics)
+        if (eventDynamic && eventDynamic.kind === "dynamic") {
+          sn.addModifier(new VexAnnotation(eventDynamic.level)
+            .setVerticalJustification(VexAnnotation.VerticalJustify.BOTTOM)
+            .setFont("serif", 16, "bold", "italic"));
+        } else if (hasMeasureDynamics && (hasMeasureLyrics || eventLyric)) {
+          // Invisible spacer to keep lyrics at consistent Y
+          sn.addModifier(new VexAnnotation(" ")
+            .setVerticalJustification(VexAnnotation.VerticalJustify.BOTTOM)
+            .setFont("serif", 16, "normal"));
+        }
+
+        // Lyric layer
+        if (eventLyric && eventLyric.kind === "lyric") {
+          const lyricText = eventLyric.syllableType === "begin" || eventLyric.syllableType === "middle"
+            ? eventLyric.text + "-" : eventLyric.text;
+          sn.addModifier(new VexAnnotation(lyricText)
+            .setVerticalJustification(VexAnnotation.VerticalJustify.BOTTOM)
+            .setFont(style.fontFamily, style.lyricSize, "normal", "italic"));
         }
 
         staveNotes.push(sn);
@@ -707,10 +721,8 @@ export function renderMeasure(
     // Draw hairpins using VexFlow StaveHairpin
     for (const annotation of m.annotations) {
       if (annotation.kind !== "hairpin") continue;
-
       let startNote: StaveNote | null = null;
       let endNote: StaveNote | null = null;
-
       for (const vfVoice of vfVoices) {
         const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] };
         for (let idx = 0; idx < data.__eventIds.length; idx++) {
@@ -718,16 +730,14 @@ export function renderMeasure(
           if (data.__eventIds[idx] === annotation.endEventId) endNote = data.__staveNotes[idx];
         }
       }
-
       if (startNote && endNote) {
         try {
           const hpType = annotation.type === "crescendo" ? StaveHairpin.type.CRESC : StaveHairpin.type.DECRESC;
           const hp = new StaveHairpin({ firstNote: startNote, lastNote: endNote }, hpType);
+          hp.setPosition(4); // BELOW
           hp.setRenderOptions({ leftShiftPx: 0, rightShiftPx: 0, height: 10, yShift: 0 });
           hp.setContext(ctx.context).draw();
-        } catch {
-          // VexFlow may reject; skip gracefully
-        }
+        } catch { /* skip */ }
       }
     }
   }
@@ -761,6 +771,9 @@ export function renderMeasure(
       }
     }
   }
+
+  // Below-staff annotations (dynamics, lyrics) are VexFlow Annotations with spacers
+  // for consistent stacking. Only hairpins need VexFlow StaveHairpin (note-spanning).
 
   // Show overfill/underfill indicator (MuseScore-style + or –)
   const capacity = measureCapacityFn(m.timeSignature.numerator, m.timeSignature.denominator);

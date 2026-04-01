@@ -63,6 +63,8 @@ interface EditorStore {
   score: Score;
   filePath: string | null;
   autoSaveStatus: string | null;
+  isDirty: boolean;
+  cleanScoreJson: string | null; // serialized score at last save — used to detect dirty state
 
   // Input
   inputState: InputState;
@@ -92,6 +94,7 @@ interface EditorStore {
   setScore(score: Score): void;
   setFilePath(path: string | null): void;
   setAutoSaveStatus(status: string | null): void;
+  markClean(): void;
   setNoteBoxes(boxes: Map<NoteEventId, NoteBox>): void;
   setAnnotationBoxes(boxes: AnnotationBox[]): void;
   setMeasurePositions(positions: EditorStore["measurePositions"]): void;
@@ -203,10 +206,13 @@ function cursorOnExistingEvent(score: Score, cursor: CursorPosition): boolean {
   return cursor.eventIndex < voice.events.length;
 }
 
+const initialScore = factory.emptyScore();
 export const useEditorStore = create<EditorStore>((set, get) => ({
-  score: factory.emptyScore(),
+  score: initialScore,
   filePath: null,
   autoSaveStatus: null,
+  isDirty: false,
+  cleanScoreJson: serializeScore(initialScore),
   inputState: defaultInputState(),
   noteBoxes: new Map(),
   annotationBoxes: [],
@@ -579,6 +585,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   setAutoSaveStatus(status: string | null) {
     set({ autoSaveStatus: status });
+  },
+
+  markClean() {
+    set({ isDirty: false, cleanScoreJson: serializeScore(get().score) });
   },
 
   setNoteBoxes(boxes: Map<NoteEventId, NoteBox>) {
@@ -1316,35 +1326,24 @@ async function autoSave(score: Score, filePath: string | null): Promise<void> {
   try {
     const serialized = serializeScore(score);
 
-    // Always persist JSON to localStorage as a fallback
+    // Persist JSON to localStorage for crash recovery
     const payload = JSON.stringify({ score: serialized, filePath, savedAt: Date.now() });
     localStorage.setItem(AUTOSAVE_KEY, payload);
 
     // Save a snapshot to file history
     saveSnapshot(serialized, score.title || "Untitled");
-
-    // If we have a file path, write MusicXML to disk (Tauri only)
-    if (filePath) {
-      try {
-        const { exportToMusicXML } = await import("../musicxml");
-        const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-        await writeTextFile(filePath, exportToMusicXML(score));
-      } catch {
-        // Not in Tauri or write failed — localStorage is the backup
-      }
-    }
-
-    useEditorStore.getState().setAutoSaveStatus("Saved");
+    // Note: disk write only happens on explicit Save (Ctrl+S)
   } catch {
     // ignore storage errors
   }
 }
 
-// Subscribe to score changes and debounce auto-save
+// Subscribe to score changes: mark dirty + debounce auto-save
 useEditorStore.subscribe((state, prevState) => {
   if (state.score !== prevState.score) {
+    const dirty = state.cleanScoreJson ? serializeScore(state.score) !== state.cleanScoreJson : true;
+    if (dirty !== state.isDirty) useEditorStore.setState({ isDirty: dirty });
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    useEditorStore.getState().setAutoSaveStatus("Saving...");
     autoSaveTimer = setTimeout(() => {
       autoSave(state.score, state.filePath);
     }, AUTOSAVE_DEBOUNCE_MS);
@@ -1382,7 +1381,7 @@ function restoreAutoSave(): void {
       useEditorStore.setState({
         score,
         filePath: parsed.filePath ?? parsed.importSource ?? null,
-        autoSaveStatus: "Restored from auto-save",
+        cleanScoreJson: parsed.score,
       });
     }
   } catch {

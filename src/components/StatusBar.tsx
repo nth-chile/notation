@@ -5,14 +5,15 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 export function StatusBar() {
   const filePath = useEditorStore((s) => s.filePath);
-  const autoSaveStatus = useEditorStore((s) => s.autoSaveStatus);
+  const isDirty = useEditorStore((s) => s.isDirty);
   const hotkey = useHotkey();
+
+  const fileName = filePath ? filePath.split("/").pop() : "Untitled";
 
   return (
     <div className="flex items-center gap-4 px-4 py-1 border-t bg-background text-muted-foreground text-xs shrink-0">
-      <span className="whitespace-nowrap">{filePath ? filePath.split("/").pop() : "Untitled"}</span>
+      <span className="whitespace-nowrap">{fileName}{isDirty ? " — Unsaved" : ""}</span>
       <span className="ml-auto" />
-      {autoSaveStatus && <span className="whitespace-nowrap">{autoSaveStatus}</span>}
       <Tooltip>
         <TooltipTrigger asChild>
           <button
