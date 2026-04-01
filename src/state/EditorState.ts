@@ -12,6 +12,7 @@ import type {
   TimeSignature,
   KeySignature,
 } from "../model";
+import type { ClefType } from "../model";
 import type { ViewModeType } from "../views/ViewMode";
 import { getDefaultViewConfig, type ViewConfig } from "../views/ViewMode";
 import { DURATION_TYPES_ORDERED } from "../model";
@@ -184,6 +185,23 @@ interface EditorStore {
   setShowLyrics(show: boolean): void;
 }
 
+/** Default octave per clef — places notes in the middle of the staff */
+const CLEF_DEFAULT_OCTAVE: Record<ClefType, number> = {
+  treble: 4,
+  bass: 3,
+  alto: 4,
+  tenor: 3,
+};
+
+/** Get the effective octave for note entry, applying clef offset to inputState octave.
+ *  inputState.octave defaults to 4 (treble). For bass clef, this shifts down by 1, etc. */
+function getEffectiveOctave(score: Score, cursor: CursorPosition, inputOctave: Octave): Octave {
+  const measure = score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
+  if (!measure) return inputOctave;
+  const offset = (CLEF_DEFAULT_OCTAVE[measure.clef.type] ?? 4) - 4;
+  return Math.max(0, Math.min(9, inputOctave + offset)) as Octave;
+}
+
 /** Returns true if the cursor is on an existing event (not past the end) */
 function cursorOnExistingEvent(score: Score, cursor: CursorPosition): boolean {
   const voice =
@@ -290,12 +308,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   insertNote(pitchClass: PitchClass) {
     const state = get();
     const { cursor } = state.inputState;
+    const octave = getEffectiveOctave(state.score, cursor, state.inputState.octave as Octave);
 
     // Grace note mode: insert a grace note before the current event
     if (state.inputState.graceNoteMode) {
       const cmd = new InsertGraceNote(
         pitchClass,
-        state.inputState.octave as Octave,
+        octave,
         state.inputState.accidental,
       );
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
@@ -307,7 +326,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (state.inputState.stepEntry && cursorOnExistingEvent(state.score, cursor)) {
       const cmd = new OverwriteNote(
         pitchClass,
-        state.inputState.octave as Octave,
+        octave,
         state.inputState.accidental,
         { ...state.inputState.duration },
       );
@@ -326,7 +345,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (cursorOnExistingEvent(state.score, cursor)) {
       const cmd = new ChangePitch(
         pitchClass,
-        state.inputState.octave as Octave,
+        octave,
         state.inputState.accidental
       );
       const result = history.execute(cmd, {
@@ -342,7 +361,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
     const cmd = new InsertNote(
       pitchClass,
-      state.inputState.octave as Octave,
+      octave,
       state.inputState.accidental,
       { ...state.inputState.duration }
     );
@@ -430,22 +449,57 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   toggleDot() {
+    const state = get();
+    const { cursor } = state.inputState;
+    const newDots = ((state.inputState.duration.dots + 1) % 4) as 0 | 1 | 2 | 3;
+
+    // Apply to note at cursor if one exists
+    if (cursorOnExistingEvent(state.score, cursor)) {
+      const score = structuredClone(state.score);
+      const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+      if (voice && cursor.eventIndex < voice.events.length) {
+        const evt = voice.events[cursor.eventIndex];
+        evt.duration = { ...evt.duration, dots: newDots };
+        set({ score });
+      }
+    }
+
     set((s) => ({
       inputState: {
         ...s.inputState,
-        duration: {
-          ...s.inputState.duration,
-          dots: ((s.inputState.duration.dots + 1) % 4) as 0 | 1 | 2 | 3,
-        },
+        duration: { ...s.inputState.duration, dots: newDots },
       },
     }));
   },
 
   setAccidental(acc: Accidental) {
+    const state = get();
+    const { cursor } = state.inputState;
+    const newAcc = state.inputState.accidental === acc ? "natural" : acc;
+
+    // Apply to note at cursor if one exists
+    if (cursorOnExistingEvent(state.score, cursor)) {
+      const score = structuredClone(state.score);
+      const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+      if (voice && cursor.eventIndex < voice.events.length) {
+        const evt = voice.events[cursor.eventIndex];
+        if (evt.kind === "note" || evt.kind === "grace") {
+          evt.head = { ...evt.head, pitch: { ...evt.head.pitch, accidental: newAcc } };
+          set({ score });
+        } else if (evt.kind === "chord") {
+          evt.heads = evt.heads.map((h) => ({
+            ...h,
+            pitch: { ...h.pitch, accidental: newAcc },
+          }));
+          set({ score });
+        }
+      }
+    }
+
     set((s) => ({
       inputState: {
         ...s.inputState,
-        accidental: s.inputState.accidental === acc ? "natural" : acc,
+        accidental: newAcc,
       },
     }));
   },
@@ -466,9 +520,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const voice = part?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
       // Allow navigation even when voice doesn't exist in current measure
       const eventCount = voice?.events.length ?? 0;
+      // In step entry mode, allow the append position (past last note) for inserting.
+      // In navigation mode, skip the append position — jump to next measure instead.
+      const allowAppend = s.inputState.stepEntry;
 
       if (direction === "right") {
-        if (cursor.eventIndex < eventCount) {
+        if (allowAppend && cursor.eventIndex < eventCount) {
+          cursor.eventIndex++;
+        } else if (!allowAppend && cursor.eventIndex < eventCount - 1) {
           cursor.eventIndex++;
         } else {
           // Move to next measure
@@ -483,7 +542,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         } else if (cursor.measureIndex > 0) {
           cursor.measureIndex--;
           const prevVoice = part?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
-          cursor.eventIndex = prevVoice?.events.length ?? 0;
+          const prevCount = prevVoice?.events.length ?? 0;
+          // In navigation mode, land on the last note; in step entry, land on append position
+          cursor.eventIndex = allowAppend ? prevCount : Math.max(0, prevCount - 1);
         }
       }
 

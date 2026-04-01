@@ -100,7 +100,10 @@ export function getSettings(): AppSettings {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        currentSettings = { ...defaultSettings(), ...JSON.parse(stored) };
+        const parsed = JSON.parse(stored);
+        // Merge keybindings: defaults + stored, so new keybindings aren't lost
+        const mergedBindings = { ...defaultKeyBindings(), ...(parsed.keyBindings ?? {}) };
+        currentSettings = { ...defaultSettings(), ...parsed, keyBindings: mergedBindings };
       } else {
         currentSettings = defaultSettings();
       }
@@ -112,7 +115,8 @@ export function getSettings(): AppSettings {
   // Async: try to load from config file (takes priority if it exists)
   readConfigFile().then((fileSettings) => {
     if (fileSettings) {
-      currentSettings = { ...defaultSettings(), ...fileSettings };
+      const mergedBindings = { ...defaultKeyBindings(), ...(fileSettings.keyBindings ?? {}) };
+      currentSettings = { ...defaultSettings(), ...fileSettings, keyBindings: mergedBindings };
       // Sync localStorage with config file
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSettings));
