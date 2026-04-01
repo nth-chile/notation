@@ -97,6 +97,8 @@ export function App() {
     try {
       const path = await saveScore(score, filePath ?? undefined);
       setFilePath(path);
+      useEditorStore.getState().markClean();
+      useEditorStore.getState().setAutoSaveStatus("Saved");
     } catch (err) {
       console.error("Save failed:", err);
     }
@@ -105,6 +107,8 @@ export function App() {
   const handleNew = useCallback(() => {
     setScore(emptyScore());
     setFilePath(null);
+    useEditorStore.getState().markClean();
+    useEditorStore.getState().setAutoSaveStatus(null);
     localStorage.removeItem("NOTATION_AUTOSAVE");
   }, [setScore, setFilePath]);
 
@@ -114,6 +118,8 @@ export function App() {
       if (!result) return;
       setScore(result.score);
       setFilePath(result.path);
+      useEditorStore.getState().markClean();
+      useEditorStore.getState().setAutoSaveStatus(null);
     } catch (err) {
       console.error("Load failed:", err);
     }
