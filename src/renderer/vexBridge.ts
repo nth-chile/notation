@@ -73,7 +73,7 @@ const ARTICULATION_VEX: Partial<Record<ArticulationKind, string>> = {
   staccatissimo: "av",
   accent: "a>",
   tenuto: "a-",
-  fermata: "afermata",
+  fermata: "a@a",
   marcato: "a^",
   "up-bow": "a|",
   "down-bow": "am",
