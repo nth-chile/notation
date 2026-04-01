@@ -53,28 +53,6 @@ export function ScoreOverlay({ width, height }: Props) {
     const x = e.clientX - rect.left + e.currentTarget.scrollLeft;
     const y = e.clientY - rect.top + e.currentTarget.scrollTop;
 
-    // Title click-to-edit
-    if (showTitle && titleRect) {
-      const r = titleRect;
-      if (x >= r.x - HIT_PADDING && x <= r.x + r.width + HIT_PADDING &&
-          y >= r.y - HIT_PADDING && y <= r.y + r.height + HIT_PADDING) {
-        setTitleValue(score.title);
-        setEditingTitle(true);
-        return;
-      }
-    }
-
-    // Composer click-to-edit
-    if (showTitle && showComposer && composerRect) {
-      const r = composerRect;
-      if (x >= r.x - HIT_PADDING && x <= r.x + r.width + HIT_PADDING &&
-          y >= r.y - HIT_PADDING && y <= r.y + r.height + HIT_PADDING) {
-        setComposerValue(score.composer);
-        setEditingComposer(true);
-        return;
-      }
-    }
-
     // Click on annotation (chord symbol or lyric) — edit it
     for (const ab of annotationBoxes) {
       if (x >= ab.x - HIT_PADDING && x <= ab.x + ab.width + HIT_PADDING &&
@@ -171,60 +149,101 @@ export function ScoreOverlay({ width, height }: Props) {
         cursor: "default",
       }}
     >
-      {showTitle && editingTitle && titleRect && (
-        <input
-          ref={titleRef}
-          value={titleValue}
-          onChange={(e) => setTitleValue(e.target.value)}
-          onBlur={commitTitle}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitTitle();
-            if (e.key === "Escape") setEditingTitle(false);
-          }}
-          style={{
-            position: "absolute",
-            top: titleRect.y - 6,
-            left: titleRect.x - 16,
-            width: titleRect.width + 32,
-            textAlign: "center",
-            font: "bold 28px system-ui, -apple-system, 'Segoe UI', sans-serif",
-            color: "#000",
-            background: "transparent",
-            border: "1px solid rgba(0,0,0,0.2)",
-            borderRadius: 4,
-            outline: "none",
-            padding: "4px 16px",
-            boxSizing: "border-box" as const,
-          }}
-        />
+      {showTitle && titleRect && (
+        editingTitle ? (
+          <input
+            ref={titleRef}
+            value={titleValue}
+            onChange={(e) => setTitleValue(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitTitle();
+              if (e.key === "Escape") setEditingTitle(false);
+              if (e.key === "Tab") { e.preventDefault(); commitTitle(); setComposerValue(score.composer); setEditingComposer(true); }
+            }}
+            placeholder="Title"
+            style={{
+              position: "absolute",
+              top: titleRect.y,
+              left: titleRect.x,
+              width: titleRect.width,
+              textAlign: "center",
+              font: "bold 28px system-ui, -apple-system, 'Segoe UI', sans-serif",
+              color: "#000",
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              padding: "2px 8px",
+              boxSizing: "border-box" as const,
+            }}
+          />
+        ) : (
+          <div
+            onClick={() => { setTitleValue(score.title); setEditingTitle(true); }}
+            style={{
+              position: "absolute",
+              top: titleRect.y,
+              left: titleRect.x,
+              width: titleRect.width,
+              textAlign: "center",
+              font: "bold 28px system-ui, -apple-system, 'Segoe UI', sans-serif",
+              color: score.title ? "#000" : "transparent",
+              cursor: "text",
+              padding: "2px 8px",
+              boxSizing: "border-box" as const,
+            }}
+          >
+            {score.title || "\u00A0"}
+          </div>
+        )
       )}
 
-      {showTitle && showComposer && editingComposer && composerRect && (
-        <input
-          ref={composerRef}
-          value={composerValue}
-          onChange={(e) => setComposerValue(e.target.value)}
-          onBlur={commitComposer}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitComposer();
-            if (e.key === "Escape") setEditingComposer(false);
-          }}
-          style={{
-            position: "absolute",
-            top: composerRect.y - 6,
-            left: composerRect.x - 16,
-            width: composerRect.width + 32,
-            textAlign: "center",
-            font: "italic 15px system-ui, -apple-system, 'Segoe UI', sans-serif",
-            color: "#000",
-            background: "transparent",
-            border: "1px solid rgba(0,0,0,0.2)",
-            borderRadius: 4,
-            outline: "none",
-            padding: "4px 16px",
-            boxSizing: "border-box" as const,
-          }}
-        />
+      {showTitle && composerRect && (
+        editingComposer ? (
+          <input
+            ref={composerRef}
+            value={composerValue}
+            onChange={(e) => setComposerValue(e.target.value)}
+            onBlur={commitComposer}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitComposer();
+              if (e.key === "Escape") setEditingComposer(false);
+            }}
+            placeholder="Composer"
+            style={{
+              position: "absolute",
+              top: composerRect.y,
+              left: composerRect.x,
+              width: composerRect.width,
+              textAlign: "center",
+              font: "italic 15px system-ui, -apple-system, 'Segoe UI', sans-serif",
+              color: "#555",
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              padding: "2px 8px",
+              boxSizing: "border-box" as const,
+            }}
+          />
+        ) : (
+          <div
+            onClick={() => { setComposerValue(score.composer); setEditingComposer(true); }}
+            style={{
+              position: "absolute",
+              top: composerRect.y,
+              left: composerRect.x,
+              width: composerRect.width,
+              textAlign: "center",
+              font: "italic 15px system-ui, -apple-system, 'Segoe UI', sans-serif",
+              color: score.composer ? "#555" : "transparent",
+              cursor: "text",
+              padding: "2px 8px",
+              boxSizing: "border-box" as const,
+            }}
+          >
+            {score.composer || "\u00A0"}
+          </div>
+        )
       )}
     </div>
   );

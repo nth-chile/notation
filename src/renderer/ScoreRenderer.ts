@@ -80,9 +80,8 @@ const MEASURES_PER_LINE = DEFAULT_LAYOUT.measuresPerLine;
 function titleHeight(score: Score): number {
   const state = useEditorStore.getState();
   if (!state.showTitle) return 0;
-  const hasTitle = !!score.title;
-  const hasComposer = state.showComposer && !!score.composer;
-  return (hasTitle ? 48 : 0) + (hasComposer ? 22 : 0) + (hasTitle || hasComposer ? 16 : 0);
+  const hasComposer = !!score.composer || state.editingComposer;
+  return 48 + (hasComposer ? 22 : 0) + 16;
 }
 
 export function calculateContentHeight(score: Score, viewConfig?: ViewConfig, availableWidth?: number): number {
@@ -160,11 +159,11 @@ export function renderScore(
     ...(pageLayoutEnabled ? { pageBreaks: true } : {}),
   };
   // Add space for title/composer above the first system
-  const hasTitle = !!score.title;
   const showTitle = useEditorStore.getState().showTitle;
-  const showComposer = useEditorStore.getState().showComposer;
-  const hasComposer = showComposer && !!score.composer;
-  const tHeight = showTitle ? (hasTitle ? 48 : 0) + (hasComposer ? 22 : 0) + (hasTitle || hasComposer ? 16 : 0) : 0;
+  const editorState = useEditorStore.getState();
+  const hasComposer = !!score.composer || editorState.editingComposer;
+  // Always reserve title space when showTitle is on (HTML overlay handles display)
+  const tHeight = showTitle ? 48 + (hasComposer ? 22 : 0) + 16 : 0;
   config = { ...config, topMargin: config.topMargin + tHeight };
 
   const systems = computeLayout(filteredScore, config);
@@ -201,42 +200,20 @@ export function renderScore(
     rawCtx.restore();
   }
 
-  // Render title and composer using the native canvas context (VexFlow's wrapper doesn't support textAlign)
-  const editorState = useEditorStore.getState();
-  const editingTitle = editorState.editingTitle;
-  const editingComposer = editorState.editingComposer;
+  // Calculate title/composer positions for HTML overlay (no canvas text drawing)
   const titlePositions: { title?: { x: number; y: number; width: number; height: number }; composer?: { x: number; y: number; width: number; height: number } } = {};
-  const nativeCtx = canvas.getContext("2d");
-  if (showTitle && nativeCtx && (hasTitle || hasComposer)) {
+  if (showTitle) {
     const centerX = pageLayoutEnabled ? config.pageWidth / 2 : effectiveWidth / 2;
     let y = DEFAULT_LAYOUT.topMargin;
 
-    if (hasTitle) {
-      const titleFont = "bold 28px system-ui, -apple-system, 'Segoe UI', sans-serif";
-      nativeCtx.font = titleFont;
-      nativeCtx.fillStyle = "#000";
-      nativeCtx.textAlign = "center";
-      const tm = nativeCtx.measureText(score.title);
-      const tw = Math.max(tm.width, 200);
-      titlePositions.title = { x: centerX - tw / 2, y: y - tm.actualBoundingBoxAscent, width: tw, height: tm.actualBoundingBoxAscent + tm.actualBoundingBoxDescent };
-      if (!editingTitle) {
-        nativeCtx.fillText(score.title, centerX, y);
-      }
-      nativeCtx.textAlign = "start";
-      y += 34;
-    }
+    // Always provide a title region (even when empty) so the overlay can be clicked
+    const titleW = Math.max(effectiveWidth * 0.6, 200);
+    titlePositions.title = { x: centerX - titleW / 2, y: y - 24, width: titleW, height: 34 };
+    y += 34;
+
     if (hasComposer) {
-      const composerFont = "italic 15px system-ui, -apple-system, 'Segoe UI', sans-serif";
-      nativeCtx.font = composerFont;
-      nativeCtx.fillStyle = "#555";
-      nativeCtx.textAlign = "center";
-      const cm = nativeCtx.measureText(score.composer);
-      const cw = Math.max(cm.width, 150);
-      titlePositions.composer = { x: centerX - cw / 2, y: y - cm.actualBoundingBoxAscent, width: cw, height: cm.actualBoundingBoxAscent + cm.actualBoundingBoxDescent };
-      if (!editingComposer) {
-        nativeCtx.fillText(score.composer, centerX, y);
-      }
-      nativeCtx.textAlign = "start";
+      const composerW = Math.max(effectiveWidth * 0.4, 150);
+      titlePositions.composer = { x: centerX - composerW / 2, y: y - 14, width: composerW, height: 20 };
     }
   }
   useEditorStore.getState().setTitlePositions(titlePositions);
