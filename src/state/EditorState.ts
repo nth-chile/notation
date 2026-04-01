@@ -1371,6 +1371,31 @@ useEditorStore.subscribe((state, prevState) => {
   }
 });
 
+// Persist UI preferences to settings when they change
+import { updateSettings, getSettings as loadSettings } from "../settings";
+
+let settingsSaveTimer: ReturnType<typeof setTimeout> | null = null;
+useEditorStore.subscribe((state, prevState) => {
+  if (
+    state.viewMode !== prevState.viewMode ||
+    state.showTitle !== prevState.showTitle ||
+    state.showComposer !== prevState.showComposer ||
+    state.showLyrics !== prevState.showLyrics ||
+    state.metronomeOn !== prevState.metronomeOn
+  ) {
+    if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
+    settingsSaveTimer = setTimeout(() => {
+      updateSettings({
+        viewMode: state.viewMode,
+        showTitle: state.showTitle,
+        showComposer: state.showComposer,
+        showLyrics: state.showLyrics,
+        metronomeEnabled: state.metronomeOn,
+      });
+    }, 500);
+  }
+});
+
 // --- Restore from localStorage on init ---
 
 function restoreAutoSave(): void {
@@ -1391,4 +1416,21 @@ function restoreAutoSave(): void {
   }
 }
 
+function restoreUiPreferences(): void {
+  try {
+    const settings = loadSettings();
+    const viewMode = (settings.viewMode ?? "full-score") as ViewModeType;
+    useEditorStore.setState({
+      viewMode,
+      viewConfig: getDefaultViewConfig(viewMode),
+      showTitle: settings.showTitle ?? true,
+      showLyrics: settings.showLyrics ?? true,
+      metronomeOn: settings.metronomeEnabled ?? false,
+    });
+  } catch {
+    // ignore
+  }
+}
+
 restoreAutoSave();
+restoreUiPreferences();

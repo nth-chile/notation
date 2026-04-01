@@ -26,8 +26,9 @@ export const TitleDisplayPlugin: NotationPlugin = {
   version: "1.0.0",
   description: "Show title and composer text above the score",
   activate(api: PluginAPI) {
-    useEditorStore.getState().setShowTitle(true);
-    useEditorStore.getState().setShowComposer(getSettings().showComposer);
+    const settings = getSettings();
+    useEditorStore.getState().setShowTitle(settings.showTitle ?? true);
+    useEditorStore.getState().setShowComposer(settings.showComposer ?? false);
 
     api.registerCommand("notation.toggle-composer", "Toggle Composer Display", () => {
       const store = useEditorStore.getState();

@@ -94,31 +94,32 @@ export function ScoreCanvas() {
     raw.fillRect(0, 0, width, height);
     raw.restore();
 
-    const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, viewConfig, width, selection);
+    const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, viewConfig, width, noteSelection ? null : selection);
 
     // Draw note-level selection highlights
     if (noteSelection) {
       const voice = score.parts[noteSelection.partIndex]?.measures[noteSelection.measureIndex]?.voices[noteSelection.voiceIndex];
       if (voice) {
-        rawCtx.save();
-        rawCtx.strokeStyle = "#3b82f6";
-        rawCtx.lineWidth = 2;
-        rawCtx.globalAlpha = 0.7;
-        const pad = 4;
-        for (let i = noteSelection.startEvent; i <= noteSelection.endEvent && i < voice.events.length; i++) {
-          const box = result.noteBoxes.get(voice.events[i].id);
-          if (box) {
-            const bx = box.headX - pad, by = box.headY - pad, bw = box.headWidth + pad * 2, bh = box.headHeight + pad * 2;
-            rawCtx.beginPath();
-            if (rawCtx.roundRect) {
-              rawCtx.roundRect(bx, by, bw, bh, 4);
-            } else {
-              rawCtx.rect(bx, by, bw, bh);
+        const mp = result.measurePositions.find(
+          (p) => p.partIndex === noteSelection.partIndex && p.measureIndex === noteSelection.measureIndex
+        );
+        if (mp) {
+          // Find extent of selected notes for a continuous highlight
+          let minX = Infinity, maxX = -Infinity;
+          for (let i = noteSelection.startEvent; i <= noteSelection.endEvent && i < voice.events.length; i++) {
+            const box = result.noteBoxes.get(voice.events[i].id);
+            if (box) {
+              minX = Math.min(minX, box.headX - 3);
+              maxX = Math.max(maxX, box.headX + box.headWidth + 3);
             }
-            rawCtx.stroke();
+          }
+          if (minX < maxX) {
+            rawCtx.save();
+            rawCtx.fillStyle = "rgba(59, 130, 246, 0.12)";
+            rawCtx.fillRect(minX, mp.y, maxX - minX, mp.height);
+            rawCtx.restore();
           }
         }
-        rawCtx.restore();
       }
     }
 

@@ -13,6 +13,9 @@ export interface AppSettings {
   historyMaxSnapshots: number;
   keyBindings: Record<string, KeyBinding>;
   showComposer: boolean;
+  showTitle: boolean;
+  showLyrics: boolean;
+  viewMode: string;
 }
 
 const STORAGE_KEY = "notation-settings";
@@ -34,6 +37,9 @@ function defaultSettings(): AppSettings {
     historyMaxSnapshots: 50,
     keyBindings: defaultKeyBindings(),
     showComposer: false,
+    showTitle: true,
+    showLyrics: true,
+    viewMode: "full-score",
   };
 }
 

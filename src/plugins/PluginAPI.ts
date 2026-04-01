@@ -94,4 +94,8 @@ export interface PluginAPI {
 
   // Plugin settings UI
   registerSettings(component: () => React.ReactNode): void;
+
+  // Plugin-scoped persistent storage
+  getStorage<T = unknown>(key: string): T | undefined;
+  setStorage<T = unknown>(key: string, value: T): void;
 }
