@@ -120,9 +120,12 @@ function breakMeasuresIntoLines(
     while (mi < measureCount) {
       const m = part.measures[mi];
       const isFirstInLine = mi === lineStart;
+      // Pickup measures don't show time sig — it goes on the next measure
+      const prevMeasure = mi > 0 ? part.measures[mi - 1] : undefined;
+      const showTimeSig = m.isPickup ? false : (mi === 0 || !!prevMeasure?.isPickup);
       const w = calculateMeasureWidth(m, {
         showClef: isFirstInLine,
-        showTimeSig: mi === 0,
+        showTimeSig,
         showKeySig: isFirstInLine,
         stylesheet: config.stylesheet,
       });

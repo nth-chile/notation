@@ -675,20 +675,17 @@ export function renderMeasure(
             rawCtx.fillStyle = "#000";
             const textWidth = rawCtx.measureText(annotation.text).width;
             const boxPadding = 4;
-            // Push rehearsal mark higher when a tempo mark is also present
-            const hasTempoMark = m.annotations.some((a) => a.kind === "tempo-mark");
-            const rehearsalYOffset = hasTempoMark ? -22 : 0;
             rawCtx.strokeStyle = "#000";
             rawCtx.lineWidth = 1.5;
             rawCtx.beginPath();
             rawCtx.rect(
               x + 2 - boxPadding,
-              y - 6 - boxPadding + rehearsalYOffset,
+              y - 6 - boxPadding,
               textWidth + boxPadding * 2,
               14 + boxPadding * 2
             );
             rawCtx.stroke();
-            rawCtx.fillText(annotation.text, x + 2, y + 6 + rehearsalYOffset);
+            rawCtx.fillText(annotation.text, x + 2, y + 6);
             rawCtx.restore();
             break;
           }
