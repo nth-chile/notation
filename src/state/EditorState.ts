@@ -47,6 +47,8 @@ import { TogglePickup } from "../commands/TogglePickup";
 import { SetSlur } from "../commands/SetSlur";
 import { InsertGraceNote } from "../commands/InsertGraceNote";
 import { OverwriteNote } from "../commands/OverwriteNote";
+import { ToggleDot } from "../commands/ToggleDot";
+import { SetAccidental as SetAccidentalCmd } from "../commands/SetAccidental";
 import type { NavigationMarkType } from "../commands/SetNavigationMark";
 import type { BarlineType, Volta } from "../model";
 import type { NoteBox, AnnotationBox } from "../renderer/vexBridge";
@@ -451,13 +453,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
     // Apply to note at cursor if one exists
     if (cursorOnExistingEvent(state.score, cursor)) {
-      const score = structuredClone(state.score);
-      const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
-      if (voice && cursor.eventIndex < voice.events.length) {
-        const evt = voice.events[cursor.eventIndex];
-        evt.duration = { ...evt.duration, dots: newDots };
-        set({ score });
-      }
+      const cmd = new ToggleDot();
+      const result = history.execute(cmd, {
+        score: state.score,
+        inputState: state.inputState,
+      });
+      set({ score: result.score, inputState: result.inputState });
     }
 
     set((s) => ({
@@ -475,21 +476,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
     // Apply to note at cursor if one exists
     if (cursorOnExistingEvent(state.score, cursor)) {
-      const score = structuredClone(state.score);
-      const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
-      if (voice && cursor.eventIndex < voice.events.length) {
-        const evt = voice.events[cursor.eventIndex];
-        if (evt.kind === "note" || evt.kind === "grace") {
-          evt.head = { ...evt.head, pitch: { ...evt.head.pitch, accidental: newAcc } };
-          set({ score });
-        } else if (evt.kind === "chord") {
-          evt.heads = evt.heads.map((h) => ({
-            ...h,
-            pitch: { ...h.pitch, accidental: newAcc },
-          }));
-          set({ score });
-        }
-      }
+      const cmd = new SetAccidentalCmd(newAcc);
+      const result = history.execute(cmd, {
+        score: state.score,
+        inputState: state.inputState,
+      });
+      set({ score: result.score, inputState: result.inputState });
     }
 
     set((s) => ({
@@ -707,10 +699,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
     if (direction === "right") {
       const newEnd = Math.min(sel.measureEnd + 1, part.measures.length - 1);
-      set({ selection: { ...sel, measureEnd: newEnd } });
+      set({ selection: { ...sel, measureEnd: newEnd }, noteSelection: null });
     } else {
       const newStart = Math.max(sel.measureStart - 1, 0);
-      set({ selection: { ...sel, measureStart: newStart } });
+      set({ selection: { ...sel, measureStart: newStart }, noteSelection: null });
     }
   },
 
