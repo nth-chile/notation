@@ -512,15 +512,6 @@ function drawCursor(
   rawCtx.save();
 
   // Draw note highlight rect if on a note
-  if (targetBox) {
-    rawCtx.strokeStyle = cursorColor;
-    rawCtx.lineWidth = 2;
-    const pad = 3;
-    rawCtx.beginPath();
-    rawCtx.rect(targetBox.headX - pad, targetBox.headY - pad, targetBox.headWidth + pad * 2, targetBox.headHeight + pad * 2);
-    rawCtx.stroke();
-  }
-
   // Draw vertical cursor line spanning full staff.
   // Set lineWidth on the real canvas context so it actually takes effect
   // (VexFlow's context wrapper ignores lineWidth assignments).

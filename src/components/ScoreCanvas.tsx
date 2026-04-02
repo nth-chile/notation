@@ -94,7 +94,7 @@ export function ScoreCanvas() {
     const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, viewConfig, width, noteSelection ? null : selection);
 
     // Draw note-level selection highlights
-    if (noteSelection) {
+    if (noteSelection && noteSelection.startEvent !== noteSelection.endEvent) {
       const voice = score.parts[noteSelection.partIndex]?.measures[noteSelection.measureIndex]?.voices[noteSelection.voiceIndex];
       if (voice) {
         const mp = result.measurePositions.find(
