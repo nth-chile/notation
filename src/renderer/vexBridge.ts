@@ -372,7 +372,7 @@ export function renderMeasure(
       if (m.navigation?.volta) navY -= 22;
       for (const text of textItems) {
         navY -= 14;
-        aboveStaveCtx.fillText(text, x + width - 4, navY + 12);
+        aboveStaveCtx.fillText(text, x + width - 10, navY + 12);
       }
       aboveStaveCtx.textAlign = "start";
       aboveStaveCtx.restore();
@@ -433,32 +433,15 @@ export function renderMeasure(
             .setVerticalJustification(VexAnnotation.VerticalJustify.TOP)
             .setFont("serif", 12, "bold"));
         }
-        // Below staff: dynamics then lyrics. Add spacers for consistent stacking.
-        const hasMeasureDynamics = m.annotations.some((a) => a.kind === "dynamic");
-        const hasMeasureLyrics = m.annotations.some((a) => a.kind === "lyric");
-        const eventDynamic = m.annotations.find((a) => a.kind === "dynamic" && a.noteEventId === event.id);
-        const eventLyric = m.annotations.find((a) => a.kind === "lyric" && a.noteEventId === event.id);
-
-        // Dynamic layer (or spacer if other notes have dynamics)
-        if (eventDynamic && eventDynamic.kind === "dynamic") {
-          sn.addModifier(new VexAnnotation(eventDynamic.level)
-            .setVerticalJustification(VexAnnotation.VerticalJustify.BOTTOM)
-            .setFont("serif", 16, "bold", "italic"));
-        } else if (hasMeasureDynamics && (hasMeasureLyrics || eventLyric)) {
-          // Invisible spacer to keep lyrics at consistent Y
-          sn.addModifier(new VexAnnotation(" ")
-            .setVerticalJustification(VexAnnotation.VerticalJustify.BOTTOM)
-            .setFont("serif", 16, "normal"));
+        // Dynamics as VexFlow Annotation (note-relative Y is correct for dynamics)
+        for (const ann of m.annotations) {
+          if (ann.kind === "dynamic" && ann.noteEventId === event.id) {
+            sn.addModifier(new VexAnnotation(ann.level)
+              .setVerticalJustification(VexAnnotation.VerticalJustify.BOTTOM)
+              .setFont("serif", 16, "bold", "italic"));
+          }
         }
-
-        // Lyric layer
-        if (eventLyric && eventLyric.kind === "lyric") {
-          const lyricText = eventLyric.syllableType === "begin" || eventLyric.syllableType === "middle"
-            ? eventLyric.text + "-" : eventLyric.text;
-          sn.addModifier(new VexAnnotation(lyricText)
-            .setVerticalJustification(VexAnnotation.VerticalJustify.BOTTOM)
-            .setFont(style.fontFamily, style.lyricSize, "normal", "italic"));
-        }
+        // Lyrics are drawn manually at stave-relative Y (see below)
 
         staveNotes.push(sn);
         eventIds.push(event.id);
@@ -772,8 +755,51 @@ export function renderMeasure(
     }
   }
 
-  // Below-staff annotations (dynamics, lyrics) are VexFlow Annotations with spacers
-  // for consistent stacking. Only hairpins need VexFlow StaveHairpin (note-spanning).
+  // Lyrics — drawn manually at stave-relative Y for consistent positioning.
+  // Dynamics are VexFlow Annotations (note-relative, which is correct for dynamics).
+  // Lyrics go below dynamics at a fixed distance from stave bottom.
+  {
+    const lyricAnnotations = m.annotations.filter((a) => a.kind === "lyric");
+    if (lyricAnnotations.length > 0) {
+      const lCtx = ctx.context as unknown as CanvasRenderingContext2D;
+      if (lCtx.save) {
+        const hasDyn = m.annotations.some((a) => a.kind === "dynamic");
+        const hasHairpin = m.annotations.some((a) => a.kind === "hairpin");
+        // Base Y: below staff, below dynamics if present, below hairpins if present
+        let lyricBaseY = stave.getBottomY() + 18;
+        if (hasDyn) lyricBaseY += 18;
+        if (hasHairpin) lyricBaseY += 14;
+
+        lCtx.save();
+        lCtx.font = `italic ${style.lyricSize}px ${style.fontFamily}`;
+        lCtx.fillStyle = "#555";
+        lCtx.textAlign = "center";
+        for (const ann of lyricAnnotations) {
+          if (ann.kind !== "lyric") continue;
+          const box = noteBoxes.find((nb) => nb.id === ann.noteEventId);
+          if (!box) continue;
+          const lyricText = ann.syllableType === "begin" || ann.syllableType === "middle"
+            ? ann.text + "-" : ann.text;
+          const verseOffset = ((ann.verseNumber || 1) - 1) * (style.lyricSize + 4);
+          const lyricX = box.x + box.width / 2;
+          const lyricY = lyricBaseY + verseOffset;
+          const lyricMetrics = lCtx.measureText(lyricText);
+          lCtx.fillText(lyricText, lyricX, lyricY);
+          annotationBoxes.push({
+            kind: "lyric",
+            x: lyricX - lyricMetrics.width / 2,
+            y: lyricY - style.lyricSize,
+            width: lyricMetrics.width,
+            height: style.lyricSize + 4,
+            partIndex, measureIndex,
+            noteEventId: ann.noteEventId, text: ann.text,
+          });
+        }
+        lCtx.textAlign = "start";
+        lCtx.restore();
+      }
+    }
+  }
 
   // Show overfill/underfill indicator (MuseScore-style + or –)
   const capacity = measureCapacityFn(m.timeSignature.numerator, m.timeSignature.denominator);
