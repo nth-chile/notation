@@ -145,9 +145,6 @@ export const ScoreEditorPlugin: NotationPlugin = {
     api.registerCommand("notation.view-lead-sheet", "View: Lead Sheet", () => {
       useEditorStore.getState().setViewMode("lead-sheet");
     });
-    api.registerCommand("notation.view-songwriter", "View: Songwriter", () => {
-      useEditorStore.getState().setViewMode("songwriter");
-    });
     api.registerCommand("notation.view-tab", "View: Tab", () => {
       useEditorStore.getState().setViewMode("tab");
     });

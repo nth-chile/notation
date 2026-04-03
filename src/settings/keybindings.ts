@@ -78,10 +78,9 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "voice:4", label: "Voice 4", category: "Voices", defaultBinding: { key: "4", ctrl: true } },
 
   // Views
-  { id: "view:songwriter", label: "Songwriter view", category: "Views", defaultBinding: { key: "1", ctrl: true, shift: true } },
+  { id: "view:full-score", label: "Full Score view", category: "Views", defaultBinding: { key: "1", ctrl: true, shift: true } },
   { id: "view:lead-sheet", label: "Lead Sheet view", category: "Views", defaultBinding: { key: "2", ctrl: true, shift: true } },
   { id: "view:tab", label: "Tab view", category: "Views", defaultBinding: { key: "3", ctrl: true, shift: true } },
-  { id: "view:full-score", label: "Full Score view", category: "Views", defaultBinding: { key: "4", ctrl: true, shift: true } },
 
   // Annotation
   { id: "chord-mode", label: "Chord input", category: "Annotation", defaultBinding: { key: "c", shift: true } },

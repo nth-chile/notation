@@ -234,7 +234,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   viewScrollPositions: {
     "full-score": 0,
     "lead-sheet": 0,
-    "songwriter": 0,
     "tab": 0,
   },
   popover: null,
