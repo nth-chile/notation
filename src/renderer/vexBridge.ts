@@ -50,6 +50,8 @@ export interface MeasureRenderResult {
   staveY: number;
   staveX: number;
   width: number;
+  /** Map from event ID to VexFlow StaveNote — used for cross-measure tie/slur rendering */
+  staveNoteMap: Map<NoteEventId, StaveNote>;
 }
 
 const ACC_VEX: Record<string, string> = {
@@ -354,6 +356,19 @@ export function renderMeasure(
     aboveStaveCtx.restore();
   }
 
+  // Tempo marks — rendered manually so they show even on empty/rest measures
+  if (tempoAnn && aboveStaveCtx.save) {
+    aboveStaveCtx.save();
+    aboveStaveCtx.font = "bold 12px serif";
+    aboveStaveCtx.fillStyle = "#000";
+    const tempoText = tempoAnn.text
+      ? `${tempoAnn.text} (\u2669 = ${tempoAnn.bpm})`
+      : `\u2669 = ${tempoAnn.bpm}`;
+    aboveY -= 16;
+    aboveStaveCtx.fillText(tempoText, x + 2, aboveY);
+    aboveStaveCtx.restore();
+  }
+
   // Navigation text (Fine, D.S., D.C., To Coda) — italic, right-aligned
   if (m.navigation && aboveStaveCtx.save) {
     const nav = m.navigation;
@@ -424,15 +439,7 @@ export function renderMeasure(
               .setFont("sans-serif", style.chordSymbolSize, "bold"));
           }
         }
-        // Tempo mark on first note only (above chord symbols)
-        if (tempoAnn && staveNotes.length === 0) {
-          const tempoText = tempoAnn.text
-            ? `${tempoAnn.text} (♩= ${tempoAnn.bpm})`
-            : `♩= ${tempoAnn.bpm}`;
-          sn.addModifier(new VexAnnotation(tempoText)
-            .setVerticalJustification(VexAnnotation.VerticalJustify.TOP)
-            .setFont("serif", 12, "bold"));
-        }
+        // Tempo mark is rendered manually above stave (see above), not as VexFlow annotation
         // Dynamics as VexFlow Annotation (note-relative Y is correct for dynamics)
         for (const ann of m.annotations) {
           if (ann.kind === "dynamic" && ann.noteEventId === event.id) {
@@ -817,12 +824,22 @@ export function renderMeasure(
     }
   }
 
+  // Build staveNote map for cross-measure tie/slur rendering
+  const staveNoteMap = new Map<NoteEventId, StaveNote>();
+  for (const vfVoice of vfVoices) {
+    const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] };
+    for (let idx = 0; idx < data.__eventIds.length; idx++) {
+      staveNoteMap.set(data.__eventIds[idx], data.__staveNotes[idx]);
+    }
+  }
+
   return {
     noteBoxes,
     annotationBoxes,
     staveY: y,
     staveX: x,
     width,
+    staveNoteMap,
   };
 }
 
@@ -903,7 +920,47 @@ export function renderMultiMeasureRest(
   mmr.setContext(ctx.context as unknown as import("vexflow").RenderContext);
   mmr.draw();
 
-  return { noteBoxes: [], annotationBoxes: [], staveY: y, staveX: x, width };
+  // Draw global annotations above multi-measure rests
+  const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+  if (rawCtx.save) {
+    let aboveY = y - 6;
+    if (m.navigation?.volta) aboveY -= 22;
+    if (m.navigation?.segno || m.navigation?.coda) aboveY -= 20;
+
+    for (const ann of m.annotations) {
+      if (ann.kind === "rehearsal-mark") {
+        rawCtx.save();
+        rawCtx.font = "bold 14px sans-serif";
+        const tw = rawCtx.measureText(ann.text).width;
+        const pad = 4;
+        const boxH = 14 + pad * 2;
+        aboveY -= boxH + 2;
+        rawCtx.strokeStyle = "#000";
+        rawCtx.lineWidth = 1.5;
+        rawCtx.beginPath();
+        rawCtx.rect(x + 2 - pad, aboveY, tw + pad * 2, boxH);
+        rawCtx.stroke();
+        rawCtx.fillStyle = "#000";
+        rawCtx.fillText(ann.text, x + 2, aboveY + boxH - pad - 2);
+        rawCtx.restore();
+      }
+    }
+
+    const tempoAnn = m.annotations.find((a) => a.kind === "tempo-mark") as TempoMark | undefined;
+    if (tempoAnn) {
+      rawCtx.save();
+      rawCtx.font = "bold 12px serif";
+      rawCtx.fillStyle = "#000";
+      const text = tempoAnn.text
+        ? `${tempoAnn.text} (\u2669 = ${tempoAnn.bpm})`
+        : `\u2669 = ${tempoAnn.bpm}`;
+      aboveY -= 16;
+      rawCtx.fillText(text, x + 2, aboveY);
+      rawCtx.restore();
+    }
+  }
+
+  return { noteBoxes: [], annotationBoxes: [], staveY: y, staveX: x, width, staveNoteMap: new Map() };
 }
 
 export function clearCanvas(ctx: RenderContext, canvas: HTMLCanvasElement): void {

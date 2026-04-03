@@ -1,5 +1,6 @@
 import type { Score, NoteEventId } from "../model";
 import { TICKS_PER_QUARTER, durationToTicks } from "../model/duration";
+import { StaveTie, type StaveNote } from "vexflow";
 import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, clearCanvas, type RenderContext, type NoteBox, type AnnotationBox } from "./vexBridge";
 import { renderTabMeasure } from "./TabRenderer";
 import { computeLayout, totalContentHeight, totalPageCount, partStaveCount, DEFAULT_LAYOUT, type LayoutConfig, type SystemLine } from "./SystemLayout";
@@ -165,6 +166,7 @@ export function renderScore(
   const systems = computeLayout(filteredScore, config);
 
   const allNoteBoxes = new Map<NoteEventId, NoteBox>();
+  const allStaveNotes = new Map<NoteEventId, StaveNote>();
   const allAnnotationBoxes: AnnotationBox[] = [];
   const measurePositions: ScoreRenderResult["measurePositions"] = [];
 
@@ -366,6 +368,11 @@ export function renderScore(
           for (const nb of result.noteBoxes) {
             allNoteBoxes.set(nb.id, nb);
           }
+          if ('staveNoteMap' in result) {
+            for (const [id, sn] of (result as { staveNoteMap: Map<NoteEventId, StaveNote> }).staveNoteMap) {
+              allStaveNotes.set(id, sn);
+            }
+          }
           if ('annotationBoxes' in result) {
             for (const ab of (result as { annotationBoxes: AnnotationBox[] }).annotationBoxes) {
               allAnnotationBoxes.push(ab);
@@ -472,14 +479,23 @@ export function renderScore(
             aboveY -= 16;
             rawCtx.fillText(text, mp.x + 2, aboveY);
             rawCtx.restore();
+          } else if (ann.kind === "chord-symbol") {
+            const already = visibleMeasure?.annotations.some(a => a.kind === "chord-symbol" && (a as any).text === (ann as any).text);
+            if (already) continue;
+            rawCtx.save();
+            rawCtx.font = "bold 12px sans-serif";
+            rawCtx.fillStyle = "#000";
+            aboveY -= 16;
+            rawCtx.fillText((ann as any).text, mp.x + 2, aboveY);
+            rawCtx.restore();
           }
         }
       }
     }
   }
 
-  // Draw cross-measure slurs and ties (post-render pass using global noteBoxes)
-  drawCrossSystemSlursAndTies(rawCtx, filteredScore, allNoteBoxes, measurePositions, systems);
+  // Draw cross-measure slurs and ties using VexFlow's partial StaveTie
+  drawCrossSystemSlursAndTies(ctx, filteredScore, allNoteBoxes, allStaveNotes, measurePositions, systems);
 
   // Draw selection highlight
   if (selection) {
@@ -753,7 +769,7 @@ function getVisiblePartIndices(score: Score, viewConfig?: ViewConfig): number[] 
 /**
  * Build a filtered score containing only the visible parts.
  */
-const GLOBAL_ANNOTATION_KINDS = new Set(["rehearsal-mark", "tempo-mark"]);
+const GLOBAL_ANNOTATION_KINDS = new Set(["rehearsal-mark", "tempo-mark", "chord-symbol"]);
 
 function filterScoreParts(score: Score, visiblePartIndices: number[]): Score {
   if (visiblePartIndices.length === score.parts.length) {
@@ -779,196 +795,111 @@ function filterAnnotations(
 }
 
 /**
- * Draw cross-measure slurs and ties using global noteBox positions.
- * For same-system spans: draw a bezier curve between the two notes.
- * For cross-system spans: draw two half-curves (one ending at system edge, one starting at next).
+ * Draw cross-measure slurs and ties using VexFlow's StaveTie with partial note support.
+ * Same-system cross-measure: StaveTie with both firstNote and lastNote.
+ * Cross-system: two partial StaveTies — one with firstNote only, one with lastNote only.
  */
 function drawCrossSystemSlursAndTies(
-  rawCtx: CanvasRenderingContext2D,
+  ctx: RenderContext,
   score: Score,
   noteBoxes: Map<NoteEventId, NoteBox>,
+  staveNotes: Map<NoteEventId, StaveNote>,
   measurePositions: ScoreRenderResult["measurePositions"],
   systems: SystemLine[],
 ): void {
-  if (!rawCtx.save) return;
-
-  // Helper: find which system a measure belongs to
   function systemForMeasure(mi: number): SystemLine | undefined {
     return systems.find((s) => mi >= s.startMeasure && mi < s.endMeasure);
   }
 
-  // Helper: draw a slur/tie curve between two points
-  function drawCurve(x1: number, y1: number, x2: number, y2: number, direction: "above" | "below") {
-    const d = direction === "above" ? -1 : 1;
-    const cpHeight = 20 * d;
-    const midX = (x1 + x2) / 2;
-    rawCtx.beginPath();
-    rawCtx.moveTo(x1, y1);
-    rawCtx.bezierCurveTo(midX, y1 + cpHeight, midX, y2 + cpHeight, x2, y2);
-    rawCtx.stroke();
+  function drawTie(firstNote: StaveNote | null, lastNote: StaveNote | null, firstIndexes?: number[], lastIndexes?: number[]) {
+    try {
+      new StaveTie({
+        firstNote: firstNote ?? undefined,
+        lastNote: lastNote ?? undefined,
+        firstIndexes,
+        lastIndexes,
+      }).setContext(ctx.context).draw();
+    } catch { /* VexFlow may reject partial ties in edge cases */ }
   }
 
-  rawCtx.save();
-  rawCtx.strokeStyle = "#000";
-  rawCtx.lineWidth = 1.5;
-
-  // Collect all slur annotations from all measures in all parts
+  // Cross-measure slurs
   for (const part of score.parts) {
     for (let mi = 0; mi < part.measures.length; mi++) {
       const measure = part.measures[mi];
       for (const ann of measure.annotations) {
         if (ann.kind !== "slur") continue;
 
+        const startSN = staveNotes.get(ann.startEventId);
+        const endSN = staveNotes.get(ann.endEventId);
         const startBox = noteBoxes.get(ann.startEventId);
         const endBox = noteBoxes.get(ann.endEventId);
         if (!startBox || !endBox) continue;
 
-        // Skip same-measure slurs — already rendered by vexBridge
+        // Skip same-measure — already rendered by vexBridge
         if (startBox.measureIndex === endBox.measureIndex) continue;
 
         const startSys = systemForMeasure(startBox.measureIndex);
         const endSys = systemForMeasure(endBox.measureIndex);
         if (!startSys || !endSys) continue;
 
-        const curveY = (box: NoteBox) => box.headY; // top of note head
-        const direction = "above"; // slurs default above
-
         if (startSys.lineIndex === endSys.lineIndex) {
-          // Same system — direct curve
-          drawCurve(
-            startBox.headX + startBox.headWidth, curveY(startBox),
-            endBox.headX, curveY(endBox),
-            direction,
-          );
+          // Same system, cross-measure — direct tie
+          if (startSN && endSN) drawTie(startSN, endSN);
         } else {
-          // Cross-system — two half curves
-          // First half: start note → right edge of start system
-          const startSysMPs = measurePositions.filter(
-            (mp) => mp.partIndex === startBox.partIndex && mp.measureIndex === startSys.endMeasure - 1
-          );
-          const rightEdgeX = startSysMPs.length > 0
-            ? startSysMPs[0].x + startSysMPs[0].width
-            : startBox.headX + 100;
-
-          drawCurve(
-            startBox.headX + startBox.headWidth, curveY(startBox),
-            rightEdgeX, curveY(startBox),
-            direction,
-          );
-
-          // Second half: left edge of end system → end note
-          const endSysMPs = measurePositions.filter(
-            (mp) => mp.partIndex === endBox.partIndex && mp.measureIndex === endSys.startMeasure
-          );
-          const leftEdgeX = endSysMPs.length > 0
-            ? endSysMPs[0].x
-            : endBox.headX - 100;
-
-          drawCurve(
-            leftEdgeX, curveY(endBox),
-            endBox.headX, curveY(endBox),
-            direction,
-          );
+          // Cross-system — two partial ties
+          if (startSN) drawTie(startSN, null);
+          if (endSN) drawTie(null, endSN);
         }
       }
 
       // Cross-measure ties: last event with tied flag → first event of next measure
-      for (const voice of measure.voices) {
+      for (let vi = 0; vi < measure.voices.length; vi++) {
+        const voice = measure.voices[vi];
         const lastEvent = voice.events[voice.events.length - 1];
         if (!lastEvent) continue;
 
         const nextMeasure = part.measures[mi + 1];
         if (!nextMeasure) continue;
-        const nextVoice = nextMeasure.voices[measure.voices.indexOf(voice)];
+        const nextVoice = nextMeasure.voices[vi];
         if (!nextVoice || nextVoice.events.length === 0) continue;
         const nextEvent = nextVoice.events[0];
 
+        const startSN = staveNotes.get(lastEvent.id);
+        const endSN = staveNotes.get(nextEvent.id);
+
         if (lastEvent.kind === "note" && lastEvent.head.tied) {
-          const startBox = noteBoxes.get(lastEvent.id);
-          const endBox = noteBoxes.get(nextEvent.id);
-          if (!startBox || !endBox) continue;
+          const startSys = systemForMeasure(mi);
+          const endSys = systemForMeasure(mi + 1);
+          if (!startSys || !endSys) continue;
+
+          if (startSys.lineIndex === endSys.lineIndex) {
+            if (startSN && endSN) drawTie(startSN, endSN);
+          } else {
+            if (startSN) drawTie(startSN, null);
+            if (endSN) drawTie(null, endSN);
+          }
+        } else if (lastEvent.kind === "chord") {
+          const tiedIndexes = lastEvent.heads
+            .map((h, idx) => (h.tied ? idx : -1))
+            .filter((idx) => idx >= 0);
+          if (tiedIndexes.length === 0) continue;
 
           const startSys = systemForMeasure(mi);
           const endSys = systemForMeasure(mi + 1);
           if (!startSys || !endSys) continue;
 
-          const tieY = (box: NoteBox) => box.headY + box.headHeight / 2;
-
-          if (startSys.lineIndex === endSys.lineIndex) {
-            drawCurve(
-              startBox.headX + startBox.headWidth, tieY(startBox),
-              endBox.headX, tieY(endBox),
-              "above",
-            );
-          } else {
-            // Cross-system tie
-            const startSysMPs = measurePositions.filter(
-              (mp) => mp.partIndex === startBox.partIndex && mp.measureIndex === startSys.endMeasure - 1
-            );
-            const rightEdgeX = startSysMPs.length > 0
-              ? startSysMPs[0].x + startSysMPs[0].width
-              : startBox.headX + 50;
-
-            drawCurve(
-              startBox.headX + startBox.headWidth, tieY(startBox),
-              rightEdgeX, tieY(startBox),
-              "above",
-            );
-
-            const endSysMPs = measurePositions.filter(
-              (mp) => mp.partIndex === endBox.partIndex && mp.measureIndex === endSys.startMeasure
-            );
-            const leftEdgeX = endSysMPs.length > 0
-              ? endSysMPs[0].x
-              : endBox.headX - 50;
-
-            drawCurve(
-              leftEdgeX, tieY(endBox),
-              endBox.headX, tieY(endBox),
-              "above",
-            );
-          }
-        } else if (lastEvent.kind === "chord") {
-          // Chord ties: check each head
-          for (const head of lastEvent.heads) {
-            if (!head.tied) continue;
-            const startBox = noteBoxes.get(lastEvent.id);
-            const endBox = noteBoxes.get(nextEvent.id);
-            if (!startBox || !endBox) continue;
-
-            const startSys = systemForMeasure(mi);
-            const endSys = systemForMeasure(mi + 1);
-            if (!startSys || !endSys) continue;
-
-            const tieY = (box: NoteBox) => box.headY + box.headHeight / 2;
-
+          for (const headIdx of tiedIndexes) {
             if (startSys.lineIndex === endSys.lineIndex) {
-              drawCurve(
-                startBox.headX + startBox.headWidth, tieY(startBox),
-                endBox.headX, tieY(endBox),
-                "above",
-              );
+              if (startSN && endSN) drawTie(startSN, endSN, [headIdx], [headIdx]);
             } else {
-              const rightEdgeX = startBox.headX + 50;
-              drawCurve(
-                startBox.headX + startBox.headWidth, tieY(startBox),
-                rightEdgeX, tieY(startBox),
-                "above",
-              );
-              const leftEdgeX = endBox.headX - 50;
-              drawCurve(
-                leftEdgeX, tieY(endBox),
-                endBox.headX, tieY(endBox),
-                "above",
-              );
+              if (startSN) drawTie(startSN, null, [headIdx], [headIdx]);
+              if (endSN) drawTie(null, endSN, [headIdx], [headIdx]);
             }
           }
         }
       }
     }
   }
-
-  rawCtx.restore();
 }
 
 export { MEASURE_WIDTH, STAFF_HEIGHT, LEFT_MARGIN, TOP_MARGIN, MEASURES_PER_LINE };
