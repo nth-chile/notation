@@ -40,6 +40,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "duration:64th", label: "64th note", category: "Duration", defaultBinding: { key: "7" } },
   { id: "toggle-dot", label: "Toggle dot", category: "Duration", defaultBinding: { key: "." } },
   { id: "toggle-step-entry", label: "Step entry mode", category: "Notes", defaultBinding: { key: "n" } },
+  { id: "toggle-insert-mode", label: "Insert mode", category: "Notes", defaultBinding: { key: "i" } },
   { id: "toggle-grace-note", label: "Grace note mode", category: "Notes", defaultBinding: { key: "g", shift: true } },
   { id: "toggle-slur", label: "Slur (start/end)", category: "Notes", defaultBinding: { key: "s", shift: true } },
 
