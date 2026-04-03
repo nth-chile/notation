@@ -114,10 +114,9 @@ export function KeyboardShortcuts() {
       "voice:4": () => setVoice(3),
 
       // Views
-      "view:songwriter": () => setViewMode("songwriter" as ViewModeType),
+      "view:full-score": () => setViewMode("full-score" as ViewModeType),
       "view:lead-sheet": () => setViewMode("lead-sheet" as ViewModeType),
       "view:tab": () => setViewMode("tab" as ViewModeType),
-      "view:full-score": () => setViewMode("full-score" as ViewModeType),
 
       // Annotation
       "chord-mode": () => enterChordMode(),

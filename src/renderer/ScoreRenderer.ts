@@ -130,7 +130,6 @@ export function renderScore(
   const visiblePartIndices = getVisiblePartIndices(score, viewConfig);
   const annotationFilter = viewConfig?.showAnnotations;
   const showPartNames = viewConfig?.layoutConfig.showPartNames ?? true;
-  const isSongwriterMode = viewConfig?.type === "songwriter";
 
   // Build a filtered score for layout computation
   const filteredScore = filterScoreParts(score, visiblePartIndices);
@@ -373,10 +372,6 @@ export function renderScore(
             }
           }
 
-          // In songwriter mode, render chord symbols larger above the staff
-          if (isSongwriterMode && si === 0) {
-            renderSongwriterChords(rawCtx, measureToRender, layout.x, layout.y, layout.width);
-          }
 
           mi++;
         }
@@ -717,25 +712,6 @@ function filterAnnotations(
   allowedKinds: AnnotationFilter[]
 ): Annotation[] {
   return annotations.filter((a) => allowedKinds.includes(a.kind as AnnotationFilter));
-}
-
-/**
- * Render chord symbols with larger, more prominent text for songwriter mode.
- */
-function renderSongwriterChords(
-  rawCtx: CanvasRenderingContext2D,
-  m: { annotations: Annotation[] },
-  x: number,
-  y: number,
-  _width: number
-): void {
-  if (!rawCtx.save) return;
-  const chords = m.annotations.filter((a) => a.kind === "chord-symbol");
-  if (chords.length === 0) return;
-
-  // Songwriter mode already renders chord symbols via the normal path,
-  // but we draw an additional larger overlay
-  // This is handled by the stylesheet override, so nothing extra needed here.
 }
 
 export { MEASURE_WIDTH, STAFF_HEIGHT, LEFT_MARGIN, TOP_MARGIN, MEASURES_PER_LINE };

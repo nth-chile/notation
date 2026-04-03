@@ -12,7 +12,6 @@ const COMMAND_TO_ACTION: Record<string, string> = {
   "notation.barline": "barline-popover",
   "notation.view-full-score": "view:full-score",
   "notation.view-lead-sheet": "view:lead-sheet",
-  "notation.view-songwriter": "view:songwriter",
   "notation.view-tab": "view:tab",
   "notation.play": "play-pause",
   "notation.toggle-chat": "toggle-right-sidebar",

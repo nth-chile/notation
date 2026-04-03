@@ -1,6 +1,5 @@
 import type { NotationPlugin, PluginAPI } from "../PluginAPI";
 import {
-  songwriterConfig,
   leadSheetConfig,
   tabConfig,
   fullScoreConfig,
@@ -10,15 +9,9 @@ export const ViewsPlugin: NotationPlugin = {
   id: "notation.views",
   name: "View Modes",
   version: "1.0.0",
-  description: "Songwriter, Lead Sheet, Tab, and Full Score view modes",
+  description: "Full Score, Lead Sheet, and Tab view modes",
 
   activate(api: PluginAPI) {
-    api.registerView("view.songwriter", {
-      name: "Songwriter",
-      icon: "\u266B",
-      getViewConfig: songwriterConfig,
-    });
-
     api.registerView("view.lead-sheet", {
       name: "Lead Sheet",
       icon: "\u266A",
