@@ -1,7 +1,7 @@
 import type { Command, EditorSnapshot } from "./Command";
 
-// Annotations that apply to the whole score, not just one part
-const GLOBAL_ANNOTATION_KINDS = new Set(["rehearsal-mark", "tempo-mark"]);
+// Score-level annotations that should transfer when a part is deleted
+const SCORE_LEVEL_ANNOTATION_KINDS = new Set(["rehearsal-mark", "tempo-mark", "chord-symbol"]);
 
 export class RemovePart implements Command {
   description = "Remove part";
@@ -22,23 +22,38 @@ export class RemovePart implements Command {
 
     const removedPart = score.parts[this.partIndex];
 
-    // Transfer global annotations to the next available part
+    // Transfer score-level data to the next available part
     const targetPartIndex = this.partIndex === 0 ? 1 : 0;
     const targetPart = score.parts[targetPartIndex];
     if (targetPart) {
       for (let mi = 0; mi < removedPart.measures.length && mi < targetPart.measures.length; mi++) {
-        const removedMeasure = removedPart.measures[mi];
-        const targetMeasure = targetPart.measures[mi];
-        for (const ann of removedMeasure.annotations) {
-          if (GLOBAL_ANNOTATION_KINDS.has(ann.kind)) {
-            // Only transfer if the target doesn't already have this type at this position
-            const alreadyHas = targetMeasure.annotations.some(
-              (a) => a.kind === ann.kind && ("beat" in a && "beat" in ann ? a.beat === ann.beat : true)
-            );
-            if (!alreadyHas) {
-              targetMeasure.annotations.push(ann);
-            }
-          }
+        const src = removedPart.measures[mi];
+        const dst = targetPart.measures[mi];
+
+        // Transfer score-level annotations
+        for (const ann of src.annotations) {
+          if (!SCORE_LEVEL_ANNOTATION_KINDS.has(ann.kind)) continue;
+          const isDup = dst.annotations.some(a => a.kind === ann.kind &&
+            ("text" in a && "text" in ann ? (a as any).text === (ann as any).text : true));
+          if (!isDup) dst.annotations.push(ann);
+        }
+
+        // Transfer navigation marks (volta, coda, segno, D.S., D.C., Fine)
+        if (src.navigation && !dst.navigation) {
+          dst.navigation = { ...src.navigation };
+        } else if (src.navigation && dst.navigation) {
+          if (src.navigation.volta && !dst.navigation.volta) dst.navigation.volta = src.navigation.volta;
+          if (src.navigation.coda && !dst.navigation.coda) dst.navigation.coda = true;
+          if (src.navigation.segno && !dst.navigation.segno) dst.navigation.segno = true;
+          if (src.navigation.toCoda && !dst.navigation.toCoda) dst.navigation.toCoda = true;
+          if (src.navigation.fine && !dst.navigation.fine) dst.navigation.fine = true;
+          if (src.navigation.dsText && !dst.navigation.dsText) dst.navigation.dsText = src.navigation.dsText;
+          if (src.navigation.dcText && !dst.navigation.dcText) dst.navigation.dcText = src.navigation.dcText;
+        }
+
+        // Transfer barline type (prefer non-single)
+        if (src.barlineEnd !== "single" && dst.barlineEnd === "single") {
+          dst.barlineEnd = src.barlineEnd;
         }
       }
     }
