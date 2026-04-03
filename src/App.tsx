@@ -1,7 +1,7 @@
 import { ScoreCanvas } from "./components/ScoreCanvas";
 import { Toolbar } from "./components/Toolbar";
 import { StatusBar } from "./components/StatusBar";
-import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
+import { KeyboardShortcuts, emitFlash } from "./components/KeyboardShortcuts";
 import { TextInput } from "./components/TextInput";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { PluginPanel } from "./components/PluginPanel";
@@ -143,6 +143,7 @@ export function App() {
         if (handlers[actionId] && matchesBinding(e, binding)) {
           e.preventDefault();
           handlers[actionId]();
+          emitFlash(actionId);
           return;
         }
       }

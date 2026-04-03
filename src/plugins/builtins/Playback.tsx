@@ -40,10 +40,10 @@ function TransportPanel() {
   return (
     <>
       <div className="flex items-center gap-1">
-        <TooltipButton variant="ghost" size="icon" onClick={handlePlayPause} tooltip={isPlaying ? `Pause (${hotkey("play-pause")})` : `Play (${hotkey("play-pause")})`}>
+        <TooltipButton variant="ghost" size="icon" onClick={handlePlayPause} tooltip={isPlaying ? `Pause (${hotkey("play-pause")})` : `Play (${hotkey("play-pause")})`} actionId="play-pause">
           {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
         </TooltipButton>
-        <TooltipButton variant="ghost" size="icon" onClick={() => stopPlayback()} tooltip={`Stop (${hotkey("stop-playback")})`}>
+        <TooltipButton variant="ghost" size="icon" onClick={() => stopPlayback()} tooltip={`Stop (${hotkey("stop-playback")})`} actionId="stop-playback">
           <Square className="h-3.5 w-3.5" />
         </TooltipButton>
       </div>
@@ -70,6 +70,7 @@ function TransportPanel() {
         size="icon"
         onClick={toggleMetronome}
         tooltip={`Metronome (${hotkey("toggle-metronome")})`}
+        actionId="toggle-metronome"
       >
         <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M5 19.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5L15 5H9L5 19.5Z" />
