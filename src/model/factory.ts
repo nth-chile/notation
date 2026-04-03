@@ -145,5 +145,5 @@ export function emptyScore(): Score {
   for (let i = 0; i < 4; i++) {
     emptyMeasures.push(measure([voice([])]));
   }
-  return score("", "", [part("Part 1", "P1", emptyMeasures)]);
+  return score("", "", [part("Piano", "Pno.", emptyMeasures, "piano")]);
 }

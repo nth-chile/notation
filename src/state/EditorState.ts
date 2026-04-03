@@ -18,6 +18,7 @@ import { getDefaultViewConfig, type ViewConfig } from "../views/ViewMode";
 import { DURATION_TYPES_ORDERED } from "../model";
 import { durationToTicks as durationToTicksFn } from "../model/duration";
 import { factory } from "../model";
+import { getInstrument } from "../model/instruments";
 import { defaultInputState, type InputState, type CursorPosition } from "../input/InputState";
 import { CommandHistory } from "../commands/CommandHistory";
 import type { Selection, NoteSelection } from "../plugins/PluginAPI";
@@ -201,8 +202,36 @@ const CLEF_DEFAULT_OCTAVE: Record<ClefType, number> = {
 function getEffectiveOctave(score: Score, cursor: CursorPosition, inputOctave: Octave): Octave {
   const measure = score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
   if (!measure) return inputOctave;
+
+  // Bass staff on grand staff instruments uses bass clef octave
+  if ((cursor.staveIndex ?? 0) >= 1) {
+    const offset = (CLEF_DEFAULT_OCTAVE["bass"] ?? 3) - 4;
+    return Math.max(0, Math.min(9, inputOctave + offset)) as Octave;
+  }
+
   const offset = (CLEF_DEFAULT_OCTAVE[measure.clef.type] ?? 4) - 4;
   return Math.max(0, Math.min(9, inputOctave + offset)) as Octave;
+}
+
+/** Find the flat voice index for voice N on a given staff. Creates the voice if needed. */
+function findOrCreateVoiceForStaff(measure: Measure, staveIndex: number, localVoiceN: number): number {
+  const staffVoices = measure.voices
+    .map((v, i) => ({ voice: v, flatIndex: i }))
+    .filter((e) => (e.voice.staff ?? 0) === staveIndex);
+  if (localVoiceN < staffVoices.length) {
+    return staffVoices[localVoiceN].flatIndex;
+  }
+  // Create voices up to the requested local index
+  let flatIndex = -1;
+  for (let i = staffVoices.length; i <= localVoiceN; i++) {
+    flatIndex = measure.voices.length;
+    measure.voices.push({
+      id: newId<VoiceId>("vce"),
+      events: [],
+      staff: staveIndex,
+    });
+  }
+  return flatIndex;
 }
 
 /** Returns true if the cursor is on an existing event (not past the end) */
@@ -953,19 +982,32 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const score = structuredClone(s.score);
       const cursor = { ...s.inputState.cursor };
       const { partIndex, measureIndex } = cursor;
+      const staveIndex = cursor.staveIndex ?? 0;
 
       const measure = score.parts[partIndex]?.measures[measureIndex];
       if (!measure) return s;
 
-      // Auto-create voices up to the requested index
-      while (measure.voices.length <= n) {
-        measure.voices.push({
-          id: newId<VoiceId>("vce"),
-          events: [],
-        });
-      }
+      // Find existing voices on this staff
+      const staffVoices = measure.voices
+        .map((v, i) => ({ voice: v, flatIndex: i }))
+        .filter((e) => (e.voice.staff ?? 0) === staveIndex);
 
-      cursor.voiceIndex = n;
+      if (n < staffVoices.length) {
+        // Voice already exists on this staff
+        cursor.voiceIndex = staffVoices[n].flatIndex;
+      } else {
+        // Create new voices on this staff up to the requested index
+        let flatIndex = cursor.voiceIndex;
+        for (let i = staffVoices.length; i <= n; i++) {
+          flatIndex = measure.voices.length;
+          measure.voices.push({
+            id: newId<VoiceId>("vce"),
+            events: [],
+            staff: staveIndex,
+          });
+        }
+        cursor.voiceIndex = flatIndex;
+      }
       cursor.eventIndex = 0;
 
       return {
@@ -1097,6 +1139,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
                 measureIndex: box.measureIndex,
                 voiceIndex: vi,
                 eventIndex: ei,
+                staveIndex: voice.staff ?? 0,
               },
               textInputMode: box.kind === "chord-symbol" ? "chord" : "lyric",
               textInputBuffer: "",
@@ -1371,6 +1414,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       cursor.partIndex = partIndex;
       cursor.eventIndex = 0;
       cursor.voiceIndex = 0;
+      cursor.staveIndex = 0;
       return { inputState: { ...s.inputState, cursor } };
     });
   },
@@ -1378,13 +1422,49 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   moveCursorPart(direction: "up" | "down") {
     set((s) => {
       const cursor = { ...s.inputState.cursor };
+      const part = s.score.parts[cursor.partIndex];
+      const instrument = part ? getInstrument(part.instrumentId) : undefined;
+      const staveCount = instrument?.staves ?? 1;
+      const currentStave = cursor.staveIndex ?? 0;
+
+      // Grand staff: navigate between staves before moving to another part
+      if (staveCount >= 2) {
+        if (direction === "down" && currentStave === 0) {
+          const score = structuredClone(s.score);
+          const measure = score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
+          if (measure) {
+            cursor.staveIndex = 1;
+            cursor.voiceIndex = findOrCreateVoiceForStaff(measure, 1, 0);
+            cursor.eventIndex = 0;
+            return { score, inputState: { ...s.inputState, voice: 0, cursor } };
+          }
+        }
+        if (direction === "up" && currentStave >= 1) {
+          cursor.staveIndex = 0;
+          cursor.voiceIndex = 0; // Voice 0 is always on staff 0
+          cursor.eventIndex = 0;
+          return { inputState: { ...s.inputState, voice: 0, cursor } };
+        }
+      }
+
+      // Move to adjacent part
       const newPartIndex =
         direction === "up" ? cursor.partIndex - 1 : cursor.partIndex + 1;
       if (newPartIndex < 0 || newPartIndex >= s.score.parts.length) return s;
       cursor.partIndex = newPartIndex;
       cursor.eventIndex = 0;
       cursor.voiceIndex = 0;
-      return { inputState: { ...s.inputState, cursor } };
+
+      // When moving up, land on the bottom staff of the target part
+      if (direction === "up") {
+        const targetPart = s.score.parts[newPartIndex];
+        const targetInstrument = targetPart ? getInstrument(targetPart.instrumentId) : undefined;
+        cursor.staveIndex = (targetInstrument?.staves ?? 1) >= 2 ? 1 : 0;
+      } else {
+        cursor.staveIndex = 0;
+      }
+
+      return { inputState: { ...s.inputState, voice: 0, cursor } };
     });
   },
 

@@ -22,10 +22,12 @@ export class InsertNote implements Command {
     if (!measure) return state;
 
     // Auto-create voices up to the requested index
+    const staveIndex = input.cursor.staveIndex ?? 0;
     while (measure.voices.length <= voiceIndex) {
       measure.voices.push({
         id: newId<import("../model/ids").VoiceId>("vce"),
         events: [],
+        staff: staveIndex,
       });
     }
     const voice = measure.voices[voiceIndex];
@@ -51,6 +53,7 @@ export class InsertNote implements Command {
           nextMeasure.voices.push({
             id: newId<import("../model/ids").VoiceId>("vce"),
             events: [],
+            staff: staveIndex,
           });
         }
 
