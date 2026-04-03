@@ -304,10 +304,10 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
             )}
           >
             <div className="flex items-center gap-1">
-              <TooltipButton variant="ghost" size="icon" onClick={undo} tooltip={`Undo (${hotkey("undo")})`}>
+              <TooltipButton variant="ghost" size="icon" onClick={undo} tooltip={`Undo (${hotkey("undo")})`} actionId="undo">
                 <Undo2 className="h-4 w-4" />
               </TooltipButton>
-              <TooltipButton variant="ghost" size="icon" onClick={redo} tooltip={`Redo (${hotkey("redo")})`}>
+              <TooltipButton variant="ghost" size="icon" onClick={redo} tooltip={`Redo (${hotkey("redo")})`} actionId="redo">
                 <Redo2 className="h-4 w-4" />
               </TooltipButton>
             </div>
@@ -316,17 +316,17 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
 
             <div className="flex items-center gap-1">
               {onNew && (
-                <TooltipButton variant="ghost" size="sm" onClick={onNew} tooltip={`New score (${hotkey("file:new")})`}>
+                <TooltipButton variant="ghost" size="sm" onClick={onNew} tooltip={`New score (${hotkey("file:new")})`} actionId="file:new">
                   New
                 </TooltipButton>
               )}
               {onOpen && (
-                <TooltipButton variant="ghost" size="sm" onClick={onOpen} tooltip={`Open file (${hotkey("file:open")})`}>
+                <TooltipButton variant="ghost" size="sm" onClick={onOpen} tooltip={`Open file (${hotkey("file:open")})`} actionId="file:open">
                   Open
                 </TooltipButton>
               )}
               {onSave && (
-                <TooltipButton variant="ghost" size="sm" onClick={onSave} tooltip={`Save file (${hotkey("file:save")})`}>
+                <TooltipButton variant="ghost" size="sm" onClick={onSave} tooltip={`Save file (${hotkey("file:save")})`} actionId="file:save">
                   Save
                 </TooltipButton>
               )}
@@ -346,13 +346,13 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
             <div className="flex-1" />
 
             {onTogglePlugins && (
-              <TooltipButton variant="ghost" size="icon" onClick={onTogglePlugins} tooltip={`Plugins (${hotkey("toggle-plugins")})`}>
+              <TooltipButton variant="ghost" size="icon" onClick={onTogglePlugins} tooltip={`Plugins (${hotkey("toggle-plugins")})`} actionId="toggle-plugins">
                 <Puzzle className="h-4 w-4" />
               </TooltipButton>
             )}
 
             {onToggleSettings && (
-              <TooltipButton variant="ghost" size="icon" onClick={onToggleSettings} tooltip={`Settings (${hotkey("toggle-settings")})`}>
+              <TooltipButton variant="ghost" size="icon" onClick={onToggleSettings} tooltip={`Settings (${hotkey("toggle-settings")})`} actionId="toggle-settings">
                 <Settings className="h-4 w-4" />
               </TooltipButton>
             )}
@@ -378,6 +378,7 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
                 size="icon"
                 onClick={() => toggleSidebar("left")}
                 tooltip={`${sidebarOpen.left ? "Hide left sidebar" : "Show left sidebar"} (${hotkey("toggle-left-sidebar")})`}
+                actionId="toggle-left-sidebar"
               >
                 <PanelLeft className="h-4 w-4" />
               </TooltipButton>
@@ -404,6 +405,7 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
                 size="icon"
                 onClick={() => toggleSidebar("right")}
                 tooltip={`${sidebarOpen.right ? "Hide right sidebar" : "Show right sidebar"} (${hotkey("toggle-right-sidebar")})`}
+                actionId="toggle-right-sidebar"
               >
                 <PanelRight className="h-4 w-4" />
               </TooltipButton>

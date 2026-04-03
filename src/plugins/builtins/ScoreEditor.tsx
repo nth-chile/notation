@@ -37,6 +37,7 @@ function NoteInputPanel() {
           size="icon"
           onClick={toggleStepEntry}
           tooltip={`Step entry (${hotkey("toggle-step-entry")})`}
+          actionId="toggle-step-entry"
           className="text-xs font-bold"
         >
           N
@@ -46,6 +47,7 @@ function NoteInputPanel() {
           size="icon"
           onClick={toggleGraceNoteMode}
           tooltip={`Grace note (${hotkey("toggle-grace-note")})`}
+          actionId="toggle-grace-note"
           className="text-xs font-bold italic"
         >
           G
@@ -58,6 +60,7 @@ function NoteInputPanel() {
             size="icon"
             onClick={() => setDuration(d.type)}
             tooltip={`${d.type} (${hotkey(d.actionId)})`}
+            actionId={d.actionId}
             className="text-base"
           >
             {d.label}
@@ -68,6 +71,7 @@ function NoteInputPanel() {
           size="icon"
           onClick={toggleDot}
           tooltip={`Dot (${hotkey("toggle-dot")})`}
+          actionId="toggle-dot"
           className="text-base"
         >
           {"\u2022"}{inputState.duration.dots > 0 ? inputState.duration.dots : ""}
@@ -85,6 +89,7 @@ function NoteInputPanel() {
             size="icon"
             onClick={() => setAccidental(a.acc)}
             tooltip={hotkey(`accidental:${a.acc}`) ? `${a.acc} (${hotkey(`accidental:${a.acc}`)})` : a.acc}
+            actionId={`accidental:${a.acc}`}
             className="text-base"
           >
             {a.label}
@@ -141,9 +146,6 @@ export const ScoreEditorPlugin: NotationPlugin = {
     // Views
     api.registerCommand("notation.view-full-score", "View: Full Score", () => {
       useEditorStore.getState().setViewMode("full-score");
-    });
-    api.registerCommand("notation.view-lead-sheet", "View: Lead Sheet", () => {
-      useEditorStore.getState().setViewMode("lead-sheet");
     });
     api.registerCommand("notation.view-tab", "View: Tab", () => {
       useEditorStore.getState().setViewMode("tab");

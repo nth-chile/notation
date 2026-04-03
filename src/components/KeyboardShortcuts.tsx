@@ -5,6 +5,16 @@ import type { ViewModeType } from "../views/ViewMode";
 import { getSettings, matchesBinding } from "../settings";
 import { getGlobalPluginManager } from "../plugins/PluginManager";
 
+// Flash event bus — toolbar buttons subscribe to this
+const flashListeners = new Set<(actionId: string) => void>();
+export function onFlash(cb: (actionId: string) => void) {
+  flashListeners.add(cb);
+  return () => { flashListeners.delete(cb); };
+}
+export function emitFlash(actionId: string) {
+  for (const cb of flashListeners) cb(actionId);
+}
+
 export function KeyboardShortcuts() {
   const insertNote = useEditorStore((s) => s.insertNote);
   const insertRest = useEditorStore((s) => s.insertRest);
@@ -115,7 +125,6 @@ export function KeyboardShortcuts() {
 
       // Views
       "view:full-score": () => setViewMode("full-score" as ViewModeType),
-      "view:lead-sheet": () => setViewMode("lead-sheet" as ViewModeType),
       "view:tab": () => setViewMode("tab" as ViewModeType),
 
       // Annotation
@@ -153,6 +162,7 @@ export function KeyboardShortcuts() {
           if (handler) {
             e.preventDefault();
             handler();
+            emitFlash(actionId);
             return;
           }
         }
