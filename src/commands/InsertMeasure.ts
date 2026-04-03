@@ -22,7 +22,7 @@ export class InsertMeasure implements Command {
       keySignature: { ...currentMeasure.keySignature },
       barlineEnd: "single",
       annotations: [],
-      voices: [{ id: newId<VoiceId>("vce"), events: [] }],
+      voices: currentMeasure.voices.map(() => ({ id: newId<VoiceId>("vce"), events: [] })),
     };
 
     // Insert after current measure

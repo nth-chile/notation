@@ -38,6 +38,7 @@ export class InsertRest implements Command {
           nextMeasure.voices.push({
             id: newId<import("../model/ids").VoiceId>("vce"),
             events: [],
+            staff: input.cursor.staveIndex ?? 0,
           });
         }
 

@@ -42,7 +42,7 @@ function usePopoverPosition() {
 
   // Fall back to measure position
   const mp = measurePositions.find(
-    (p) => p.partIndex === cursor.partIndex && p.measureIndex === cursor.measureIndex,
+    (p) => p.partIndex === cursor.partIndex && p.measureIndex === cursor.measureIndex && p.staveIndex === 0,
   );
   if (mp) return { top: mp.y + mp.height + 8, left: mp.x + 60 };
   return { top: 100, left: 100 };

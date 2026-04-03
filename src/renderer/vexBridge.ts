@@ -355,6 +355,7 @@ export function renderMeasure(
   measureIndex = 0,
   activeNoteIds?: Set<NoteEventId>,
   prevMeasure?: Measure,
+  voiceFilter?: number[],
 ): MeasureRenderResult {
   const style = resolveStylesheet(stylesheet);
 
@@ -484,9 +485,12 @@ export function renderMeasure(
   const allTuplets: VexTuplet[] = [];
 
   // Build VexFlow voices for all model voices that have events
-  const activeVoiceCount = m.voices.filter(v => v && v.events.length > 0).length;
+  const activeVoiceCount = m.voices.filter((v, i) =>
+    v && v.events.length > 0 && (!voiceFilter || voiceFilter.includes(i))
+  ).length;
   const multiVoice = activeVoiceCount > 1;
   for (let vi = 0; vi < m.voices.length; vi++) {
+    if (voiceFilter && !voiceFilter.includes(vi)) continue;
     const modelVoice = m.voices[vi];
     if (!modelVoice || modelVoice.events.length === 0) continue;
 
@@ -962,20 +966,28 @@ export function renderBrace(
   topY: number,
   bottomY: number
 ): void {
-  const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
-  if (rawCtx.save) {
-    rawCtx.save();
-    rawCtx.strokeStyle = "#000";
-    rawCtx.lineWidth = 2;
-    const midY = (topY + bottomY) / 2;
-    const height = bottomY - topY;
-    // Draw a simple curly brace using bezier curves
-    rawCtx.beginPath();
-    rawCtx.moveTo(x, topY);
-    rawCtx.bezierCurveTo(x - 8, topY + height * 0.25, x - 8, midY - 5, x - 3, midY);
-    rawCtx.bezierCurveTo(x - 8, midY + 5, x - 8, topY + height * 0.75, x, bottomY);
-    rawCtx.stroke();
-    rawCtx.restore();
+  try {
+    const topStave = new Stave(x, topY, 0).setContext(ctx.context);
+    const bottomStave = new Stave(x, bottomY - 80, 0).setContext(ctx.context);
+    const connector = new StaveConnector(topStave, bottomStave);
+    connector.setType("brace");
+    connector.setContext(ctx.context).draw();
+  } catch {
+    // Fallback: manual bezier brace
+    const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+    if (rawCtx.save) {
+      rawCtx.save();
+      rawCtx.strokeStyle = "#000";
+      rawCtx.lineWidth = 2;
+      const midY = (topY + bottomY) / 2;
+      const height = bottomY - topY;
+      rawCtx.beginPath();
+      rawCtx.moveTo(x, topY);
+      rawCtx.bezierCurveTo(x - 8, topY + height * 0.25, x - 8, midY - 5, x - 3, midY);
+      rawCtx.bezierCurveTo(x - 8, midY + 5, x - 8, topY + height * 0.75, x, bottomY);
+      rawCtx.stroke();
+      rawCtx.restore();
+    }
   }
 }
 

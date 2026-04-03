@@ -1,7 +1,7 @@
 import type { Score, NoteEventId } from "../model";
 import { TICKS_PER_QUARTER, durationToTicks } from "../model/duration";
 import { StaveTie, type StaveNote } from "vexflow";
-import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, clearCanvas, type RenderContext, type NoteBox, type AnnotationBox } from "./vexBridge";
+import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, renderBrace, clearCanvas, type RenderContext, type NoteBox, type AnnotationBox } from "./vexBridge";
 import { renderTabMeasure } from "./TabRenderer";
 import { computeLayout, totalContentHeight, totalPageCount, partStaveCount, DEFAULT_LAYOUT, type LayoutConfig, type SystemLine } from "./SystemLayout";
 import type { CursorPosition } from "../input/InputState";
@@ -10,6 +10,14 @@ import type { Annotation } from "../model/annotations";
 import type { Selection } from "../plugins/PluginAPI";
 import type { Measure } from "../model";
 import { useEditorStore } from "../state/EditorState";
+
+/** Get voice indices for a given stave from a measure's voices. */
+function voiceIndicesForStave(m: Measure, si: number, staveCount: number): number[] | undefined {
+  if (staveCount < 2) return undefined;
+  return m.voices
+    .map((v, i) => (v.staff ?? 0) === si ? i : -1)
+    .filter((i) => i >= 0);
+}
 
 /** Check if a measure contains only rests or empty voices (rendering-only check). */
 function isMeasureAllRests(m: Measure | undefined): boolean {
@@ -68,7 +76,7 @@ function detectRestRuns(
 export interface ScoreRenderResult {
   noteBoxes: Map<NoteEventId, NoteBox>;
   annotationBoxes: AnnotationBox[];
-  measurePositions: { partIndex: number; measureIndex: number; x: number; y: number; width: number; height: number }[];
+  measurePositions: { partIndex: number; measureIndex: number; staveIndex: number; x: number; y: number; width: number; height: number }[];
   contentHeight: number;
 }
 
@@ -272,19 +280,18 @@ export function renderScore(
             );
 
             // Add measure positions for all measures in the run (for cursor/selection)
-            if (si === 0) {
-              for (let r = 0; r < restRunLength; r++) {
-                const rl = staveLayouts[posInLine + r];
-                if (rl) {
-                  measurePositions.push({
-                    partIndex: originalPi,
-                    measureIndex: mi + r,
-                    x: layout.x,
-                    y: layout.y,
-                    width: combinedWidth,
-                    height: config.staffHeight,
-                  });
-                }
+            for (let r = 0; r < restRunLength; r++) {
+              const rl = staveLayouts[posInLine + r];
+              if (rl) {
+                measurePositions.push({
+                  partIndex: originalPi,
+                  measureIndex: mi + r,
+                  staveIndex: si,
+                  x: layout.x,
+                  y: layout.y,
+                  width: combinedWidth,
+                  height: config.staffHeight,
+                });
               }
             }
 
@@ -352,20 +359,19 @@ export function renderScore(
               mi,
               activeNoteIds,
               mi > 0 ? part.measures[mi - 1] : undefined,
+              voiceIndicesForStave(m, si, staveCount),
             );
           }
 
-          // Only add to measurePositions for the primary stave (staveIndex 0)
-          if (si === 0) {
-            measurePositions.push({
-              partIndex: originalPi,
-              measureIndex: mi,
-              x: layout.x,
-              y: layout.y,
-              width: layout.width,
-              height: config.staffHeight,
-            });
-          }
+          measurePositions.push({
+            partIndex: originalPi,
+            measureIndex: mi,
+            staveIndex: si,
+            x: layout.x,
+            y: layout.y,
+            width: layout.width,
+            height: config.staffHeight,
+          });
 
           for (const nb of result.noteBoxes) {
             allNoteBoxes.set(nb.id, nb);
@@ -391,14 +397,28 @@ export function renderScore(
     if (rawCtx.save && showPartNames) {
       for (let filteredPi = 0; filteredPi < filteredScore.parts.length; filteredPi++) {
         const part = filteredScore.parts[filteredPi];
-        const staveLayouts = system.staves.filter(
+        const sc = partStaveCount(filteredScore, filteredPi);
+        const stave0Layouts = system.staves.filter(
           (s) => s.partIndex === filteredPi && s.staveIndex === 0
         );
-        if (staveLayouts.length === 0) continue;
+        if (stave0Layouts.length === 0) continue;
 
-        const firstStave = staveLayouts[0];
+        const firstStave = stave0Layouts[0];
         const labelX = config.leftMargin;
-        const labelY = firstStave.y + config.staffHeight / 2 + 4;
+
+        // Center label between top and bottom staves for grand staff
+        let labelY: number;
+        if (sc >= 2) {
+          const stave1Layouts = system.staves.filter(
+            (s) => s.partIndex === filteredPi && s.staveIndex === 1
+          );
+          const bottomY = stave1Layouts.length > 0
+            ? stave1Layouts[0].y + config.staffHeight
+            : firstStave.y + config.staffHeight;
+          labelY = (firstStave.y + bottomY) / 2 + 4;
+        } else {
+          labelY = firstStave.y + config.staffHeight / 2 + 4;
+        }
 
         rawCtx.save();
         rawCtx.font = isFirstSystem ? "bold 11px sans-serif" : "10px sans-serif";
@@ -411,10 +431,21 @@ export function renderScore(
         );
         rawCtx.textAlign = "start";
         rawCtx.restore();
+
+        // Draw brace for grand staff instruments
+        if (sc >= 2) {
+          const stave1Layouts = system.staves.filter(
+            (s) => s.partIndex === filteredPi && s.staveIndex === 1
+          );
+          if (stave1Layouts.length > 0) {
+            renderBrace(ctx, firstStave.x, firstStave.y, stave1Layouts[0].y + config.staffHeight);
+          }
+        }
       }
 
       // Draw system barlines (vertical line connecting all staves at the start of each system)
-      if (filteredScore.parts.length > 1) {
+      // For grand staff single-part or multi-part scores
+      {
         const firstPartStaves = system.staves.filter(
           (s) => s.partIndex === 0 && s.staveIndex === 0
         );
@@ -424,7 +455,9 @@ export function renderScore(
           (s) => s.partIndex === lastPartIndex && s.staveIndex === lastStaveIdx
         );
 
-        if (firstPartStaves.length > 0 && lastPartStaves.length > 0) {
+        // Draw if multiple parts, or if single part with grand staff
+        const needsBarline = filteredScore.parts.length > 1 || lastStaveIdx > 0;
+        if (needsBarline && firstPartStaves.length > 0 && lastPartStaves.length > 0) {
           const topY = firstPartStaves[0].y;
           const bottomY = lastPartStaves[0].y + config.staffHeight;
           const barlineX = firstPartStaves[0].x;
@@ -470,7 +503,7 @@ function drawCursor(
   noteBoxes?: Map<NoteEventId, NoteBox>
 ): void {
   const mp = measurePositions.find(
-    (p) => p.partIndex === cursor.partIndex && p.measureIndex === cursor.measureIndex
+    (p) => p.partIndex === cursor.partIndex && p.measureIndex === cursor.measureIndex && p.staveIndex === (cursor.staveIndex ?? 0)
   );
   if (!mp) return;
 
@@ -481,7 +514,18 @@ function drawCursor(
   const canvasCtx = canvas.getContext("2d");
   if (!rawCtx.strokeStyle) return;
 
-  const cursorColor = VOICE_COLORS[cursor.voiceIndex] ?? VOICE_COLORS[0];
+  // Compute local voice index within the staff for color
+  const cursorMeasure = score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
+  const cursorStave = cursor.staveIndex ?? 0;
+  let localVoiceIdx = 0;
+  if (cursorMeasure) {
+    const staffVoices = cursorMeasure.voices
+      .map((v, i) => i)
+      .filter((i) => (cursorMeasure.voices[i]?.staff ?? 0) === cursorStave);
+    localVoiceIdx = staffVoices.indexOf(cursor.voiceIndex);
+    if (localVoiceIdx < 0) localVoiceIdx = 0;
+  }
+  const cursorColor = VOICE_COLORS[localVoiceIdx] ?? VOICE_COLORS[0];
 
   // Try to find the actual noteBox at the cursor position
   let targetBox: NoteBox | undefined;
@@ -606,7 +650,7 @@ function drawPlaybackCursor(
   }
 
   const mp = measurePositions.find(
-    (p) => p.partIndex === 0 && p.measureIndex === targetMeasureIndex
+    (p) => p.partIndex === 0 && p.measureIndex === targetMeasureIndex && p.staveIndex === 0
   );
   if (!mp) return;
 

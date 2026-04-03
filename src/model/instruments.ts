@@ -18,7 +18,7 @@ export const INSTRUMENTS: InstrumentDef[] = [
     clef: "treble",
     midiProgram: 0,
     transposition: 0,
-    staves: 1,
+    staves: 2,
   },
   {
     id: "guitar",

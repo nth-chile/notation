@@ -63,11 +63,15 @@ export function ScoreOverlay({ width, height }: Props) {
     // Click on a note — move cursor there
     for (const [, nb] of noteBoxes) {
       if (x >= nb.x && x <= nb.x + nb.width && y >= nb.y && y <= nb.y + nb.height) {
+        // Determine staveIndex from the voice's staff property
+        const clickedVoice = score.parts[nb.partIndex]?.measures[nb.measureIndex]?.voices[nb.voiceIndex];
+        const clickedStaveIndex = clickedVoice?.staff ?? 0;
         const cursor: CursorPosition = {
           partIndex: nb.partIndex,
           measureIndex: nb.measureIndex,
           voiceIndex: nb.voiceIndex,
           eventIndex: nb.eventIndex,
+          staveIndex: clickedStaveIndex,
         };
         setCursorDirect(cursor);
 
@@ -104,15 +108,25 @@ export function ScoreOverlay({ width, height }: Props) {
       }
     }
 
-    // Click on measure — move cursor to measure start, preserve current voice
+    // Click on measure — move cursor to measure start
     const currentVoice = useEditorStore.getState().inputState.cursor.voiceIndex;
+    const currentStave = useEditorStore.getState().inputState.cursor.staveIndex ?? 0;
     for (const mp of measurePositions) {
       if (x >= mp.x && x <= mp.x + mp.width && y >= mp.y && y <= mp.y + mp.height) {
+        const clickedStave = mp.staveIndex ?? 0;
+        let voiceIndex = currentVoice;
+        if (clickedStave !== currentStave) {
+          // Find first voice on the target staff
+          const measure = score.parts[mp.partIndex]?.measures[mp.measureIndex];
+          const staffVoiceIdx = measure?.voices.findIndex((v) => (v.staff ?? 0) === clickedStave);
+          voiceIndex = staffVoiceIdx != null && staffVoiceIdx >= 0 ? staffVoiceIdx : 0;
+        }
         setCursorDirect({
           partIndex: mp.partIndex,
           measureIndex: mp.measureIndex,
-          voiceIndex: currentVoice,
+          voiceIndex,
           eventIndex: 0,
+          staveIndex: clickedStave,
         });
 
         if (e.shiftKey && anchorRef.current) {

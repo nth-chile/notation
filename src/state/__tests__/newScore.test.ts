@@ -54,8 +54,8 @@ describe("New score (reset)", () => {
 
   it("emptyScore part is named Part 1", () => {
     const score = emptyScore();
-    expect(score.parts[0].name).toBe("Part 1");
-    expect(score.parts[0].abbreviation).toBe("P1");
+    expect(score.parts[0].name).toBe("Piano");
+    expect(score.parts[0].abbreviation).toBe("Pno.");
   });
 
   it("clears filePath", () => {

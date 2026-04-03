@@ -31,7 +31,7 @@ export function ScoreCanvas() {
     const container = containerRef.current;
     if (!container || measurePositions.length === 0 || isPlaying) return;
     const mp = measurePositions.find(
-      (p) => p.partIndex === inputState.cursor.partIndex && p.measureIndex === inputState.cursor.measureIndex,
+      (p) => p.partIndex === inputState.cursor.partIndex && p.measureIndex === inputState.cursor.measureIndex && p.staveIndex === 0,
     );
     if (!mp) return;
 
@@ -105,7 +105,7 @@ export function ScoreCanvas() {
         const voice = score.parts[noteSelection.partIndex]?.measures[mi]?.voices[noteSelection.voiceIndex];
         if (!voice) continue;
         const mp = result.measurePositions.find(
-          (p) => p.partIndex === noteSelection.partIndex && p.measureIndex === mi
+          (p) => p.partIndex === noteSelection.partIndex && p.measureIndex === mi && p.staveIndex === 0
         );
         if (!mp) continue;
         const startIdx = mi === noteSelection.startMeasure ? noteSelection.startEvent : 0;

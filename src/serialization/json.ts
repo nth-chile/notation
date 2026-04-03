@@ -154,6 +154,7 @@ function measureToJson(m: Measure, index: number): Record<string, unknown> {
 
   obj.voices = m.voices.map((v) => ({
     events: v.events.map(eventToJson),
+    ...(v.staff != null && v.staff !== 0 ? { staff: v.staff } : {}),
   }));
 
   return obj;
@@ -399,7 +400,8 @@ export function parseMeasure(m: Record<string, unknown>): Measure {
           events.push(parseEvent(e));
         }
       }
-      voices.push({ id: newId<VoiceId>("vce"), events });
+      const staff = typeof v.staff === "number" ? v.staff : undefined;
+      voices.push({ id: newId<VoiceId>("vce"), events, ...(staff != null ? { staff } : {}) });
     }
   }
 

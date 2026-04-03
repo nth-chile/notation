@@ -3,8 +3,9 @@ import type { Duration, Accidental } from "../model";
 export interface CursorPosition {
   partIndex: number;
   measureIndex: number;
-  voiceIndex: number;
+  voiceIndex: number; // index into measure.voices flat array
   eventIndex: number;
+  staveIndex: number; // 0 = primary staff, 1 = bass staff for grand staff instruments
 }
 
 export interface InputState {
@@ -19,6 +20,7 @@ export interface InputState {
   textInputMode: "chord" | "lyric" | null;
   textInputBuffer: string;
   textInputInitialValue: string;
+  lyricVerse: number;
 }
 
 export function defaultInputState(): InputState {
@@ -31,6 +33,7 @@ export function defaultInputState(): InputState {
       measureIndex: 0,
       voiceIndex: 0,
       eventIndex: 0,
+      staveIndex: 0,
     },
     octave: 4,
     stepEntry: false,
@@ -39,5 +42,6 @@ export function defaultInputState(): InputState {
     textInputMode: null,
     textInputBuffer: "",
     textInputInitialValue: "",
+    lyricVerse: 1,
   };
 }

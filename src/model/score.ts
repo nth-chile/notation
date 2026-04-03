@@ -40,4 +40,5 @@ export interface Measure {
 export interface Voice {
   id: VoiceId;
   events: NoteEvent[];
+  staff?: number; // 0 (default) for primary staff, 1 for bass staff on grand staff instruments
 }

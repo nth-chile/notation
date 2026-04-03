@@ -5,8 +5,10 @@ import { Input } from "./ui/input";
 export function TextInput() {
   const textInputMode = useEditorStore((s) => s.inputState.textInputMode);
   const textInputInitialValue = useEditorStore((s) => s.inputState.textInputInitialValue);
+  const lyricVerse = useEditorStore((s) => s.inputState.lyricVerse);
   const commitTextInput = useEditorStore((s) => s.commitTextInput);
   const cancelTextInput = useEditorStore((s) => s.cancelTextInput);
+  const setLyricVerse = useEditorStore((s) => s.setLyricVerse);
   const cursor = useEditorStore((s) => s.inputState.cursor);
   const noteBoxes = useEditorStore((s) => s.noteBoxes);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -21,7 +23,7 @@ export function TextInput() {
         inputRef.current.select();
       }
     }
-  }, [textInputMode, textInputInitialValue, cursor.measureIndex, cursor.eventIndex]);
+  }, [textInputMode, textInputInitialValue, cursor.measureIndex, cursor.eventIndex, lyricVerse]);
 
   // Track scroll offset of the score container so the input follows the note
   useEffect(() => {
@@ -81,7 +83,7 @@ export function TextInput() {
 
   if (!textInputMode) return null;
 
-  const label = textInputMode === "chord" ? "Chord:" : "Lyric:";
+  const label = textInputMode === "chord" ? "Chord:" : lyricVerse > 1 ? `Lyric v${lyricVerse}:` : "Lyric:";
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
@@ -91,6 +93,18 @@ export function TextInput() {
     } else if (e.key === "Escape") {
       e.preventDefault();
       cancelTextInput();
+    } else if (textInputMode === "lyric" && e.key === "ArrowDown") {
+      e.preventDefault();
+      setLyricVerse(lyricVerse + 1);
+    } else if (textInputMode === "lyric" && e.key === "ArrowUp") {
+      e.preventDefault();
+      if (lyricVerse > 1) setLyricVerse(lyricVerse - 1);
+    } else if (e.key === "z" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      e.preventDefault();
+      useEditorStore.getState().undo();
+    } else if (e.key === "z" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+      e.preventDefault();
+      useEditorStore.getState().redo();
     }
   }
 
@@ -133,7 +147,7 @@ export function TextInput() {
 
   return (
     <div ref={wrapperRef} style={positionStyle}>
-      <div className="flex items-center gap-2 bg-popover border-2 border-primary rounded-md px-3 py-1.5 shadow-lg">
+      <div className="flex items-center gap-2 bg-popover border-2 border-primary rounded-md px-3 py-1.5 shadow-lg whitespace-nowrap">
         <span className="font-semibold text-sm text-primary">{label}</span>
         <Input
           ref={inputRef}
