@@ -55,6 +55,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "octave:down", label: "Octave down", category: "Navigation", defaultBinding: { key: "arrowdown" } },
   { id: "part:up", label: "Previous part", category: "Navigation", defaultBinding: { key: "arrowup", alt: true } },
   { id: "part:down", label: "Next part", category: "Navigation", defaultBinding: { key: "arrowdown", alt: true } },
+  { id: "nav:beginning", label: "Go to beginning", category: "Navigation", defaultBinding: { key: "enter" } },
 
   // Selection
   { id: "select:left", label: "Extend selection left", category: "Selection", defaultBinding: { key: "arrowleft", shift: true } },

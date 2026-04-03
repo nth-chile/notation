@@ -102,6 +102,7 @@ export function KeyboardShortcuts() {
       "octave:down": () => changeOctave("down"),
       "part:up": () => moveCursorPart("up"),
       "part:down": () => moveCursorPart("down"),
+      "nav:beginning": () => useEditorStore.getState().setCursorDirect({ partIndex: 0, measureIndex: 0, voiceIndex: 0, eventIndex: 0, staveIndex: 0 }),
 
       // Selection
       "select:left": () => extendSelection("left"),

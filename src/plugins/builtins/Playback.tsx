@@ -144,7 +144,7 @@ function TransportPanel() {
         <TooltipButton variant="ghost" size="icon" onClick={handlePlayPause} tooltip={isPlaying ? `Pause (${hotkey("play-pause")})` : `Play (${hotkey("play-pause")})`} actionId="play-pause">
           {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
         </TooltipButton>
-        <TooltipButton variant="ghost" size="icon" onClick={() => stopPlayback()} tooltip={`Stop (${hotkey("stop-playback")})`} actionId="stop-playback">
+        <TooltipButton variant="ghost" size="icon" onClick={() => stopPlayback()} tooltip={`Stop — return to beginning (${hotkey("stop-playback")})`} actionId="stop-playback">
           <Square className="h-3.5 w-3.5" />
         </TooltipButton>
       </div>
@@ -262,7 +262,7 @@ export const PlaybackPlugin: NotationPlugin = {
 
     // Register playback service so EditorState can delegate to us
     api.registerPlaybackService({
-      play: (s) => Transport.play(s),
+      play: (s, startTick) => Transport.play(s, startTick),
       pause: () => Transport.pause(),
       stop: () => Transport.stop(),
       setTempo: (bpm) => Transport.setTempo(bpm),

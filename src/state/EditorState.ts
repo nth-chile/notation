@@ -16,7 +16,7 @@ import type { ClefType } from "../model";
 import type { ViewModeType } from "../views/ViewMode";
 import { getDefaultViewConfig, type ViewConfig } from "../views/ViewMode";
 import { DURATION_TYPES_ORDERED } from "../model";
-import { durationToTicks as durationToTicksFn } from "../model/duration";
+import { durationToTicks as durationToTicksFn, TICKS_PER_QUARTER } from "../model/duration";
 import { factory } from "../model";
 import { getInstrument } from "../model/instruments";
 import { defaultInputState, type InputState, type CursorPosition } from "../input/InputState";
@@ -1284,7 +1284,26 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       },
     });
     service.setMetronome(state.metronomeOn);
-    await service.play(state.score);
+
+    // Compute start tick from cursor position
+    const { cursor } = state.inputState;
+    const part = state.score.parts[cursor.partIndex];
+    let startTick = 0;
+    if (part) {
+      for (let mi = 0; mi < cursor.measureIndex && mi < part.measures.length; mi++) {
+        const ts = part.measures[mi].timeSignature;
+        startTick += (TICKS_PER_QUARTER * 4 * ts.numerator) / ts.denominator;
+      }
+      // Add ticks for events before cursor within the measure
+      const voice = part.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+      if (voice) {
+        for (let ei = 0; ei < cursor.eventIndex && ei < voice.events.length; ei++) {
+          startTick += durationToTicksFn(voice.events[ei].duration, voice.events[ei].tuplet);
+        }
+      }
+    }
+
+    await service.play(state.score, startTick);
     set({ isPlaying: true });
   },
 
@@ -1292,14 +1311,23 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const service = getGlobalPluginManager()?.getPlaybackService();
     if (!service) return;
     service.pause();
-    set({ isPlaying: false });
+    set({ isPlaying: false, playbackTick: null });
   },
 
   stopPlayback() {
     const service = getGlobalPluginManager()?.getPlaybackService();
     if (!service) return;
     service.stop();
-    set({ isPlaying: false, playbackTick: null });
+    // Return cursor to beginning
+    const state = get();
+    set({
+      isPlaying: false,
+      playbackTick: null,
+      inputState: {
+        ...state.inputState,
+        cursor: { ...state.inputState.cursor, measureIndex: 0, eventIndex: 0 },
+      },
+    });
   },
 
   setTempo(bpm: number) {

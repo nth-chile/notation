@@ -419,7 +419,7 @@ export function setCallbacks(opts: TransportOptions): void {
   onStateChangeCallback = opts.onStateChange;
 }
 
-export async function play(score: Score): Promise<void> {
+export async function play(score: Score, startTick = 0): Promise<void> {
   if (state === "playing") return;
   await Tone.start();
 
@@ -436,17 +436,11 @@ export async function play(score: Score): Promise<void> {
 
   if (events.length === 0 && metronomeBeats.length === 0) return;
 
-  if (state === "paused") {
-    // Resume — anchorTick already holds the paused position
-    anchorAudioTime = Tone.now();
-    currentBpm = getBpmAtTick(anchorTick);
-    resetCursorsToTick(anchorTick);
-  } else {
-    anchorTick = 0;
-    anchorAudioTime = Tone.now();
-    currentBpm = getBpmAtTick(0);
-    resetCursorsToTick(0);
-  }
+  // Always start from the requested position (cursor position)
+  anchorTick = startTick;
+  anchorAudioTime = Tone.now();
+  currentBpm = getBpmAtTick(startTick);
+  resetCursorsToTick(startTick);
 
   schedulerInterval = setInterval(schedulerTick, SCHEDULER_INTERVAL_MS);
   schedulerTick();
