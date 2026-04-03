@@ -61,6 +61,57 @@ const ACC_VEX: Record<string, string> = {
   "double-flat": "bb",
 };
 
+// Key signature: fifths value → set of pitch classes that are sharp/flat
+const SHARP_ORDER = ["F", "C", "G", "D", "A", "E", "B"];
+const FLAT_ORDER = ["B", "E", "A", "D", "G", "C", "F"];
+
+/** Get the default accidental for a pitch class in a given key signature */
+function keyAccidental(pitchClass: string, fifths: number): import("../model/pitch").Accidental {
+  if (fifths > 0) {
+    const sharps = SHARP_ORDER.slice(0, fifths);
+    return sharps.includes(pitchClass) ? "sharp" : "natural";
+  } else if (fifths < 0) {
+    const flats = FLAT_ORDER.slice(0, -fifths);
+    return flats.includes(pitchClass) ? "flat" : "natural";
+  }
+  return "natural";
+}
+
+/**
+ * Collect accidentals that were applied in a measure (non-key-signature accidentals).
+ * Returns a set of "PitchClass+Octave" strings (e.g., "F4", "C#5") that had altered accidentals.
+ */
+/**
+ * Collect pitches whose LAST occurrence in the measure had a non-key-signature accidental.
+ * If a pitch was altered then cancelled (F# then F♮), it's NOT included.
+ */
+function collectPrevMeasureAccidentals(measure: Measure): Set<string> {
+  // Track the last-seen accidental for each pitch
+  const lastSeen = new Map<string, import("../model/pitch").Accidental>();
+  const fifths = measure.keySignature.fifths;
+  for (const voice of measure.voices) {
+    for (const event of voice.events) {
+      if (event.kind === "note") {
+        const { pitchClass, accidental, octave } = event.head.pitch;
+        lastSeen.set(`${pitchClass}${octave}`, accidental);
+      } else if (event.kind === "chord") {
+        for (const h of event.heads) {
+          const { pitchClass, accidental, octave } = h.pitch;
+          lastSeen.set(`${pitchClass}${octave}`, accidental);
+        }
+      }
+    }
+  }
+  const altered = new Set<string>();
+  for (const [key, acc] of lastSeen) {
+    const pc = key.slice(0, -1);
+    if (acc !== keyAccidental(pc, fifths)) {
+      altered.add(key);
+    }
+  }
+  return altered;
+}
+
 const DUR_VEX: Record<string, string> = {
   whole: "w",
   half: "h",
@@ -118,6 +169,9 @@ function eventToStaveNote(
   event: NoteEvent,
   stemDirection?: "up" | "down",
   clef?: string,
+  prevAltered?: Set<string>,
+  courtesyShown?: Set<string>,
+  measureAltered?: Set<string>,
 ): StaveNote | null {
   switch (event.kind) {
     case "note": {
@@ -132,8 +186,21 @@ function eventToStaveNote(
       else if (stemDirection === "down") opts.stemDirection = -1;
       const sn = new StaveNote(opts);
       const acc = event.head.pitch.accidental;
+      const { pitchClass: pc, octave: oct } = event.head.pitch;
+      const pitchKey = `${pc}${oct}`;
       if (acc !== "natural" && ACC_VEX[acc]) {
         sn.addModifier(new Accidental(ACC_VEX[acc]));
+        measureAltered?.add(pitchKey);
+      } else if (acc === "natural" && measureAltered?.has(pitchKey)) {
+        // Same-measure cancellation: show ♮ on first occurrence only, then clear
+        sn.addModifier(new Accidental("n"));
+        measureAltered?.delete(pitchKey);
+      } else if (acc === "natural" && prevAltered?.has(pitchKey) && !courtesyShown?.has(pitchKey)) {
+        // Cross-barline courtesy (♮) — only if pitch was still altered at end of prev measure
+        const ca = new Accidental("n");
+        ca.setAsCautionary();
+        sn.addModifier(ca);
+        courtesyShown?.add(pitchKey);
       }
       for (let i = 0; i < event.duration.dots; i++) {
         Dot.buildAndAttach([sn], { all: true });
@@ -154,8 +221,19 @@ function eventToStaveNote(
       const sn = new StaveNote(opts);
       event.heads.forEach((h, idx) => {
         const acc = h.pitch.accidental;
+        const { pitchClass: pc, octave: oct } = h.pitch;
+        const pitchKey = `${pc}${oct}`;
         if (acc !== "natural" && ACC_VEX[acc]) {
           sn.addModifier(new Accidental(ACC_VEX[acc]), idx);
+          measureAltered?.add(pitchKey);
+        } else if (acc === "natural" && measureAltered?.has(pitchKey)) {
+          sn.addModifier(new Accidental("n"), idx);
+          measureAltered?.delete(pitchKey);
+        } else if (acc === "natural" && prevAltered?.has(pitchKey) && !courtesyShown?.has(pitchKey)) {
+          const ca = new Accidental("n");
+          ca.setAsCautionary();
+          sn.addModifier(ca, idx);
+          courtesyShown?.add(pitchKey);
         }
       });
       for (let i = 0; i < event.duration.dots; i++) {
@@ -275,9 +353,15 @@ export function renderMeasure(
   stylesheet?: Partial<Stylesheet>,
   partIndex = 0,
   measureIndex = 0,
-  activeNoteIds?: Set<NoteEventId>
+  activeNoteIds?: Set<NoteEventId>,
+  prevMeasure?: Measure,
 ): MeasureRenderResult {
   const style = resolveStylesheet(stylesheet);
+
+  // Accidentals from previous measure for courtesy accidental detection
+  const prevAltered = prevMeasure ? collectPrevMeasureAccidentals(prevMeasure) : new Set<string>();
+  const courtesyShown = new Set<string>(); // track which pitches already got a courtesy this measure
+  const measureAltered = new Set<string>(); // track pitches altered so far within this measure
 
   const stave = new Stave(x, y, width);
   if (showClef) stave.addClef(CLEF_VEX[m.clef.type] || "treble");
@@ -336,7 +420,20 @@ export function renderMeasure(
   if (m.navigation?.volta) aboveY -= 22; // volta bracket takes ~22px
   if (m.navigation?.segno || m.navigation?.coda) aboveY -= 20; // segno/coda glyph
 
-  // Rehearsal marks — boxed text (Dorico/MuseScore style)
+  // Tempo marks
+  if (tempoAnn && aboveStaveCtx.save) {
+    aboveStaveCtx.save();
+    aboveStaveCtx.font = "bold 12px serif";
+    aboveStaveCtx.fillStyle = "#000";
+    const tempoText = tempoAnn.text
+      ? `${tempoAnn.text} (\u2669 = ${tempoAnn.bpm})`
+      : `\u2669 = ${tempoAnn.bpm}`;
+    aboveY -= 16;
+    aboveStaveCtx.fillText(tempoText, x + 2, aboveY);
+    aboveStaveCtx.restore();
+  }
+
+  // Rehearsal marks — highest, boxed text (Dorico/MuseScore style)
   for (const ann of m.annotations) {
     if (ann.kind !== "rehearsal-mark") continue;
     if (!aboveStaveCtx.save) continue;
@@ -354,35 +451,6 @@ export function renderMeasure(
     aboveStaveCtx.fillStyle = "#000";
     aboveStaveCtx.fillText(ann.text, x + 2, aboveY + boxH - pad - 2);
     aboveStaveCtx.restore();
-  }
-
-  // Tempo marks — rendered manually so they show even on empty/rest measures
-  if (tempoAnn && aboveStaveCtx.save) {
-    aboveStaveCtx.save();
-    aboveStaveCtx.font = "bold 12px serif";
-    aboveStaveCtx.fillStyle = "#000";
-    const tempoText = tempoAnn.text
-      ? `${tempoAnn.text} (\u2669 = ${tempoAnn.bpm})`
-      : `\u2669 = ${tempoAnn.bpm}`;
-    aboveY -= 16;
-    aboveStaveCtx.fillText(tempoText, x + 2, aboveY);
-    aboveStaveCtx.restore();
-  }
-
-  // Chord symbols — rendered manually when no notes exist to attach them to
-  const hasEvents = m.voices.some(v => v && v.events.length > 0);
-  if (!hasEvents && aboveStaveCtx.save) {
-    const chordAnns = m.annotations.filter(a => a.kind === "chord-symbol");
-    if (chordAnns.length > 0) {
-      aboveStaveCtx.save();
-      aboveStaveCtx.font = `bold ${style.chordSymbolSize}px sans-serif`;
-      aboveStaveCtx.fillStyle = "#000";
-      for (const ann of chordAnns) {
-        aboveY -= style.chordSymbolSize + 4;
-        aboveStaveCtx.fillText((ann as any).text, x + 2, aboveY);
-      }
-      aboveStaveCtx.restore();
-    }
   }
 
   // Navigation text (Fine, D.S., D.C., To Coda) — italic, right-aligned
@@ -437,7 +505,7 @@ export function renderMeasure(
         pendingGraceIds.push(event.id);
         continue;
       }
-      const sn = eventToStaveNote(event, stemDir, CLEF_VEX[m.clef.type]);
+      const sn = eventToStaveNote(event, stemDir, CLEF_VEX[m.clef.type], prevAltered, courtesyShown, measureAltered);
       if (sn) {
         if (pendingGraceNotes.length > 0) {
           const graceGroup = new GraceNoteGroup(pendingGraceNotes, true);
@@ -979,18 +1047,6 @@ export function renderMultiMeasureRest(
       rawCtx.restore();
     }
 
-    // Chord symbols
-    const chordAnns = m.annotations.filter((a) => a.kind === "chord-symbol");
-    if (chordAnns.length > 0) {
-      rawCtx.save();
-      rawCtx.font = `bold ${style.chordSymbolSize}px sans-serif`;
-      rawCtx.fillStyle = "#000";
-      for (const ann of chordAnns) {
-        aboveY -= style.chordSymbolSize + 4;
-        rawCtx.fillText((ann as any).text, x + 2, aboveY);
-      }
-      rawCtx.restore();
-    }
   }
 
   return { noteBoxes: [], annotationBoxes: [], staveY: y, staveX: x, width, staveNoteMap: new Map() };

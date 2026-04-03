@@ -350,7 +350,8 @@ export function renderScore(
               score.stylesheet,
               originalPi,
               mi,
-              activeNoteIds
+              activeNoteIds,
+              mi > 0 ? part.measures[mi - 1] : undefined,
             );
           }
 
@@ -736,6 +737,14 @@ function filterScoreParts(score: Score, visiblePartIndices: number[]): Score {
         const isDup = dst.annotations.some(a => a.kind === ann.kind &&
           ("text" in a && "text" in ann ? (a as any).text === (ann as any).text : true));
         if (!isDup) dst.annotations.push(ann);
+      }
+
+      // If the visible measure has no events but gets chord symbols from a hidden part,
+      // copy the hidden part's voice events so VexFlow can position chords on notes
+      const dstEmpty = !dst.voices.some(v => v && v.events.length > 0);
+      const hasChords = dst.annotations.some(a => a.kind === "chord-symbol");
+      if (dstEmpty && hasChords && src.voices.some(v => v && v.events.length > 0)) {
+        dst.voices = structuredClone(src.voices);
       }
 
       // Merge navigation marks (volta, coda, segno, D.S., D.C., Fine)
