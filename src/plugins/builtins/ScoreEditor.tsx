@@ -26,6 +26,7 @@ function NoteInputPanel() {
   const toggleDot = useEditorStore((s) => s.toggleDot);
   const setAccidental = useEditorStore((s) => s.setAccidental);
   const toggleStepEntry = useEditorStore((s) => s.toggleStepEntry);
+  const toggleInsertMode = useEditorStore((s) => s.toggleInsertMode);
   const toggleGraceNoteMode = useEditorStore((s) => s.toggleGraceNoteMode);
   const hotkey = useHotkey();
 
@@ -41,6 +42,16 @@ function NoteInputPanel() {
           className="text-xs font-bold"
         >
           N
+        </TooltipButton>
+        <TooltipButton
+          variant={inputState.insertMode ? "default" : "ghost"}
+          size="icon"
+          onClick={toggleInsertMode}
+          tooltip={`Insert mode (${hotkey("toggle-insert-mode")})`}
+          actionId="toggle-insert-mode"
+          className="text-xs font-bold"
+        >
+          I
         </TooltipButton>
         <TooltipButton
           variant={inputState.graceNoteMode ? "default" : "ghost"}

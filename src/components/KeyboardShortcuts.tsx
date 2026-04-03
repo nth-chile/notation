@@ -41,6 +41,7 @@ export function KeyboardShortcuts() {
   const setViewMode = useEditorStore((s) => s.setViewMode);
   const toggleArticulation = useEditorStore((s) => s.toggleArticulation);
   const toggleStepEntry = useEditorStore((s) => s.toggleStepEntry);
+  const toggleInsertMode = useEditorStore((s) => s.toggleInsertMode);
   const toggleGraceNoteMode = useEditorStore((s) => s.toggleGraceNoteMode);
   const toggleSlur = useEditorStore((s) => s.toggleSlur);
   const popover = useEditorStore((s) => s.popover);
@@ -85,6 +86,7 @@ export function KeyboardShortcuts() {
       "duration:64th": () => setDuration("64th" as DurationType),
       "toggle-dot": () => toggleDot(),
       "toggle-step-entry": () => toggleStepEntry(),
+      "toggle-insert-mode": () => toggleInsertMode(),
       "toggle-grace-note": () => toggleGraceNoteMode(),
       "toggle-slur": () => toggleSlur(),
       "go-to-measure": () => getGlobalPluginManager()?.executeCommand("notation.go-to-measure"),
@@ -177,7 +179,7 @@ export function KeyboardShortcuts() {
     enterChordMode, enterLyricMode, textInputMode, isPlaying, play,
     pause, stopPlayback, toggleMetronome, moveCursorPart, setViewMode, selection,
     copySelection, pasteAtCursor, clipboardMeasures, deleteSelectedMeasures,
-    toggleArticulation, toggleStepEntry, toggleGraceNoteMode, toggleSlur, popover, setPopover,
+    toggleArticulation, toggleStepEntry, toggleInsertMode, toggleGraceNoteMode, toggleSlur, popover, setPopover,
     setSelection, setNoteSelection, extendSelection, extendNoteSelection,
     noteSelection, deleteNoteSelection,
   ]);
