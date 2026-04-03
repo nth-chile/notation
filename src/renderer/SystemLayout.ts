@@ -257,9 +257,33 @@ export function computeLayout(
       }
     }
 
+    // Calculate extra space needed for below-staff annotations (dynamics, hairpins, lyrics)
+    let belowStaffExtra = 0;
+    const lastPart = score.parts[score.parts.length - 1];
+    if (lastPart) {
+      for (let mi = startMeasure; mi < endMeasure; mi++) {
+        const measure = lastPart.measures[mi];
+        if (!measure) continue;
+        let needed = 0;
+        const hasDynamic = measure.annotations.some((a) => a.kind === "dynamic");
+        const hasHairpin = measure.annotations.some((a) => a.kind === "hairpin");
+        const hasLyric = measure.annotations.some((a) => a.kind === "lyric");
+        if (hasDynamic) needed += 20;
+        if (hasHairpin) needed += 14;
+        if (hasLyric) {
+          const maxVerse = Math.max(...measure.annotations
+            .filter((a) => a.kind === "lyric")
+            .map((a) => a.kind === "lyric" ? (a.verseNumber || 1) : 0), 1);
+          needed += 18 + (maxVerse - 1) * 18;
+        }
+        belowStaffExtra = Math.max(belowStaffExtra, needed);
+      }
+    }
+
     const systemHeight = yOffset - lineY;
-    pageY += systemHeight + config.staffSpacing;
-    absoluteY += systemHeight + config.staffSpacing;
+    const systemSpacing = config.staffSpacing + belowStaffExtra;
+    pageY += systemHeight + systemSpacing;
+    absoluteY += systemHeight + systemSpacing;
 
     systems.push({
       lineIndex: li,

@@ -767,7 +767,7 @@ export function renderMeasure(
       if (lCtx.save) {
         // Fixed offset from stave bottom — consistent across all measures.
         // Always reserve space for dynamics and hairpins so lyrics align globally.
-        const lyricBaseY = stave.getBottomY() + 50;
+        const lyricBaseY = stave.getBottomY() + 40;
 
         lCtx.save();
         lCtx.font = `italic ${style.lyricSize}px ${style.fontFamily}`;
