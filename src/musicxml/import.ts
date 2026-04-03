@@ -208,13 +208,19 @@ function parseBarline(measureEl: Element): { barlineEnd: BarlineType; volta?: Vo
   return { barlineEnd, volta };
 }
 
+interface HairpinState {
+  openStartId: NoteEventId | null;
+  openType: "crescendo" | "diminuendo" | null;
+}
+
 function parseMeasure(
   measureEl: Element,
   currentClef: Clef,
   currentTimeSig: TimeSignature,
   currentKeySig: KeySignature,
-  currentDivisions: number
-): { measure: Measure; clef: Clef; timeSig: TimeSignature; keySig: KeySignature; divisions: number } {
+  currentDivisions: number,
+  hairpinState?: HairpinState
+): { measure: Measure; clef: Clef; timeSig: TimeSignature; keySig: KeySignature; divisions: number; hairpinState: HairpinState } {
   let clef = { ...currentClef };
   let timeSig = { ...currentTimeSig };
   let keySig = { ...currentKeySig };
@@ -239,8 +245,8 @@ function parseMeasure(
   // Track pending dynamics/hairpins to attach to the next note
   let pendingDynamicLevels: DynamicLevel[] = [];
   let pendingWedgeStart: "crescendo" | "diminuendo" | null = null;
-  let openHairpinStartId: NoteEventId | null = null;
-  let openHairpinType: "crescendo" | "diminuendo" | null = null;
+  let openHairpinStartId: NoteEventId | null = hairpinState?.openStartId ?? null;
+  let openHairpinType: "crescendo" | "diminuendo" | null = hairpinState?.openType ?? null;
 
   // Track open slurs: slur number -> start event id
   const openSlurs = new Map<number, NoteEventId>();
@@ -719,7 +725,7 @@ function parseMeasure(
     isPickup: isPickup || undefined,
   };
 
-  return { measure, clef, timeSig, keySig, divisions };
+  return { measure, clef, timeSig, keySig, divisions, hairpinState: { openStartId: openHairpinStartId, openType: openHairpinType } };
 }
 
 export function importFromMusicXML(xml: string): Score {
@@ -782,6 +788,7 @@ export function importFromMusicXML(xml: string): Score {
 
     const measures: Measure[] = [];
     const measureEls = getDirectChildren(partEl, "measure");
+    let hairpinState: HairpinState = { openStartId: null, openType: null };
 
     for (const measureEl of measureEls) {
       const result = parseMeasure(
@@ -789,13 +796,15 @@ export function importFromMusicXML(xml: string): Score {
         currentClef,
         currentTimeSig,
         currentKeySig,
-        divisions
+        divisions,
+        hairpinState
       );
       measures.push(result.measure);
       currentClef = result.clef;
       currentTimeSig = result.timeSig;
       currentKeySig = result.keySig;
       divisions = result.divisions;
+      hairpinState = result.hairpinState;
     }
 
     parts.push({

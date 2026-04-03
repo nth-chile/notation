@@ -172,25 +172,36 @@ function buildDynamicMap(score: Score, lastMi: number): Map<string, number>[] {
   for (let pi = 0; pi < score.parts.length; pi++) {
     const map = new Map<string, number>();
     let currentVel = DEFAULT_VELOCITY;
+    // Index dynamics by noteEventId for quick lookup
+    const dynByEvent = new Map<string, DynamicMark>();
     for (let mi = 0; mi <= lastMi; mi++) {
       const m = score.parts[pi]?.measures[mi];
       if (!m) continue;
       for (const ann of m.annotations) {
-        if (ann.kind !== "dynamic") continue;
-        const dyn = ann as DynamicMark;
-        if (dyn.level === "fp") {
-          map.set(dyn.noteEventId, DYNAMIC_VELOCITY.fp);
-          currentVel = DYNAMIC_VELOCITY.p;
-        } else if (dyn.level === "sfz") {
-          map.set(dyn.noteEventId, DYNAMIC_VELOCITY.sfz);
-        } else {
-          currentVel = DYNAMIC_VELOCITY[dyn.level];
-          map.set(dyn.noteEventId, currentVel);
-        }
+        if (ann.kind === "dynamic") dynByEvent.set((ann as DynamicMark).noteEventId, ann as DynamicMark);
       }
+    }
+    // Walk events in order, applying dynamics as they're encountered
+    for (let mi = 0; mi <= lastMi; mi++) {
+      const m = score.parts[pi]?.measures[mi];
+      if (!m) continue;
       for (const voice of m.voices) {
         for (const evt of voice.events) {
-          if (!map.has(evt.id)) map.set(evt.id, currentVel);
+          const dyn = dynByEvent.get(evt.id);
+          if (dyn) {
+            if (dyn.level === "fp") {
+              map.set(evt.id, DYNAMIC_VELOCITY.fp);
+              currentVel = DYNAMIC_VELOCITY.p;
+            } else if (dyn.level === "sfz") {
+              map.set(evt.id, DYNAMIC_VELOCITY.sfz);
+              // currentVel unchanged — sfz is a one-note accent
+            } else {
+              currentVel = DYNAMIC_VELOCITY[dyn.level];
+              map.set(evt.id, currentVel);
+            }
+          } else {
+            map.set(evt.id, currentVel);
+          }
         }
       }
     }
