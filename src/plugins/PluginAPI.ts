@@ -58,7 +58,7 @@ export interface ExporterConfig {
 }
 
 export interface PlaybackService {
-  play(score: Score): Promise<void>;
+  play(score: Score, startTick?: number): Promise<void>;
   pause(): void;
   stop(): void;
   setTempo(bpm: number): void;
