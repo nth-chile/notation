@@ -377,8 +377,11 @@ export function renderMeasure(
   // Set barline types
   applyBarline(stave, m.barlineEnd);
 
-  // Add volta bracket if present
-  if (m.navigation?.volta) {
+  // Detect if this is a secondary (bass) stave for a grand staff instrument
+  const isSecondaryStaveLocal = voiceFilter && voiceFilter.length > 0 && voiceFilter.every(i => (m.voices[i]?.staff ?? 0) > 0);
+
+  // Add volta bracket if present (treble only)
+  if (m.navigation?.volta && !isSecondaryStaveLocal) {
     const volta = m.navigation.volta;
     const label = volta.label ?? volta.endings.join(", ") + ".";
     try {
@@ -388,15 +391,15 @@ export function renderMeasure(
     }
   }
 
-  // Add repetition signs for segno/coda
-  if (m.navigation?.segno) {
+  // Add repetition signs for segno/coda (treble only)
+  if (m.navigation?.segno && !isSecondaryStaveLocal) {
     try {
       stave.addModifier(new Repetition(Repetition.type.SEGNO_LEFT, x, 0));
     } catch {
       // Fallback handled via text rendering below
     }
   }
-  if (m.navigation?.coda) {
+  if (m.navigation?.coda && !isSecondaryStaveLocal) {
     try {
       stave.addModifier(new Repetition(Repetition.type.CODA_LEFT, x, 0));
     } catch {
@@ -410,19 +413,14 @@ export function renderMeasure(
   stave.setContext(ctx.context).draw();
 
   // Draw stave-level annotations manually with coordinated Y tracking.
-  // VexFlow handles note-level annotations (chord symbols, dynamics, lyrics) and
-  // stave features (tempo, volta, segno/coda). We draw rehearsal marks and nav text
-  // manually because VexFlow has no rehearsal mark class and StaveText doesn't
-  // coordinate with tempo/volta positioning.
-  //
-  // Y tracker starts above VexFlow's stave elements and moves upward.
+  // Reuse isSecondaryStaveLocal for above-stave annotations
   const aboveStaveCtx = ctx.context as unknown as CanvasRenderingContext2D;
   let aboveY = y - 6; // just above stave top
   if (m.navigation?.volta) aboveY -= 22; // volta bracket takes ~22px
   if (m.navigation?.segno || m.navigation?.coda) aboveY -= 20; // segno/coda glyph
 
-  // Tempo marks
-  if (tempoAnn && aboveStaveCtx.save) {
+  // Tempo marks (skip on secondary staves)
+  if (tempoAnn && aboveStaveCtx.save && !isSecondaryStaveLocal) {
     aboveStaveCtx.save();
     aboveStaveCtx.font = "bold 12px serif";
     aboveStaveCtx.fillStyle = "#000";
@@ -435,8 +433,10 @@ export function renderMeasure(
   }
 
   // Rehearsal marks — highest, boxed text (Dorico/MuseScore style)
+  // Only render on primary stave (treble) for grand staff instruments
   for (const ann of m.annotations) {
     if (ann.kind !== "rehearsal-mark") continue;
+    if (isSecondaryStaveLocal) continue;
     if (!aboveStaveCtx.save) continue;
     aboveStaveCtx.save();
     aboveStaveCtx.font = "bold 14px sans-serif";
@@ -455,7 +455,7 @@ export function renderMeasure(
   }
 
   // Navigation text (Fine, D.S., D.C., To Coda) — italic, right-aligned
-  if (m.navigation && aboveStaveCtx.save) {
+  if (m.navigation && aboveStaveCtx.save && !isSecondaryStaveLocal) {
     const nav = m.navigation;
     const textItems: string[] = [];
     if (nav.fine) textItems.push("Fine");
@@ -523,7 +523,8 @@ export function renderMeasure(
         // TOP: chord symbols (closest to staff), then tempo mark (above chords)
         // BOTTOM: dynamics first (closest to staff), then lyrics
         for (const ann of m.annotations) {
-          if (ann.kind === "chord-symbol" && (ann.noteEventId === event.id || ann.beatOffset === currentBeatOffset) && !renderedChordOffsets.has(ann.beatOffset)) {
+          const isSecondaryStave = voiceFilter && voiceFilter.length > 0 && voiceFilter.every(i => (m.voices[i]?.staff ?? 0) > 0);
+          if (ann.kind === "chord-symbol" && !isSecondaryStave && (ann.noteEventId === event.id || ann.beatOffset === currentBeatOffset) && !renderedChordOffsets.has(ann.beatOffset)) {
             sn.addModifier(new VexAnnotation(ann.text)
               .setVerticalJustification(VexAnnotation.VerticalJustify.TOP)
               .setFont("sans-serif", style.chordSymbolSize, "bold"));
@@ -860,7 +861,12 @@ export function renderMeasure(
   // Dynamics are VexFlow Annotations (note-relative, which is correct for dynamics).
   // Lyrics go below dynamics at a fixed distance from stave bottom.
   {
-    const lyricAnnotations = m.annotations.filter((a) => a.kind === "lyric");
+    // For grand staff: render lyrics only on the bass (bottom) stave.
+    // For single staff: render lyrics normally.
+    const hasMultipleStaves = voiceFilter != null && voiceFilter.length > 0;
+    const isPrimaryStave = hasMultipleStaves && voiceFilter.some(i => (m.voices[i]?.staff ?? 0) === 0);
+    const suppressLyrics = hasMultipleStaves && isPrimaryStave; // suppress on treble, show on bass
+    const lyricAnnotations = suppressLyrics ? [] : m.annotations.filter((a) => a.kind === "lyric");
     if (lyricAnnotations.length > 0) {
       const lCtx = ctx.context as unknown as CanvasRenderingContext2D;
       if (lCtx.save) {
