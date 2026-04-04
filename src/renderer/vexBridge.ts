@@ -3,7 +3,7 @@ import type { ChordSymbol, DynamicMark, Lyric, Hairpin } from "../model/annotati
 import type { Measure, NoteEvent, NoteEventId } from "../model";
 import type { BarlineType } from "../model/time";
 import type { Annotation, TempoMark } from "../model/annotations";
-import type { ArticulationKind } from "../model/note";
+import { isCrossStaff, type ArticulationKind } from "../model/note";
 import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
 import { durationToTicks as durationToTicksFn, measureCapacity as measureCapacityFn, voiceTicksUsed as voiceTicksUsedFn } from "../model/duration";
@@ -52,6 +52,8 @@ export interface MeasureRenderResult {
   width: number;
   /** Map from event ID to VexFlow StaveNote — used for cross-measure tie/slur rendering */
   staveNoteMap: Map<NoteEventId, StaveNote>;
+  /** The VexFlow Stave object — needed for cross-staff note rendering */
+  vexStave: Stave;
 }
 
 const ACC_VEX: Record<string, string> = {
@@ -341,7 +343,8 @@ function applyBarline(stave: Stave, barlineType: BarlineType): void {
   }
 }
 
-export function renderMeasure(
+/** Create a bare VexFlow Stave for pre-creation (used by cross-staff rendering). */
+export function createVexStave(
   ctx: RenderContext,
   m: Measure,
   x: number,
@@ -350,21 +353,7 @@ export function renderMeasure(
   showClef: boolean,
   showTimeSig: boolean,
   showKeySig: boolean,
-  stylesheet?: Partial<Stylesheet>,
-  partIndex = 0,
-  measureIndex = 0,
-  activeNoteIds?: Set<NoteEventId>,
-  prevMeasure?: Measure,
-  voiceFilter?: number[],
-  staveIndex = 0,
-): MeasureRenderResult {
-  const style = resolveStylesheet(stylesheet);
-
-  // Accidentals from previous measure for courtesy accidental detection
-  const prevAltered = prevMeasure ? collectPrevMeasureAccidentals(prevMeasure) : new Set<string>();
-  const courtesyShown = new Set<string>(); // track which pitches already got a courtesy this measure
-  const measureAltered = new Set<string>(); // track pitches altered so far within this measure
-
+): Stave {
   const stave = new Stave(x, y, width);
   if (showClef) stave.addClef(CLEF_VEX[m.clef.type] || "treble");
   if (showKeySig) {
@@ -374,6 +363,44 @@ export function renderMeasure(
   if (showTimeSig) {
     stave.addTimeSignature(`${m.timeSignature.numerator}/${m.timeSignature.denominator}`);
   }
+  return stave;
+}
+
+export interface RenderMeasureOptions {
+  stylesheet?: Partial<Stylesheet>;
+  partIndex?: number;
+  measureIndex?: number;
+  activeNoteIds?: Set<NoteEventId>;
+  prevMeasure?: Measure;
+  voiceFilter?: number[];
+  staveIndex?: number;
+  crossStaffStave?: Stave;
+  crossStaffClef?: string;
+}
+
+export function renderMeasure(
+  ctx: RenderContext,
+  m: Measure,
+  x: number,
+  y: number,
+  width: number,
+  showClef: boolean,
+  showTimeSig: boolean,
+  showKeySig: boolean,
+  opts: RenderMeasureOptions = {},
+): MeasureRenderResult {
+  const {
+    stylesheet, partIndex = 0, measureIndex = 0, activeNoteIds,
+    prevMeasure, voiceFilter, staveIndex = 0, crossStaffStave, crossStaffClef,
+  } = opts;
+  const style = resolveStylesheet(stylesheet);
+
+  // Accidentals from previous measure for courtesy accidental detection
+  const prevAltered = prevMeasure ? collectPrevMeasureAccidentals(prevMeasure) : new Set<string>();
+  const courtesyShown = new Set<string>(); // track which pitches already got a courtesy this measure
+  const measureAltered = new Set<string>(); // track pitches altered so far within this measure
+
+  const stave = createVexStave(ctx, m, x, y, width, showClef, showTimeSig, showKeySig);
 
   // Set barline types
   applyBarline(stave, m.barlineEnd);
@@ -523,7 +550,11 @@ export function renderMeasure(
         pendingGraceIds.push(event.id);
         continue;
       }
-      const sn = eventToStaveNote(event, stemDir, CLEF_VEX[m.clef.type], prevAltered, courtesyShown, measureAltered);
+      // Use cross-staff clef if this note renders on the other stave
+      const useClef = (crossStaffClef && isCrossStaff(event, staveIndex))
+        ? crossStaffClef
+        : CLEF_VEX[m.clef.type];
+      const sn = eventToStaveNote(event, stemDir, useClef, prevAltered, courtesyShown, measureAltered);
       if (sn) {
         if (pendingGraceNotes.length > 0) {
           const graceGroup = new GraceNoteGroup(pendingGraceNotes, true);
@@ -661,6 +692,22 @@ export function renderMeasure(
       }
     }
 
+    // Build set of cross-staff notes: will be hidden during Voice.draw, then redrawn on target stave
+    const crossStaffNoteSet = new Set<StaveNote>();
+    if (crossStaffStave) {
+      // Build a lookup from event ID to model event for cross-staff check
+      const eventById = new Map(m.voices.flatMap((v) => v.events.map((e) => [e.id, e] as const)));
+      for (const vfVoice of vfVoices) {
+        const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] };
+        data.__staveNotes.forEach((sn, idx) => {
+          const event = eventById.get(data.__eventIds[idx]);
+          if (event && isCrossStaff(event, staveIndex)) {
+            crossStaffNoteSet.add(sn);
+          }
+        });
+      }
+    }
+
     for (const vfVoice of vfVoices) {
       // Color active playback notes
       if (activeNoteIds?.size) {
@@ -672,7 +719,17 @@ export function renderMeasure(
         });
       }
 
+      // Suppress cross-staff notes during Voice.draw by replacing drawWithStyle with a no-op
+      const savedDrawFns = new Map<StaveNote, () => void>();
+      for (const sn of crossStaffNoteSet) {
+        savedDrawFns.set(sn, sn.drawWithStyle.bind(sn));
+        sn.drawWithStyle = () => {};
+      }
       vfVoice.draw(ctx.context, stave);
+      // Restore drawWithStyle
+      for (const [sn, fn] of savedDrawFns) {
+        sn.drawWithStyle = fn;
+      }
 
       // Collect bounding boxes
       const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number; __graceNoteMap: { graceNotes: VexGraceNote[]; ids: NoteEventId[] }[] };
@@ -727,6 +784,16 @@ export function renderMeasure(
             }
           } catch { /* grace note may not have position info */ }
         });
+      }
+    }
+
+    // Redraw cross-staff notes on their target stave
+    if (crossStaffStave && crossStaffNoteSet.size > 0) {
+      for (const sn of crossStaffNoteSet) {
+        sn.setStave(crossStaffStave);
+        sn.setStyle({ fillStyle: "#000", strokeStyle: "#000" });
+        sn.setContext(ctx.context);
+        sn.drawWithStyle();
       }
     }
 
@@ -965,6 +1032,7 @@ export function renderMeasure(
     staveX: x,
     width,
     staveNoteMap,
+    vexStave: stave,
   };
 }
 
@@ -1094,7 +1162,7 @@ export function renderMultiMeasureRest(
 
   }
 
-  return { noteBoxes: [], annotationBoxes: [], staveY: y, staveX: x, width, staveNoteMap: new Map() };
+  return { noteBoxes: [], annotationBoxes: [], staveY: y, staveX: x, width, staveNoteMap: new Map(), vexStave: stave };
 }
 
 export function clearCanvas(ctx: RenderContext, canvas: HTMLCanvasElement): void {

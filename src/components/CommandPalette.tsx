@@ -33,6 +33,7 @@ export function CommandPalette({ pluginManager }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const commands = pluginManager?.getCommands() ?? [];
   const filtered = commands.filter((cmd) => {
@@ -61,6 +62,13 @@ export function CommandPalette({ pluginManager }: CommandPaletteProps) {
     if (visible) setTimeout(() => inputRef.current?.focus(), 0);
   }, [visible]);
 
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const item = list.children[selectedIndex] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
+
   if (!visible) return null;
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -82,7 +90,7 @@ export function CommandPalette({ pluginManager }: CommandPaletteProps) {
           placeholder="Type a command..."
           className="px-4 py-3 text-base border-b bg-background text-foreground outline-none"
         />
-        <div className="overflow-y-auto flex-1">
+        <div ref={listRef} className="overflow-y-auto flex-1">
           {filtered.length === 0 && (
             <div className="py-5 px-4 text-center text-sm text-muted-foreground">No commands found</div>
           )}

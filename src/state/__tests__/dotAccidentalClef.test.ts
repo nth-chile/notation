@@ -241,25 +241,27 @@ describe("Clef-aware octave in insertNote (#119)", () => {
     }
   });
 
-  it("respects manual octave change in bass clef", () => {
+  it("smart octave picks closest to previous note in bass clef", () => {
     const score = factory.score("Test", "", [
       factory.part("Cello", "Vc.", [
-        factory.measure([factory.voice([])], { clef: { type: "bass" } }),
+        factory.measure([factory.voice([
+          factory.note("G", 3, "quarter"),
+        ])], { clef: { type: "bass" } }),
       ]),
     ]);
     useEditorStore.setState({
       score,
       inputState: {
         ...useEditorStore.getState().inputState,
-        cursor: { partIndex: 0, measureIndex: 0, voiceIndex: 0, eventIndex: 0 },
-        octave: 5, // user pressed up arrow
+        cursor: { partIndex: 0, measureIndex: 0, voiceIndex: 0, eventIndex: 1 },
+        octave: 4,
       },
     });
 
+    // Inserting C after G3 should pick C4 (closest to G3)
     useEditorStore.getState().insertNote("C");
-    const evt = useEditorStore.getState().score.parts[0].measures[0].voices[0].events[0];
+    const evt = useEditorStore.getState().score.parts[0].measures[0].voices[0].events[1];
     if (evt.kind === "note") {
-      // 5 + (3-4) = 4
       expect(evt.head.pitch.octave).toBe(4);
     }
   });

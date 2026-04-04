@@ -41,6 +41,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "toggle-dot", label: "Toggle dot", category: "Duration", defaultBinding: { key: "." } },
   { id: "toggle-step-entry", label: "Step entry mode", category: "Notes", defaultBinding: { key: "n" } },
   { id: "toggle-insert-mode", label: "Insert mode", category: "Notes", defaultBinding: { key: "i" } },
+  { id: "toggle-pitch-before-duration", label: "Toggle pitch-before-duration", category: "Notes", defaultBinding: { key: "k" } },
   { id: "toggle-grace-note", label: "Grace note mode", category: "Notes", defaultBinding: { key: "g", shift: true } },
   { id: "toggle-slur", label: "Slur (start/end)", category: "Notes", defaultBinding: { key: "s", shift: true } },
 
@@ -51,10 +52,14 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   // Navigation
   { id: "cursor:left", label: "Move cursor left", category: "Navigation", defaultBinding: { key: "arrowleft" } },
   { id: "cursor:right", label: "Move cursor right", category: "Navigation", defaultBinding: { key: "arrowright" } },
-  { id: "octave:up", label: "Octave up", category: "Navigation", defaultBinding: { key: "arrowup" } },
-  { id: "octave:down", label: "Octave down", category: "Navigation", defaultBinding: { key: "arrowdown" } },
-  { id: "part:up", label: "Previous part", category: "Navigation", defaultBinding: { key: "arrowup", alt: true } },
-  { id: "part:down", label: "Next part", category: "Navigation", defaultBinding: { key: "arrowdown", alt: true } },
+  { id: "pitch:up", label: "Pitch up (diatonic)", category: "Navigation", defaultBinding: { key: "arrowup", alt: true } },
+  { id: "pitch:down", label: "Pitch down (diatonic)", category: "Navigation", defaultBinding: { key: "arrowdown", alt: true } },
+  { id: "pitch-chromatic:up", label: "Pitch up (chromatic)", category: "Navigation", defaultBinding: { key: "arrowup", alt: true, shift: true } },
+  { id: "pitch-chromatic:down", label: "Pitch down (chromatic)", category: "Navigation", defaultBinding: { key: "arrowdown", alt: true, shift: true } },
+  { id: "octave:up", label: "Octave up", category: "Navigation", defaultBinding: { key: "arrowup", alt: true, ctrl: true } },
+  { id: "octave:down", label: "Octave down", category: "Navigation", defaultBinding: { key: "arrowdown", alt: true, ctrl: true } },
+  { id: "part:up", label: "Previous part", category: "Navigation", defaultBinding: { key: "arrowup" } },
+  { id: "part:down", label: "Next part", category: "Navigation", defaultBinding: { key: "arrowdown" } },
   { id: "nav:beginning", label: "Go to beginning", category: "Navigation", defaultBinding: { key: "enter" } },
 
   // Selection
@@ -95,6 +100,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "barline-popover", label: "Barline", category: "Annotation", defaultBinding: { key: "b", shift: true } },
 
   // Articulations
+  { id: "toggle-cross-staff", label: "Toggle cross-staff", category: "Notes", defaultBinding: { key: "x", shift: true } },
   { id: "articulation:accent", label: "Accent", category: "Articulations", defaultBinding: { key: ">", shift: true } },
   { id: "articulation:staccato", label: "Staccato", category: "Articulations", defaultBinding: { key: "<", shift: true } },
   { id: "articulation:tenuto", label: "Tenuto", category: "Articulations", defaultBinding: { key: "t", shift: true } },

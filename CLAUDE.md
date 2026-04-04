@@ -33,7 +33,8 @@ VITE_CLEAN_SETTINGS=1 npm run tauri dev  # Same for desktop
 ## Keyboard Shortcuts
 
 A-G: insert note | R: rest | 1-7: duration (bulk-applies to selection) | .: dot | =/- : sharp/flat
-Arrow L/R: move cursor | Arrow U/D: octave | Backspace: delete
+Arrow L/R: move cursor | Arrow U/D: navigate parts/staves | Backspace: delete
+Alt+Up/Down: pitch diatonic | Shift+Alt+Up/Down: pitch chromatic | Ctrl+Alt+Up/Down: octave
 Ctrl+Z / Ctrl+Shift+Z: undo/redo | Ctrl+S: save | Ctrl+O: open
 Ctrl+1-4: switch voice | Ctrl+M: insert measure
 Ctrl+Shift+1-4: switch view | Ctrl+Shift+A: AI chat
@@ -42,7 +43,8 @@ Shift+C: chord input | Shift+L: lyric input
 Shift+D: dynamics | Shift+G: grace note mode | Shift+S: slur (start/end)
 Shift+R: rehearsal mark | Shift+B: barline
 Ctrl+T: time signature | Ctrl+K: key signature | Ctrl+Shift+T: tempo
-N: step entry mode | Alt+Up/Down: navigate between parts
+N: step entry mode
+Shift+X: toggle cross-staff
 
 ## Internal JSON Format
 

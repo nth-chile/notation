@@ -19,6 +19,7 @@ import { DURATION_TYPES_ORDERED } from "../model";
 import { durationToTicks as durationToTicksFn, TICKS_PER_QUARTER } from "../model/duration";
 import { factory } from "../model";
 import { getInstrument } from "../model/instruments";
+import { isCrossStaff } from "../model/note";
 import { defaultInputState, type InputState, type CursorPosition } from "../input/InputState";
 import { CommandHistory } from "../commands/CommandHistory";
 import type { Selection, NoteSelection } from "../plugins/PluginAPI";
@@ -45,6 +46,8 @@ import { SetRepeatBarline } from "../commands/SetRepeatBarline";
 import { SetVolta } from "../commands/SetVolta";
 import { SetNavigationMark } from "../commands/SetNavigationMark";
 import { ToggleArticulation } from "../commands/ToggleArticulation";
+import { ToggleCrossStaff } from "../commands/ToggleCrossStaff";
+import { NudgePitch } from "../commands/NudgePitch";
 import { SetDynamic } from "../commands/SetDynamic";
 import { TogglePickup } from "../commands/TogglePickup";
 import { SetSlur } from "../commands/SetSlur";
@@ -56,6 +59,7 @@ import type { NavigationMarkType } from "../commands/SetNavigationMark";
 import type { BarlineType, Volta } from "../model";
 import type { NoteBox, AnnotationBox } from "../renderer/vexBridge";
 import { newId, type VoiceId, type MeasureId } from "../model/ids";
+import { pitchToMidi, midiToPitch, stepUp, stepDown } from "../model/pitch";
 import { getGlobalPluginManager } from "../plugins/PluginManager";
 
 const history = new CommandHistory();
@@ -84,6 +88,8 @@ interface EditorStore {
   selection: Selection | null;
   noteSelection: NoteSelection | null;
   clipboardMeasures: Measure[] | null;
+  /** Position of the last note entered — nudge commands target this when cursor has advanced past it */
+  lastEnteredPosition: CursorPosition | null;
 
   // Actions
   insertNote(pitchClass: PitchClass): void;
@@ -94,9 +100,12 @@ interface EditorStore {
   setAccidental(acc: Accidental): void;
   toggleStepEntry(): void;
   toggleInsertMode(): void;
+  togglePitchBeforeDuration(): void;
+  commitPendingPitch(): void;
   moveCursor(direction: "left" | "right"): void;
   moveCursorToMeasure(direction: "next" | "prev"): void;
   changeOctave(direction: "up" | "down"): void;
+  nudgePitch(direction: "up" | "down", mode: "diatonic" | "chromatic" | "octave"): void;
   setScore(score: Score): void;
   setFilePath(path: string | null): void;
   setAutoSaveStatus(status: string | null): void;
@@ -124,6 +133,7 @@ interface EditorStore {
 
   // Articulations
   toggleArticulation(kind: import("../model/note").ArticulationKind): void;
+  toggleCrossStaff(): void;
 
   // Phase 2 actions
   changePitch(pitchClass: PitchClass): void;
@@ -235,6 +245,59 @@ function findOrCreateVoiceForStaff(measure: Measure, staveIndex: number, localVo
   return flatIndex;
 }
 
+/** Smart octave: pick the octave that places the note closest to the previous note's pitch.
+ *  Returns the effective octave, applying clef offset. Falls back to clef-based default. */
+function smartOctave(score: Score, cursor: CursorPosition, pitchClass: PitchClass): Octave {
+  const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+  // Look for the previous pitched event (in this voice, this measure, before cursor)
+  let prevPitch: import("../model").Pitch | null = null;
+  if (voice) {
+    for (let i = cursor.eventIndex - 1; i >= 0; i--) {
+      const evt = voice.events[i];
+      if (evt.kind === "note") { prevPitch = evt.head.pitch; break; }
+      if (evt.kind === "chord" && evt.heads.length > 0) { prevPitch = evt.heads[0].pitch; break; }
+      if (evt.kind === "grace") { prevPitch = evt.head.pitch; break; }
+    }
+  }
+  // Also search previous measures in same voice
+  if (!prevPitch) {
+    const part = score.parts[cursor.partIndex];
+    if (part) {
+      for (let mi = cursor.measureIndex - 1; mi >= 0 && !prevPitch; mi--) {
+        const v = part.measures[mi]?.voices[cursor.voiceIndex];
+        if (!v) continue;
+        for (let i = v.events.length - 1; i >= 0; i--) {
+          const evt = v.events[i];
+          if (evt.kind === "note") { prevPitch = evt.head.pitch; break; }
+          if (evt.kind === "chord" && evt.heads.length > 0) { prevPitch = evt.heads[0].pitch; break; }
+          if (evt.kind === "grace") { prevPitch = evt.head.pitch; break; }
+        }
+      }
+    }
+  }
+  if (!prevPitch) {
+    // No previous note — use clef default
+    const measure = score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
+    if (!measure) return 4 as Octave;
+    if ((cursor.staveIndex ?? 0) >= 1) return 3 as Octave;
+    return (CLEF_DEFAULT_OCTAVE[measure.clef.type] ?? 4) as Octave;
+  }
+
+  // Find the octave for pitchClass that's closest to prevPitch
+  const prevMidi = pitchToMidi(prevPitch);
+  let bestOctave = 4 as Octave;
+  let bestDist = Infinity;
+  for (let o = 0; o <= 9; o++) {
+    const midi = pitchToMidi({ pitchClass, accidental: "natural", octave: o as Octave });
+    const dist = Math.abs(midi - prevMidi);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestOctave = o as Octave;
+    }
+  }
+  return bestOctave;
+}
+
 /** Returns true if the cursor is on an existing event (not past the end) */
 function cursorOnExistingEvent(score: Score, cursor: CursorPosition): boolean {
   const voice =
@@ -260,6 +323,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   selection: null,
   noteSelection: null,
   clipboardMeasures: null,
+  lastEnteredPosition: null,
   isPlaying: false,
   playbackTick: null,
   tempo: 120,
@@ -340,7 +404,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   insertNote(pitchClass: PitchClass) {
     const state = get();
     const { cursor } = state.inputState;
-    const octave = getEffectiveOctave(state.score, cursor, state.inputState.octave as Octave);
+    const octave = smartOctave(state.score, cursor, pitchClass);
+
+    // Pitch-before-duration: set pending pitch, don't insert yet
+    if (state.inputState.pitchBeforeDuration && !cursorOnExistingEvent(state.score, cursor)) {
+      set({
+        inputState: {
+          ...state.inputState,
+          pendingPitch: { pitchClass, octave, accidental: state.inputState.accidental },
+        },
+      });
+      return;
+    }
 
     // Grace note mode: insert a grace note before the current event
     if (state.inputState.graceNoteMode) {
@@ -350,7 +425,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         state.inputState.accidental,
       );
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
-      set({ score: result.score, inputState: result.inputState });
+      set({ score: result.score, inputState: result.inputState, lastEnteredPosition: { ...cursor } });
       return;
     }
 
@@ -366,7 +441,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         score: state.score,
         inputState: state.inputState,
       });
-      set({ score: result.score, inputState: result.inputState });
+      set({ score: result.score, inputState: result.inputState, lastEnteredPosition: { ...cursor } });
       return;
     }
 
@@ -385,6 +460,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set({
         score: result.score,
         inputState: result.inputState,
+        lastEnteredPosition: { ...cursor },
       });
       return;
     }
@@ -403,6 +479,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set({
         score: result.score,
         inputState: result.inputState,
+        lastEnteredPosition: { ...cursor },
       });
       return;
     }
@@ -420,6 +497,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
+      lastEnteredPosition: { ...cursor },
     });
   },
 
@@ -428,7 +506,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (state.inputState.insertMode) {
       const cmd = new InsertModeNote("C", 4, "natural", { ...state.inputState.duration }, true);
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
-      set({ score: result.score, inputState: result.inputState });
+      set({ score: result.score, inputState: result.inputState, lastEnteredPosition: null });
       return;
     }
     const cmd = new InsertRest({ ...state.inputState.duration });
@@ -439,6 +517,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
+      lastEnteredPosition: null,
     });
   },
 
@@ -452,11 +531,33 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({
       score: result.score,
       inputState: result.inputState,
+      lastEnteredPosition: null,
     });
   },
 
   setDuration(type: DurationType) {
     const state = get();
+    // Pitch-before-duration: if there's a pending pitch, commit it with this duration
+    if (state.inputState.pendingPitch) {
+      const pending = state.inputState.pendingPitch;
+      const cursor = state.inputState.cursor;
+      const cmd = new InsertNote(
+        pending.pitchClass,
+        pending.octave,
+        pending.accidental,
+        { type, dots: 0 },
+      );
+      const result = history.execute(cmd, {
+        score: state.score,
+        inputState: state.inputState,
+      });
+      set({
+        score: result.score,
+        inputState: { ...result.inputState, duration: { type, dots: 0 }, pendingPitch: null },
+        lastEnteredPosition: { ...cursor },
+      });
+      return;
+    }
     // Note-level selection: change duration of selected events
     if (state.noteSelection) {
       const ns = state.noteSelection;
@@ -510,8 +611,42 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const { cursor } = state.inputState;
     const newDots = ((state.inputState.duration.dots + 1) % 4) as 0 | 1 | 2 | 3;
 
-    // Apply to note at cursor if one exists
-    if (cursorOnExistingEvent(state.score, cursor)) {
+    // Note-level selection: toggle dot on selected events
+    if (state.noteSelection) {
+      const ns = state.noteSelection;
+      const score = structuredClone(state.score);
+      for (let mi = ns.startMeasure; mi <= ns.endMeasure; mi++) {
+        const voice = score.parts[ns.partIndex]?.measures[mi]?.voices[ns.voiceIndex];
+        if (!voice) continue;
+        const startIdx = mi === ns.startMeasure ? ns.startEvent : 0;
+        const endIdx = mi === ns.endMeasure ? ns.endEvent : voice.events.length - 1;
+        for (let i = startIdx; i <= endIdx && i < voice.events.length; i++) {
+          const ev = voice.events[i];
+          const dots = ((ev.duration.dots + 1) % 4) as 0 | 1 | 2 | 3;
+          voice.events[i] = { ...ev, duration: { ...ev.duration, dots } };
+        }
+      }
+      set({ score });
+    } else if (state.selection && !state.inputState.stepEntry) {
+      // Bar-level selection: toggle dot on all events in selected measures
+      const { partIndex, measureStart, measureEnd } = state.selection;
+      const score = structuredClone(state.score);
+      const part = score.parts[partIndex];
+      if (part) {
+        for (let mi = measureStart; mi <= measureEnd; mi++) {
+          const measure = part.measures[mi];
+          if (!measure) continue;
+          for (const voice of measure.voices) {
+            voice.events = voice.events.map((ev) => {
+              const dots = ((ev.duration.dots + 1) % 4) as 0 | 1 | 2 | 3;
+              return { ...ev, duration: { ...ev.duration, dots } };
+            });
+          }
+        }
+        set({ score });
+      }
+    } else if (cursorOnExistingEvent(state.score, cursor)) {
+      // Single note at cursor
       const cmd = new ToggleDot();
       const result = history.execute(cmd, {
         score: state.score,
@@ -531,6 +666,51 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setAccidental(acc: Accidental) {
     const state = get();
     const { cursor } = state.inputState;
+
+    // Helper to apply accidental to a single event
+    const applyAccToEvent = (ev: import("../model/note").NoteEvent, targetAcc: Accidental): import("../model/note").NoteEvent => {
+      if (ev.kind === "note" || ev.kind === "grace") {
+        return { ...ev, head: { ...ev.head, pitch: { ...ev.head.pitch, accidental: targetAcc } } };
+      } else if (ev.kind === "chord") {
+        return { ...ev, heads: ev.heads.map((h) => ({ ...h, pitch: { ...h.pitch, accidental: targetAcc } })) };
+      }
+      return ev;
+    };
+
+    // Note-level selection: apply accidental to selected events
+    if (state.noteSelection) {
+      const ns = state.noteSelection;
+      const score = structuredClone(state.score);
+      for (let mi = ns.startMeasure; mi <= ns.endMeasure; mi++) {
+        const voice = score.parts[ns.partIndex]?.measures[mi]?.voices[ns.voiceIndex];
+        if (!voice) continue;
+        const startIdx = mi === ns.startMeasure ? ns.startEvent : 0;
+        const endIdx = mi === ns.endMeasure ? ns.endEvent : voice.events.length - 1;
+        for (let i = startIdx; i <= endIdx && i < voice.events.length; i++) {
+          voice.events[i] = applyAccToEvent(voice.events[i], acc);
+        }
+      }
+      set({ score, inputState: { ...state.inputState, accidental: acc } });
+      return;
+    }
+
+    // Bar-level selection: apply accidental to all pitched events
+    if (state.selection && !state.inputState.stepEntry) {
+      const { partIndex, measureStart, measureEnd } = state.selection;
+      const score = structuredClone(state.score);
+      const part = score.parts[partIndex];
+      if (part) {
+        for (let mi = measureStart; mi <= measureEnd; mi++) {
+          const measure = part.measures[mi];
+          if (!measure) continue;
+          for (const voice of measure.voices) {
+            voice.events = voice.events.map((ev) => applyAccToEvent(ev, acc));
+          }
+        }
+        set({ score, inputState: { ...state.inputState, accidental: acc } });
+      }
+      return;
+    }
 
     // When on an existing note, toggle based on the note's actual accidental
     if (cursorOnExistingEvent(state.score, cursor)) {
@@ -587,6 +767,40 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }));
   },
 
+  togglePitchBeforeDuration() {
+    set((s) => ({
+      inputState: {
+        ...s.inputState,
+        pitchBeforeDuration: !s.inputState.pitchBeforeDuration,
+        pendingPitch: null, // clear any pending pitch on toggle
+      },
+    }));
+  },
+
+  commitPendingPitch() {
+    const state = get();
+    const pending = state.inputState.pendingPitch;
+    if (!pending) return;
+
+    const cmd = new InsertNote(
+      pending.pitchClass,
+      pending.octave,
+      pending.accidental,
+      { ...state.inputState.duration },
+    );
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    // Note position is the cursor before the command advanced it
+    const notePos = { ...state.inputState.cursor };
+    set({
+      score: result.score,
+      inputState: { ...result.inputState, pendingPitch: null },
+      lastEnteredPosition: notePos,
+    });
+  },
+
   moveCursor(direction: "left" | "right") {
     set((s) => {
       const cursor = { ...s.inputState.cursor };
@@ -622,7 +836,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         }
       }
 
-      return { inputState: { ...s.inputState, cursor } };
+      return { inputState: { ...s.inputState, cursor, pendingPitch: null }, lastEnteredPosition: null };
     });
   },
 
@@ -640,17 +854,84 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         cursor.eventIndex = 0;
       }
 
-      return { inputState: { ...s.inputState, cursor } };
+      return { inputState: { ...s.inputState, cursor }, lastEnteredPosition: null };
     });
   },
 
   changeOctave(direction: "up" | "down") {
-    set((s) => ({
-      inputState: {
-        ...s.inputState,
-        octave: Math.max(0, Math.min(9, s.inputState.octave + (direction === "up" ? 1 : -1))) as Octave,
-      },
-    }));
+    const state = get();
+    // Pending pitch in pitch-before-duration mode: adjust the pending pitch
+    if (state.inputState.pendingPitch) {
+      const p = state.inputState.pendingPitch;
+      const newOct = p.octave + (direction === "up" ? 1 : -1);
+      if (newOct < 0 || newOct > 9) return;
+      set({
+        inputState: {
+          ...state.inputState,
+          pendingPitch: { ...p, octave: newOct as Octave },
+        },
+      });
+      return;
+    }
+    // If cursor is on an existing note, nudge it by octave
+    if (cursorOnExistingEvent(state.score, state.inputState.cursor)) {
+      const cmd = new NudgePitch(direction, "octave");
+      const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+      set({ score: result.score, inputState: result.inputState });
+      return;
+    }
+    // If we just entered a note (cursor advanced past it), nudge that note
+    if (state.lastEnteredPosition && cursorOnExistingEvent(state.score, state.lastEnteredPosition)) {
+      const tempInput = { ...state.inputState, cursor: { ...state.lastEnteredPosition } };
+      const cmd = new NudgePitch(direction, "octave");
+      const result = history.execute(cmd, { score: state.score, inputState: tempInput });
+      set({ score: result.score, inputState: state.inputState });
+      return;
+    }
+  },
+
+  nudgePitch(direction: "up" | "down", mode: "diatonic" | "chromatic" | "octave") {
+    const state = get();
+    // Pending pitch in pitch-before-duration mode: adjust the pending pitch
+    if (state.inputState.pendingPitch) {
+      const p = state.inputState.pendingPitch;
+      const pitch: import("../model").Pitch = { pitchClass: p.pitchClass, accidental: p.accidental, octave: p.octave };
+      let newPitch: import("../model").Pitch;
+      if (mode === "diatonic") {
+        newPitch = direction === "up" ? stepUp(pitch) : stepDown(pitch);
+      } else if (mode === "chromatic") {
+        const midi = pitchToMidi(pitch) + (direction === "up" ? 1 : -1);
+        if (midi < 0 || midi > 127) return;
+        newPitch = midiToPitch(midi);
+      } else {
+        const newOct = pitch.octave + (direction === "up" ? 1 : -1);
+        if (newOct < 0 || newOct > 9) return;
+        newPitch = { ...pitch, octave: newOct as Octave };
+      }
+      set({
+        inputState: {
+          ...state.inputState,
+          pendingPitch: { pitchClass: newPitch.pitchClass, octave: newPitch.octave, accidental: newPitch.accidental },
+        },
+      });
+      return;
+    }
+    // If cursor is on an existing note, nudge it directly
+    if (cursorOnExistingEvent(state.score, state.inputState.cursor)) {
+      const cmd = new NudgePitch(direction, mode);
+      const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+      set({ score: result.score, inputState: result.inputState });
+      return;
+    }
+    // If we just entered a note (cursor advanced past it), nudge that note
+    if (state.lastEnteredPosition && cursorOnExistingEvent(state.score, state.lastEnteredPosition)) {
+      const tempInput = { ...state.inputState, cursor: { ...state.lastEnteredPosition } };
+      const cmd = new NudgePitch(direction, mode);
+      const result = history.execute(cmd, { score: state.score, inputState: tempInput });
+      // Keep the current cursor position (don't jump back)
+      set({ score: result.score, inputState: state.inputState });
+      return;
+    }
   },
 
   setScore(score: Score) {
@@ -918,6 +1199,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set({
         score: result.score,
         inputState: { ...state.inputState, cursor: result.inputState.cursor },
+        lastEnteredPosition: null,
       });
     }
   },
@@ -932,6 +1214,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set({
         score: result.score,
         inputState: { ...state.inputState, cursor: result.inputState.cursor },
+        lastEnteredPosition: null,
       });
     }
   },
@@ -940,7 +1223,121 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   toggleArticulation(kind) {
     const state = get();
+
+    // Helper to toggle articulation on a single event
+    const toggleArt = (ev: import("../model/note").NoteEvent): import("../model/note").NoteEvent => {
+      if (ev.kind === "rest" || ev.kind === "slash") return ev;
+      const arts = ev.articulations ?? [];
+      const has = arts.some((a) => a.kind === kind);
+      const newArts = has ? arts.filter((a) => a.kind !== kind) : [...arts, { kind } as import("../model/note").Articulation];
+      return { ...ev, articulations: newArts.length > 0 ? newArts : undefined };
+    };
+
+    // Note-level selection
+    if (state.noteSelection) {
+      const ns = state.noteSelection;
+      const score = structuredClone(state.score);
+      for (let mi = ns.startMeasure; mi <= ns.endMeasure; mi++) {
+        const voice = score.parts[ns.partIndex]?.measures[mi]?.voices[ns.voiceIndex];
+        if (!voice) continue;
+        const startIdx = mi === ns.startMeasure ? ns.startEvent : 0;
+        const endIdx = mi === ns.endMeasure ? ns.endEvent : voice.events.length - 1;
+        for (let i = startIdx; i <= endIdx && i < voice.events.length; i++) {
+          voice.events[i] = toggleArt(voice.events[i]);
+        }
+      }
+      set({ score });
+      return;
+    }
+
+    // Bar-level selection
+    if (state.selection && !state.inputState.stepEntry) {
+      const { partIndex, measureStart, measureEnd } = state.selection;
+      const score = structuredClone(state.score);
+      const part = score.parts[partIndex];
+      if (part) {
+        for (let mi = measureStart; mi <= measureEnd; mi++) {
+          const measure = part.measures[mi];
+          if (!measure) continue;
+          for (const voice of measure.voices) {
+            voice.events = voice.events.map((ev) => toggleArt(ev));
+          }
+        }
+        set({ score });
+      }
+      return;
+    }
+
+    // Single note at cursor
     const cmd = new ToggleArticulation(kind);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({ score: result.score, inputState: result.inputState });
+  },
+
+  toggleCrossStaff() {
+    const state = get();
+
+    // Helper to toggle cross-staff on a single event
+    const toggleCS = (ev: import("../model/note").NoteEvent, voiceStaff: number): import("../model/note").NoteEvent => {
+      if (ev.kind === "rest" || ev.kind === "slash") return ev;
+      const otherStaff = voiceStaff === 0 ? 1 : 0;
+      if (isCrossStaff(ev, voiceStaff)) {
+        const copy = { ...ev };
+        delete (copy as { renderStaff?: number }).renderStaff;
+        return copy;
+      }
+      return { ...ev, renderStaff: otherStaff };
+    };
+
+    // Check instrument supports grand staff
+    const partIndex = state.noteSelection?.partIndex ?? state.selection?.partIndex ?? state.inputState.cursor.partIndex;
+    const part = state.score.parts[partIndex];
+    if (!part) return;
+    const instrument = getInstrument(part.instrumentId);
+    if (!instrument || instrument.staves < 2) return;
+
+    // Note-level selection
+    if (state.noteSelection) {
+      const ns = state.noteSelection;
+      const score = structuredClone(state.score);
+      for (let mi = ns.startMeasure; mi <= ns.endMeasure; mi++) {
+        const voice = score.parts[ns.partIndex]?.measures[mi]?.voices[ns.voiceIndex];
+        if (!voice) continue;
+        const voiceStaff = voice.staff ?? 0;
+        const startIdx = mi === ns.startMeasure ? ns.startEvent : 0;
+        const endIdx = mi === ns.endMeasure ? ns.endEvent : voice.events.length - 1;
+        for (let i = startIdx; i <= endIdx && i < voice.events.length; i++) {
+          voice.events[i] = toggleCS(voice.events[i], voiceStaff);
+        }
+      }
+      set({ score });
+      return;
+    }
+
+    // Bar-level selection
+    if (state.selection && !state.inputState.stepEntry) {
+      const { partIndex: pi, measureStart, measureEnd } = state.selection;
+      const score = structuredClone(state.score);
+      const p = score.parts[pi];
+      if (p) {
+        for (let mi = measureStart; mi <= measureEnd; mi++) {
+          const measure = p.measures[mi];
+          if (!measure) continue;
+          for (const voice of measure.voices) {
+            const voiceStaff = voice.staff ?? 0;
+            voice.events = voice.events.map((ev) => toggleCS(ev, voiceStaff));
+          }
+        }
+        set({ score });
+      }
+      return;
+    }
+
+    // Single note at cursor
+    const cmd = new ToggleCrossStaff();
     const result = history.execute(cmd, {
       score: state.score,
       inputState: state.inputState,
