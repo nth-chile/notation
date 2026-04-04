@@ -24,6 +24,7 @@ export function KeyboardShortcuts() {
   const setAccidental = useEditorStore((s) => s.setAccidental);
   const moveCursor = useEditorStore((s) => s.moveCursor);
   const changeOctave = useEditorStore((s) => s.changeOctave);
+  const nudgePitch = useEditorStore((s) => s.nudgePitch);
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
   const setVoice = useEditorStore((s) => s.setVoice);
@@ -42,8 +43,10 @@ export function KeyboardShortcuts() {
   const toggleArticulation = useEditorStore((s) => s.toggleArticulation);
   const toggleStepEntry = useEditorStore((s) => s.toggleStepEntry);
   const toggleInsertMode = useEditorStore((s) => s.toggleInsertMode);
+  const togglePitchBeforeDuration = useEditorStore((s) => s.togglePitchBeforeDuration);
   const toggleGraceNoteMode = useEditorStore((s) => s.toggleGraceNoteMode);
   const toggleSlur = useEditorStore((s) => s.toggleSlur);
+  const toggleCrossStaff = useEditorStore((s) => s.toggleCrossStaff);
   const popover = useEditorStore((s) => s.popover);
   const setPopover = useEditorStore((s) => s.setPopover);
   const selection = useEditorStore((s) => s.selection);
@@ -87,8 +90,10 @@ export function KeyboardShortcuts() {
       "toggle-dot": () => toggleDot(),
       "toggle-step-entry": () => toggleStepEntry(),
       "toggle-insert-mode": () => toggleInsertMode(),
+      "toggle-pitch-before-duration": () => togglePitchBeforeDuration(),
       "toggle-grace-note": () => toggleGraceNoteMode(),
       "toggle-slur": () => toggleSlur(),
+      "toggle-cross-staff": () => toggleCrossStaff(),
       "go-to-measure": () => getGlobalPluginManager()?.executeCommand("notation.go-to-measure"),
 
       // Accidentals
@@ -98,6 +103,10 @@ export function KeyboardShortcuts() {
       // Navigation
       "cursor:left": () => { if (selection) setSelection(null); if (noteSelection) setNoteSelection(null); moveCursor("left"); },
       "cursor:right": () => { if (selection) setSelection(null); if (noteSelection) setNoteSelection(null); moveCursor("right"); },
+      "pitch:up": () => nudgePitch("up", "diatonic"),
+      "pitch:down": () => nudgePitch("down", "diatonic"),
+      "pitch-chromatic:up": () => nudgePitch("up", "chromatic"),
+      "pitch-chromatic:down": () => nudgePitch("down", "chromatic"),
       "octave:up": () => changeOctave("up"),
       "octave:down": () => changeOctave("down"),
       "part:up": () => moveCursorPart("up"),
@@ -187,11 +196,11 @@ export function KeyboardShortcuts() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     insertNote, insertRest, deleteNote, setDuration, toggleDot, setAccidental,
-    moveCursor, changeOctave, undo, redo, setVoice, insertMeasure, deleteMeasure,
+    moveCursor, changeOctave, nudgePitch, undo, redo, setVoice, insertMeasure, deleteMeasure,
     enterChordMode, enterLyricMode, textInputMode, isPlaying, play,
     pause, stopPlayback, toggleMetronome, moveCursorPart, setViewMode, selection,
     copySelection, pasteAtCursor, clipboardMeasures, deleteSelectedMeasures,
-    toggleArticulation, toggleStepEntry, toggleInsertMode, toggleGraceNoteMode, toggleSlur, popover, setPopover,
+    toggleArticulation, toggleStepEntry, toggleInsertMode, togglePitchBeforeDuration, toggleGraceNoteMode, toggleSlur, toggleCrossStaff, popover, setPopover,
     setSelection, setNoteSelection, extendSelection, extendNoteSelection,
     noteSelection, deleteNoteSelection,
   ]);

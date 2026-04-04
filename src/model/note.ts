@@ -42,6 +42,11 @@ export interface TupletRatio {
 
 export type NoteEvent = Note | Chord | Rest | Slash | GraceNote;
 
+/** Check if a note event renders on a different staff than expected (cross-staff notation). */
+export function isCrossStaff(event: NoteEvent, currentStaff: number): boolean {
+  return "renderStaff" in event && event.renderStaff != null && event.renderStaff !== currentStaff;
+}
+
 export interface GraceNote {
   kind: "grace";
   id: NoteEventId;
@@ -50,6 +55,7 @@ export interface GraceNote {
   slash?: boolean; // acciaccatura (slashed) vs appoggiatura
   articulations?: Articulation[];
   tuplet?: TupletRatio;
+  renderStaff?: number; // cross-staff: display on this staff index instead of voice's staff
 }
 
 export interface Note {
@@ -61,6 +67,7 @@ export interface Note {
   tabInfo?: TabInfo;
   articulations?: Articulation[];
   tuplet?: TupletRatio;
+  renderStaff?: number; // cross-staff: display on this staff index instead of voice's staff
 }
 
 export interface Chord {
@@ -72,6 +79,7 @@ export interface Chord {
   tabInfo?: TabInfo;
   articulations?: Articulation[];
   tuplet?: TupletRatio;
+  renderStaff?: number; // cross-staff: display on this staff index instead of voice's staff
 }
 
 export interface Rest {

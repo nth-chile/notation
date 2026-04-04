@@ -52,8 +52,8 @@ export function DraggablePanel({ id, title, children, isOverlay, menuItems, fill
       ref={setNodeRef}
       style={style}
       className={cn(
-        "bg-background overflow-hidden flex flex-col",
-        fill && "flex-1 min-h-0",
+        "bg-background overflow-hidden flex flex-col shrink-0",
+        fill && !collapsed && "flex-1 min-h-[60px]",
         isDragging && "opacity-40",
         isOverlay && "shadow-lg border rounded-md"
       )}

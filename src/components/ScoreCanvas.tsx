@@ -118,7 +118,7 @@ export function ScoreCanvas() {
     raw.fillRect(0, 0, width, height);
     raw.restore();
 
-    const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, effectiveViewConfig, width, noteSelection ? null : selection);
+    const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, effectiveViewConfig, width, noteSelection ? null : selection, inputState.pendingPitch);
 
     // Draw note-level selection highlights (continuous band, supports cross-measure)
     if (noteSelection && (noteSelection.startMeasure !== noteSelection.endMeasure || noteSelection.startEvent !== noteSelection.endEvent)) {

@@ -21,3 +21,6 @@ export { SetRepeatBarline } from "./SetRepeatBarline";
 export { SetVolta } from "./SetVolta";
 export { SetNavigationMark } from "./SetNavigationMark";
 export type { NavigationMarkType } from "./SetNavigationMark";
+export { ToggleCrossStaff } from "./ToggleCrossStaff";
+export { NudgePitch } from "./NudgePitch";
+export type { NudgeMode } from "./NudgePitch";

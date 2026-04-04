@@ -1,7 +1,7 @@
 import type { Score, NoteEventId } from "../model";
 import { TICKS_PER_QUARTER, durationToTicks } from "../model/duration";
 import { StaveTie, type StaveNote } from "vexflow";
-import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, renderBrace, clearCanvas, type RenderContext, type NoteBox, type AnnotationBox } from "./vexBridge";
+import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, renderBrace, clearCanvas, createVexStave, type RenderContext, type NoteBox, type AnnotationBox } from "./vexBridge";
 import { getMeasureIndexForTick } from "../playback/TonePlayback";
 import { renderTabMeasure } from "./TabRenderer";
 import { computeLayout, totalContentHeight, totalPageCount, partStaveCount, DEFAULT_LAYOUT, type LayoutConfig, type SystemLine } from "./SystemLayout";
@@ -11,6 +11,21 @@ import type { Annotation } from "../model/annotations";
 import type { Selection } from "../plugins/PluginAPI";
 import type { Measure } from "../model";
 import { useEditorStore } from "../state/EditorState";
+
+/** Detect whether time/key signature changed from the previous measure. */
+function sigChanges(m: Measure, mi: number, prevMeasure: Measure | undefined, isFirstInLine: boolean) {
+  const isPickup = m.isPickup;
+  const prevIsPickup = prevMeasure?.isPickup;
+  const timeSigChanged = isPickup ? false :
+    (mi === 0 || prevIsPickup || (prevMeasure != null && (
+      m.timeSignature.numerator !== prevMeasure.timeSignature.numerator ||
+      m.timeSignature.denominator !== prevMeasure.timeSignature.denominator
+    )));
+  const keySigChanged = isFirstInLine || (prevMeasure != null &&
+    m.keySignature.fifths !== prevMeasure.keySignature.fifths
+  );
+  return { timeSigChanged, keySigChanged };
+}
 
 /** Get voice indices for a given stave from a measure's voices. */
 function voiceIndicesForStave(m: Measure, si: number, staveCount: number): number[] | undefined {
@@ -128,7 +143,8 @@ export function renderScore(
   playbackTick?: number | null,
   viewConfig?: ViewConfig,
   availableWidth?: number,
-  selection?: Selection | null
+  selection?: Selection | null,
+  pendingPitch?: { pitchClass: import("../model").PitchClass; octave: import("../model").Octave; accidental: import("../model").Accidental } | null,
 ): ScoreRenderResult {
   clearCanvas(ctx, canvas);
 
@@ -239,6 +255,28 @@ export function renderScore(
       // Detect consecutive rest measure runs for multi-measure rest rendering
       const restRuns = detectRestRuns(part.measures, system.startMeasure, system.endMeasure);
 
+      // For grand staff: collect VexFlow Stave objects per measure/staveIndex for cross-staff rendering.
+      // Pre-create bass stave (si=1) so treble (si=0) can use it for cross-staff notes.
+      const grandStaffStaves = new Map<string, import("vexflow").Stave>();
+      if (staveCount >= 2) {
+        const bassLayouts = system.staves.filter(
+          (s) => s.partIndex === filteredPi && s.staveIndex === 1
+        );
+        for (let mi = system.startMeasure; mi < system.endMeasure; mi++) {
+          const m = part.measures[mi];
+          if (!m) continue;
+          const posInLine = mi - system.startMeasure;
+          const layout = bassLayouts[posInLine];
+          if (!layout) continue;
+          const bassMeasure = { ...m, clef: { type: "bass" as const } };
+          const isFirstInLine = posInLine === 0;
+          const prevMeasure = mi > 0 ? part.measures[mi - 1] : undefined;
+          const { timeSigChanged, keySigChanged } = sigChanges(m, mi, prevMeasure, isFirstInLine);
+          const stave = createVexStave(ctx, bassMeasure, layout.x, layout.y, layout.width, isFirstInLine, timeSigChanged, keySigChanged);
+          grandStaffStaves.set(`${mi}:1`, stave);
+        }
+      }
+
       for (let si = 0; si < staveCount; si++) {
         const staveLayouts = system.staves.filter(
           (s) => s.partIndex === filteredPi && s.staveIndex === si
@@ -329,40 +367,38 @@ export function renderScore(
               mi
             );
           } else {
-            // Show time/key sig on first measure or when they change
-            // Pickup measures don't show time sig — it goes on the next measure
             const prevMeasure = mi > 0 ? part.measures[mi - 1] : undefined;
-            const isPickup = m.isPickup;
-            const prevIsPickup = prevMeasure?.isPickup;
-            const timeSigChanged = isPickup ? false :
-              (mi === 0 || prevIsPickup || (prevMeasure != null && (
-                m.timeSignature.numerator !== prevMeasure.timeSignature.numerator ||
-                m.timeSignature.denominator !== prevMeasure.timeSignature.denominator
-              )));
-            const keySigChanged = isFirstInLine || (prevMeasure != null &&
-              m.keySignature.fifths !== prevMeasure.keySignature.fifths
-            );
+            const { timeSigChanged, keySigChanged } = sigChanges(m, mi, prevMeasure, isFirstInLine);
             const clefChanged = isFirstInLine || (prevMeasure != null &&
               m.clef.type !== prevMeasure.clef.type
             );
 
+            // For grand staff cross-staff: look up the other stave's VexFlow Stave
+            const otherSi = si === 0 ? 1 : 0;
+            const crossStave = staveCount >= 2 ? grandStaffStaves.get(`${mi}:${otherSi}`) : undefined;
+            // The other stave's clef for creating StaveNotes with correct pitch mapping
+            const crossClef = staveCount >= 2 ? (si === 0 ? "bass" : "treble") : undefined;
+
             result = renderMeasure(
-              ctx,
-              measureToRender,
-              layout.x,
-              layout.y,
-              layout.width,
-              clefChanged,
-              timeSigChanged,
-              keySigChanged,
-              score.stylesheet,
-              originalPi,
-              mi,
-              activeNoteIds,
-              mi > 0 ? part.measures[mi - 1] : undefined,
-              voiceIndicesForStave(m, si, staveCount),
-              si,
+              ctx, measureToRender, layout.x, layout.y, layout.width,
+              clefChanged, timeSigChanged, keySigChanged,
+              {
+                stylesheet: score.stylesheet,
+                partIndex: originalPi,
+                measureIndex: mi,
+                activeNoteIds,
+                prevMeasure: mi > 0 ? part.measures[mi - 1] : undefined,
+                voiceFilter: voiceIndicesForStave(m, si, staveCount),
+                staveIndex: si,
+                crossStaffStave: crossStave,
+                crossStaffClef: crossClef,
+              },
             );
+
+            // Store stave for cross-staff use by the other stave index
+            if (staveCount >= 2 && result.vexStave) {
+              grandStaffStaves.set(`${mi}:${si}`, result.vexStave);
+            }
           }
 
           measurePositions.push({
@@ -395,8 +431,8 @@ export function renderScore(
       }
     }
 
-    // Draw part names on the left
-    if (rawCtx.save && showPartNames && filteredScore.parts.length > 1) {
+    // Draw part names, braces, and system barlines
+    if (rawCtx.save) {
       for (let filteredPi = 0; filteredPi < filteredScore.parts.length; filteredPi++) {
         const part = filteredScore.parts[filteredPi];
         const sc = partStaveCount(filteredScore, filteredPi);
@@ -406,33 +442,37 @@ export function renderScore(
         if (stave0Layouts.length === 0) continue;
 
         const firstStave = stave0Layouts[0];
-        const labelX = config.leftMargin;
 
-        // Center label between top and bottom staves for grand staff
-        let labelY: number;
-        if (sc >= 2) {
-          const stave1Layouts = system.staves.filter(
-            (s) => s.partIndex === filteredPi && s.staveIndex === 1
+        // Part name labels — only when multiple parts are visible
+        if (showPartNames && filteredScore.parts.length > 1) {
+          const labelX = config.leftMargin;
+
+          // Center label between top and bottom staves for grand staff
+          let labelY: number;
+          if (sc >= 2) {
+            const stave1Layouts = system.staves.filter(
+              (s) => s.partIndex === filteredPi && s.staveIndex === 1
+            );
+            const bottomY = stave1Layouts.length > 0
+              ? stave1Layouts[0].y + config.staffHeight
+              : firstStave.y + config.staffHeight;
+            labelY = (firstStave.y + bottomY) / 2 + 4;
+          } else {
+            labelY = firstStave.y + config.staffHeight / 2 + 4;
+          }
+
+          rawCtx.save();
+          rawCtx.font = isFirstSystem ? "bold 11px sans-serif" : "10px sans-serif";
+          rawCtx.fillStyle = "#333";
+          rawCtx.textAlign = "left";
+          rawCtx.fillText(
+            isFirstSystem ? part.name : part.abbreviation,
+            labelX,
+            labelY
           );
-          const bottomY = stave1Layouts.length > 0
-            ? stave1Layouts[0].y + config.staffHeight
-            : firstStave.y + config.staffHeight;
-          labelY = (firstStave.y + bottomY) / 2 + 4;
-        } else {
-          labelY = firstStave.y + config.staffHeight / 2 + 4;
+          rawCtx.textAlign = "start";
+          rawCtx.restore();
         }
-
-        rawCtx.save();
-        rawCtx.font = isFirstSystem ? "bold 11px sans-serif" : "10px sans-serif";
-        rawCtx.fillStyle = "#333";
-        rawCtx.textAlign = "left";
-        rawCtx.fillText(
-          isFirstSystem ? part.name : part.abbreviation,
-          labelX,
-          labelY
-        );
-        rawCtx.textAlign = "start";
-        rawCtx.restore();
 
         // Draw brace for grand staff instruments
         if (sc >= 2) {
@@ -480,7 +520,7 @@ export function renderScore(
 
   // Draw cursor
   if (cursor) {
-    drawCursor(ctx, canvas, score, cursor, measurePositions, config, allNoteBoxes);
+    drawCursor(ctx, canvas, score, cursor, measurePositions, config, allNoteBoxes, pendingPitch);
   }
 
   // Draw playback cursor
@@ -502,7 +542,8 @@ function drawCursor(
   cursor: CursorPosition,
   measurePositions: ScoreRenderResult["measurePositions"],
   config: LayoutConfig,
-  noteBoxes?: Map<NoteEventId, NoteBox>
+  noteBoxes?: Map<NoteEventId, NoteBox>,
+  pendingPitch?: { pitchClass: import("../model").PitchClass; octave: import("../model").Octave; accidental: import("../model").Accidental } | null,
 ): void {
   const mp = measurePositions.find(
     (p) => p.partIndex === cursor.partIndex && p.measureIndex === cursor.measureIndex && p.staveIndex === (cursor.staveIndex ?? 0)
@@ -587,7 +628,91 @@ function drawCursor(
   rawCtx.closePath();
   rawCtx.fill();
 
+  // Draw shadow notehead for pending pitch (pitch-before-duration mode)
+  if (pendingPitch) {
+    const measure = score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
+    const clefType = measure?.clef?.type ?? "treble";
+    const yPos = pitchToStaffY(pendingPitch.pitchClass, pendingPitch.octave, clefType, staffTop, config.staffHeight);
+
+    rawCtx.globalAlpha = 0.4;
+    rawCtx.fillStyle = cursorColor;
+    rawCtx.beginPath();
+    // Draw an elliptical notehead
+    rawCtx.ellipse(cursorX, yPos, 6, 4, -0.2, 0, Math.PI * 2);
+    rawCtx.fill();
+
+    // Draw accidental symbol if not natural
+    if (pendingPitch.accidental !== "natural") {
+      rawCtx.font = "14px serif";
+      rawCtx.textAlign = "right";
+      const accSymbol = pendingPitch.accidental === "sharp" ? "♯"
+        : pendingPitch.accidental === "flat" ? "♭"
+        : pendingPitch.accidental === "double-sharp" ? "𝄪"
+        : "𝄫";
+      rawCtx.fillText(accSymbol, cursorX - 8, yPos + 4);
+    }
+
+    // Draw ledger lines if needed
+    const lineSpacing = config.staffHeight / 4;
+    rawCtx.strokeStyle = cursorColor;
+    rawCtx.lineWidth = 1;
+    if (canvasCtx) canvasCtx.lineWidth = 1 * (window.devicePixelRatio || 1);
+    // Above staff
+    for (let ly = staffTop - lineSpacing; ly >= yPos - 1; ly -= lineSpacing) {
+      rawCtx.beginPath();
+      rawCtx.moveTo(cursorX - 9, ly);
+      rawCtx.lineTo(cursorX + 9, ly);
+      rawCtx.stroke();
+    }
+    // Below staff
+    for (let ly = staffBottom + lineSpacing; ly <= yPos + 1; ly += lineSpacing) {
+      rawCtx.beginPath();
+      rawCtx.moveTo(cursorX - 9, ly);
+      rawCtx.lineTo(cursorX + 9, ly);
+      rawCtx.stroke();
+    }
+
+    rawCtx.globalAlpha = 1.0;
+  }
+
   rawCtx.restore();
+}
+
+/** Convert a pitch to a Y position on the staff.
+ *  Returns the Y coordinate where the notehead should be placed.
+ *  Uses diatonic steps from the clef's reference point. */
+function pitchToStaffY(
+  pitchClass: import("../model").PitchClass,
+  octave: number,
+  clefType: string,
+  staffTop: number,
+  staffHeight: number,
+): number {
+  // Diatonic step number (C=0, D=1, E=2, F=3, G=4, A=5, B=6)
+  const DIATONIC: Record<string, number> = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+  const step = DIATONIC[pitchClass] ?? 0;
+  const totalSteps = octave * 7 + step;
+
+  // Reference: treble clef bottom line = E4 (step 30), top line = F5 (step 38)
+  // Bass clef bottom line = G2 (step 18), top line = A3 (step 26)
+  // Alto clef bottom line = D3 (step 22), top line = E4 (step 30)
+  // Tenor clef bottom line = B2 (step 20), top line = C4 (step 28)
+  const REF_BOTTOM: Record<string, number> = {
+    treble: 4 * 7 + 2, // E4 = 30
+    bass: 2 * 7 + 4,   // G2 = 18
+    alto: 3 * 7 + 1,   // D3 = 22
+    tenor: 2 * 7 + 6,  // B2 = 20
+  };
+  const bottomStep = REF_BOTTOM[clefType] ?? REF_BOTTOM.treble;
+
+  // Each diatonic step = half a line spacing
+  const lineSpacing = staffHeight / 4;
+  const halfLine = lineSpacing / 2;
+  const staffBottom = staffTop + staffHeight;
+
+  // Steps above the bottom line → move up from staffBottom
+  const stepsAbove = totalSteps - bottomStep;
+  return staffBottom - stepsAbove * halfLine;
 }
 
 function getActiveNoteIds(score: Score, playbackTick: number): Set<NoteEventId> {

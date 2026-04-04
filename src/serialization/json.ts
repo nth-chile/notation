@@ -61,6 +61,7 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
       if (e.tabInfo) obj.tab = { string: e.tabInfo.string, fret: e.tabInfo.fret };
       if (e.articulations?.length) obj.articulations = e.articulations.map(articulationToJson);
       if (e.tuplet) obj.tuplet = { actual: e.tuplet.actual, normal: e.tuplet.normal };
+      if (e.renderStaff != null) obj.renderStaff = e.renderStaff;
       return obj;
     }
     case "chord": {
@@ -79,6 +80,7 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
       if (e.tabInfo) obj.tab = { string: e.tabInfo.string, fret: e.tabInfo.fret };
       if (e.articulations?.length) obj.articulations = e.articulations.map(articulationToJson);
       if (e.tuplet) obj.tuplet = { actual: e.tuplet.actual, normal: e.tuplet.normal };
+      if (e.renderStaff != null) obj.renderStaff = e.renderStaff;
       return obj;
     }
     case "rest": {
@@ -100,6 +102,7 @@ function eventToJson(e: NoteEvent): Record<string, unknown> {
       };
       if (e.head.pitch.accidental !== "natural") obj.accidental = e.head.pitch.accidental;
       if (e.slash === false) obj.slash = false;
+      if (e.renderStaff != null) obj.renderStaff = e.renderStaff;
       return obj;
     }
   }
@@ -249,15 +252,11 @@ function parseEvent(e: Record<string, unknown>): NoteEvent {
   const tuplet = parseTuplet(e);
 
   if (type === "rest") {
-    const rest: NoteEvent = { kind: "rest", id, duration };
-    if (tuplet) (rest as unknown as Record<string, unknown>).tuplet = tuplet;
-    return rest;
+    return { kind: "rest", id, duration, ...(tuplet ? { tuplet } : {}) } as NoteEvent;
   }
 
   if (type === "slash") {
-    const slash: NoteEvent = { kind: "slash", id, duration };
-    if (tuplet) (slash as unknown as Record<string, unknown>).tuplet = tuplet;
-    return slash;
+    return { kind: "slash", id, duration, ...(tuplet ? { tuplet } : {}) } as NoteEvent;
   }
 
   if (type === "grace") {
@@ -275,7 +274,8 @@ function parseEvent(e: Record<string, unknown>): NoteEvent {
       duration,
       head: { pitch: { pitchClass, accidental, octave } },
       slash: (e.slash as boolean) ?? true,
-    };
+      ...(typeof e.renderStaff === "number" ? { renderStaff: e.renderStaff } : {}),
+    } as NoteEvent;
   }
 
   if (type === "chord" && Array.isArray(e.pitches)) {
@@ -283,14 +283,14 @@ function parseEvent(e: Record<string, unknown>): NoteEvent {
       const { pitchClass, octave, accidental } = parsePitchStr(p);
       return { pitch: { pitchClass, accidental, octave } };
     });
-    const result: NoteEvent = { kind: "chord", id, duration, heads };
-    if (e.stem) (result as unknown as Record<string, unknown>).stemDirection = e.stem;
-    if (e.tab) (result as unknown as Record<string, unknown>).tabInfo = e.tab;
-    if (Array.isArray(e.articulations)) {
-      (result as unknown as Record<string, unknown>).articulations = parseArticulations(e.articulations as string[]);
-    }
-    if (tuplet) (result as unknown as Record<string, unknown>).tuplet = tuplet;
-    return result;
+    return {
+      kind: "chord", id, duration, heads,
+      ...(e.stem ? { stemDirection: e.stem } : {}),
+      ...(e.tab ? { tabInfo: e.tab } : {}),
+      ...(Array.isArray(e.articulations) ? { articulations: parseArticulations(e.articulations as string[]) } : {}),
+      ...(tuplet ? { tuplet } : {}),
+      ...(typeof e.renderStaff === "number" ? { renderStaff: e.renderStaff } : {}),
+    } as NoteEvent;
   }
 
   // Single note
@@ -303,7 +303,7 @@ function parseEvent(e: Record<string, unknown>): NoteEvent {
   else if (explicitAcc === "double-sharp") accidental = "double-sharp";
   else if (explicitAcc === "double-flat") accidental = "double-flat";
 
-  const note: NoteEvent = {
+  return {
     kind: "note",
     id,
     duration,
@@ -311,14 +311,12 @@ function parseEvent(e: Record<string, unknown>): NoteEvent {
       pitch: { pitchClass, accidental, octave },
       tied: (e.tied as boolean) || undefined,
     },
-  };
-  if (e.stem) (note as unknown as Record<string, unknown>).stemDirection = e.stem;
-  if (e.tab) (note as unknown as Record<string, unknown>).tabInfo = e.tab;
-  if (Array.isArray(e.articulations)) {
-    (note as unknown as Record<string, unknown>).articulations = parseArticulations(e.articulations as string[]);
-  }
-  if (tuplet) (note as unknown as Record<string, unknown>).tuplet = tuplet;
-  return note;
+    ...(e.stem ? { stemDirection: e.stem } : {}),
+    ...(e.tab ? { tabInfo: e.tab } : {}),
+    ...(Array.isArray(e.articulations) ? { articulations: parseArticulations(e.articulations as string[]) } : {}),
+    ...(tuplet ? { tuplet } : {}),
+    ...(typeof e.renderStaff === "number" ? { renderStaff: e.renderStaff } : {}),
+  } as NoteEvent;
 }
 
 function parseAnnotation(a: Record<string, unknown>): Annotation | null {
