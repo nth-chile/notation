@@ -1,10 +1,11 @@
-export type { AppSettings } from "./Settings";
+export type { AppSettings, DisplaySettings } from "./Settings";
 export {
   getSettings,
   updateSettings,
   resetSettings,
   subscribeSettings,
   defaultSettings,
+  defaultDisplaySettings,
 } from "./Settings";
 export {
   type KeyBinding,

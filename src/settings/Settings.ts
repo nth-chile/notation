@@ -1,18 +1,25 @@
 import type { ClefType } from "../model/time";
 import { type KeyBinding, defaultKeyBindings } from "./keybindings";
 
+export interface DisplaySettings {
+  showLyrics: boolean;
+  showChordSymbols: boolean;
+  showRehearsalMarks: boolean;
+  showTempoMarks: boolean;
+  showDynamics: boolean;
+}
+
 export interface AppSettings {
   defaultTempo: number;
   defaultTimeSignature: { numerator: number; denominator: number };
   defaultClef: ClefType;
   autoBeam: boolean;
-  playbackEnabled: boolean;
   metronomeEnabled: boolean;
-  aiProvider: "anthropic" | "openai";
   theme: "light" | "dark";
   historyMaxSnapshots: number;
   keyBindings: Record<string, KeyBinding>;
   viewMode: string;
+  display: DisplaySettings;
 }
 
 const STORAGE_KEY = "notation-settings";
@@ -21,19 +28,28 @@ const CONFIG_FILENAME = "settings.json";
 // Set VITE_CLEAN_SETTINGS=1 to simulate a fresh install without touching your real config
 const SIMULATE_FRESH_INSTALL = import.meta.env.VITE_CLEAN_SETTINGS === "1";
 
+function defaultDisplaySettings(): DisplaySettings {
+  return {
+    showLyrics: true,
+    showChordSymbols: true,
+    showRehearsalMarks: true,
+    showTempoMarks: true,
+    showDynamics: true,
+  };
+}
+
 function defaultSettings(): AppSettings {
   return {
     defaultTempo: 120,
     defaultTimeSignature: { numerator: 4, denominator: 4 },
     defaultClef: "treble",
     autoBeam: true,
-    playbackEnabled: true,
     metronomeEnabled: false,
-    aiProvider: "anthropic",
     theme: "light",
     historyMaxSnapshots: 50,
     keyBindings: defaultKeyBindings(),
     viewMode: "full-score",
+    display: defaultDisplaySettings(),
   };
 }
 
@@ -103,7 +119,8 @@ export function getSettings(): AppSettings {
         const parsed = JSON.parse(stored);
         // Merge keybindings: defaults + stored, so new keybindings aren't lost
         const mergedBindings = { ...defaultKeyBindings(), ...(parsed.keyBindings ?? {}) };
-        currentSettings = { ...defaultSettings(), ...parsed, keyBindings: mergedBindings };
+        const mergedDisplay = { ...defaultDisplaySettings(), ...(parsed.display ?? {}) };
+        currentSettings = { ...defaultSettings(), ...parsed, keyBindings: mergedBindings, display: mergedDisplay };
       } else {
         currentSettings = defaultSettings();
       }
@@ -116,7 +133,8 @@ export function getSettings(): AppSettings {
   readConfigFile().then((fileSettings) => {
     if (fileSettings) {
       const mergedBindings = { ...defaultKeyBindings(), ...(fileSettings.keyBindings ?? {}) };
-      currentSettings = { ...defaultSettings(), ...fileSettings, keyBindings: mergedBindings };
+      const mergedDisplay = { ...defaultDisplaySettings(), ...(fileSettings.display ?? {}) };
+      currentSettings = { ...defaultSettings(), ...fileSettings, keyBindings: mergedBindings, display: mergedDisplay };
       // Sync localStorage with config file
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSettings));
@@ -173,4 +191,4 @@ export function subscribeSettings(listener: (settings: AppSettings) => void): ()
   return () => listeners.delete(listener);
 }
 
-export { defaultSettings };
+export { defaultSettings, defaultDisplaySettings };

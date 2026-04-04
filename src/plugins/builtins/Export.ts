@@ -1,25 +1,12 @@
 import type { NotationPlugin, PluginAPI } from "../PluginAPI";
-import { exportToMusicXML } from "../../musicxml/export";
 
 export const ExportPlugin: NotationPlugin = {
   id: "notation.export",
-  name: "Export",
+  name: "PDF Export",
   version: "1.0.0",
-  description: "Export score as PDF or MusicXML download",
+  description: "Export score as PDF",
 
   activate(api: PluginAPI) {
-    api.registerCommand("notation.export-musicxml", "Export as MusicXML", () => {
-      const score = api.getScore();
-      const content = exportToMusicXML(score);
-      const blob = new Blob([content], { type: "application/vnd.recordare.musicxml+xml" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${score.title || "Untitled"}.musicxml`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-
     api.registerCommand("notation.export-pdf", "Export as PDF", () => {
       const score = api.getScore();
       import("../../fileio/pdf").then(({ exportPDF }) => {
@@ -34,6 +21,5 @@ export const ExportPlugin: NotationPlugin = {
         exportPartPDF(score, partIndex).catch((err) => console.error("PDF export failed:", err));
       });
     });
-
   },
 };

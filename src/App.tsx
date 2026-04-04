@@ -22,10 +22,11 @@ import {
   ChordAnalysisPlugin,
   ViewsPlugin,
   ExportPlugin,
-  PlaybackPlugin,
+  BuiltinInstrumentsPlugin,
   AIChatPlugin,
-  PartManagerPlugin,
-  ScoreEditorPlugin,
+  registerCorePartManager,
+  registerCoreEditor,
+  registerCoreTransport,
   ClipboardPlugin,
   MidiInputPlugin,
 } from "./plugins";
@@ -56,13 +57,16 @@ export function App() {
 
     const pm = pluginManagerRef.current;
 
-    // Register and activate built-in feature plugins
+    // Register core features (always active, not plugins)
+    registerCoreEditor(pm);
+    registerCorePartManager(pm);
+    registerCoreTransport(pm);
+
+    // Register and activate built-in plugins
     pm.registerAndActivate(ViewsPlugin, false);
-    pm.registerAndActivate(PlaybackPlugin, true);
+    pm.registerAndActivate(BuiltinInstrumentsPlugin, true);
     pm.registerAndActivate(AIChatPlugin, true);
-    pm.registerAndActivate(PartManagerPlugin, true);
     pm.registerAndActivate(ExportPlugin, true);
-    pm.registerAndActivate(ScoreEditorPlugin, true);
 
     // Register and activate built-in transform plugins
     pm.registerAndActivate(TransposePlugin, true);

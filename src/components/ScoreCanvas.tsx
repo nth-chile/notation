@@ -4,6 +4,27 @@ import { initRenderer } from "../renderer";
 import { renderScore, calculateContentHeight } from "../renderer";
 import { ScoreOverlay } from "./ScoreOverlay";
 import { AnnotationPopover } from "./DynamicsPopover";
+import { getSettings, subscribeSettings, type DisplaySettings } from "../settings";
+import type { AnnotationFilter, ViewConfig } from "../views/ViewMode";
+
+const DISPLAY_TO_FILTER: [keyof DisplaySettings, AnnotationFilter[]][] = [
+  ["showLyrics", ["lyric"]],
+  ["showChordSymbols", ["chord-symbol"]],
+  ["showRehearsalMarks", ["rehearsal-mark"]],
+  ["showTempoMarks", ["tempo-mark"]],
+  ["showDynamics", ["dynamic", "hairpin"]],
+];
+
+function applyDisplaySettings(viewConfig: ViewConfig, display: DisplaySettings): ViewConfig {
+  const hidden = DISPLAY_TO_FILTER
+    .filter(([key]) => !display[key])
+    .flatMap(([, filters]) => filters);
+  if (hidden.length === 0) return viewConfig;
+  return {
+    ...viewConfig,
+    showAnnotations: viewConfig.showAnnotations.filter((a) => !hidden.includes(a)),
+  };
+}
 
 export function ScoreCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -24,6 +45,10 @@ export function ScoreCanvas() {
   const editingComposer = useEditorStore((s) => s.editingComposer);
   const hiddenParts = useEditorStore((s) => s.hiddenParts);
   const measurePositions = useEditorStore((s) => s.measurePositions);
+
+  // Track display settings for annotation visibility
+  const [displaySettings, setDisplaySettings] = useState(getSettings().display);
+  useEffect(() => subscribeSettings((s) => setDisplaySettings(s.display)), []);
 
   // Auto-scroll to keep editing cursor visible (disabled during playback)
   const isPlaying = useEditorStore((s) => s.isPlaying);
@@ -68,7 +93,8 @@ export function ScoreCanvas() {
 
     const dpr = window.devicePixelRatio || 1;
     const width = containerWidth;
-    const contentHeight = calculateContentHeight(score, viewConfig, width);
+    const effectiveViewConfig = applyDisplaySettings(viewConfig, displaySettings);
+    const contentHeight = calculateContentHeight(score, effectiveViewConfig, width);
     const height = Math.max(contentHeight, container.clientHeight);
 
     canvas.width = width * dpr;
@@ -92,7 +118,7 @@ export function ScoreCanvas() {
     raw.fillRect(0, 0, width, height);
     raw.restore();
 
-    const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, viewConfig, width, noteSelection ? null : selection);
+    const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, effectiveViewConfig, width, noteSelection ? null : selection);
 
     // Draw note-level selection highlights (continuous band, supports cross-measure)
     if (noteSelection && (noteSelection.startMeasure !== noteSelection.endMeasure || noteSelection.startEvent !== noteSelection.endEvent)) {
@@ -131,7 +157,7 @@ export function ScoreCanvas() {
     setNoteBoxes(result.noteBoxes);
     setAnnotationBoxes(result.annotationBoxes);
     setMeasurePositions(result.measurePositions);
-  }, [score, inputState.cursor, playbackTick, viewConfig, containerWidth, selection, noteSelection, editingTitle, editingComposer, hiddenParts, setNoteBoxes, setAnnotationBoxes, setMeasurePositions]);
+  }, [score, inputState.cursor, playbackTick, viewConfig, containerWidth, selection, noteSelection, editingTitle, editingComposer, hiddenParts, displaySettings, setNoteBoxes, setAnnotationBoxes, setMeasurePositions]);
 
   return (
     <div

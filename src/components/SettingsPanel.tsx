@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { getSettings, updateSettings, subscribeSettings, type AppSettings, SHORTCUT_ACTIONS, formatBinding, eventToBinding, defaultKeyBindings, type KeyBinding } from "../settings";
+import { getSettings, updateSettings, subscribeSettings, type AppSettings, type DisplaySettings, SHORTCUT_ACTIONS, formatBinding, eventToBinding, defaultKeyBindings, type KeyBinding } from "../settings";
 import type { ClefType } from "../model";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
@@ -192,31 +192,25 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
           </section>
 
           <section>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Playback</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Display</h3>
             <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm">Playback Enabled</span>
-                <input type="checkbox" checked={settings.playbackEnabled} onChange={(e) => update("playbackEnabled", e.target.checked)} className="accent-primary" />
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm">Metronome Enabled</span>
-                <input type="checkbox" checked={settings.metronomeEnabled} onChange={(e) => update("metronomeEnabled", e.target.checked)} className="accent-primary" />
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">AI</h3>
-            <div className="flex justify-between items-center">
-              <span className="text-sm">AI Provider</span>
-              <select
-                value={settings.aiProvider}
-                onChange={(e) => update("aiProvider", e.target.value as "anthropic" | "openai")}
-                className="h-7 rounded-md border border-input bg-background px-2 text-sm"
-              >
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-              </select>
+              {([
+                ["showLyrics", "Lyrics"],
+                ["showChordSymbols", "Chord Symbols"],
+                ["showRehearsalMarks", "Rehearsal Marks"],
+                ["showTempoMarks", "Tempo Marks"],
+                ["showDynamics", "Dynamics"],
+              ] as [keyof DisplaySettings, string][]).map(([key, label]) => (
+                <div key={key} className="flex justify-between items-center">
+                  <span className="text-sm">{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.display[key]}
+                    onChange={(e) => update("display", { ...settings.display, [key]: e.target.checked })}
+                    className="accent-primary"
+                  />
+                </div>
+              ))}
             </div>
           </section>
 

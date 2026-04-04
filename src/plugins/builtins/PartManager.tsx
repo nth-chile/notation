@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { NotationPlugin, PluginAPI } from "../PluginAPI";
+import type { PluginManager } from "../PluginManager";
 import { useEditorStore } from "../../state";
 import { INSTRUMENTS } from "../../model/instruments";
 import { Button } from "@/components/ui/button";
@@ -96,13 +96,8 @@ function PartsPanel() {
   );
 }
 
-export const PartManagerPlugin: NotationPlugin = {
-  id: "notation.part-manager",
-  name: "Part Manager",
-  version: "1.0.0",
-  description: "Manage parts: add, remove, reorder, solo, mute",
-  activate(api: PluginAPI) {
-    api.registerPanel("parts.panel", { title: "Parts", location: "sidebar-left", component: () => <PartsPanel />, defaultEnabled: true });
-    api.registerCommand("notation.add-part", "Add Part", () => { useEditorStore.getState().addPart("piano"); });
-  },
-};
+/** Register core part management panel and commands. Not a plugin — always active. */
+export function registerCorePartManager(pm: PluginManager): void {
+  pm.registerCorePanel("parts.panel", { title: "Parts", location: "sidebar-left", component: () => <PartsPanel />, defaultEnabled: true });
+  pm.registerCoreCommand("notation.add-part", "Add Part", () => { useEditorStore.getState().addPart("piano"); });
+}

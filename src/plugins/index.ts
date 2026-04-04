@@ -26,9 +26,9 @@ export { ChordAnalysisPlugin } from "./builtins/ChordAnalysis";
 // Built-in feature plugins
 export { ViewsPlugin } from "./builtins/Views";
 export { ExportPlugin } from "./builtins/Export";
-export { PlaybackPlugin } from "./builtins/Playback";
+export { BuiltinInstrumentsPlugin, registerCoreTransport } from "./builtins/Playback";
 export { AIChatPlugin } from "./builtins/AIChat";
-export { PartManagerPlugin } from "./builtins/PartManager";
-export { ScoreEditorPlugin } from "./builtins/ScoreEditor";
+export { registerCorePartManager } from "./builtins/PartManager";
+export { registerCoreEditor } from "./builtins/ScoreEditor";
 export { ClipboardPlugin } from "./builtins/Clipboard";
 export { MidiInputPlugin } from "./builtins/MidiInput";

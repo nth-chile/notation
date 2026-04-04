@@ -21,16 +21,8 @@ describe("defaultSettings", () => {
     expect(defaultSettings().autoBeam).toBe(true);
   });
 
-  it("has playback enabled by default", () => {
-    expect(defaultSettings().playbackEnabled).toBe(true);
-  });
-
   it("has metronome disabled by default", () => {
     expect(defaultSettings().metronomeEnabled).toBe(false);
-  });
-
-  it("defaults to anthropic AI provider", () => {
-    expect(defaultSettings().aiProvider).toBe("anthropic");
   });
 
   it("defaults to light theme", () => {

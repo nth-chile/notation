@@ -248,6 +248,7 @@ export class PluginManager {
         const e = mgr.plugins.get(plugin.id);
         return `Plugin: ${e?.enabled ? "Disable" : "Enable"} ${plugin.name}`;
       },
+      pluginId: plugin.id,
       handler: () => {
         const entry = mgr.plugins.get(plugin.id);
         if (entry?.enabled) {
@@ -389,6 +390,17 @@ export class PluginManager {
 
   getPlaybackService(): PlaybackService | null {
     return this.playbackService?.service ?? null;
+  }
+
+  /** Register a command that isn't owned by any plugin */
+  registerCoreCommand(id: string, label: string, handler: () => void): void {
+    this.commandRegistry.set(id, { id, label, pluginId: "__core__", handler });
+  }
+
+  /** Register a panel that isn't owned by any plugin */
+  registerCorePanel(id: string, config: PanelConfig): void {
+    this.panelRegistry.set(id, { id, pluginId: "__core__", config });
+    this.notify();
   }
 
   /** Handle a keyboard event, return true if a plugin shortcut matched */
