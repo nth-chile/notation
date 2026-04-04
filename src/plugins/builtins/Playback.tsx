@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import type { NotationPlugin, PluginAPI } from "../PluginAPI";
+import type { PluginManager } from "../PluginManager";
 import { useEditorStore } from "../../state";
 import { useHotkey } from "../../hooks/useHotkey";
 import { TICKS_PER_QUARTER } from "../../model/duration";
@@ -60,7 +61,6 @@ class SmplrPlayer implements NotePlayer {
   private loading = new Map<string, Promise<Soundfont>>();
 
   constructor() {
-    // Use Tone.js's AudioContext so scheduled times align with the transport
     this.ctx = Tone.getContext().rawContext as AudioContext;
   }
 
@@ -107,7 +107,7 @@ class SmplrPlayer implements NotePlayer {
   }
 }
 
-// --- Transport UI ---
+// --- Transport UI (core) ---
 
 function TransportPanel() {
   const isPlaying = useEditorStore((s) => s.isPlaying);
@@ -242,25 +242,33 @@ function formatPosition(
   return `${part.measures.length}:1`;
 }
 
-// --- Plugin ---
+// --- Core transport registration ---
+
+/** Register core transport panel and playback commands. Not a plugin — always active. */
+export function registerCoreTransport(pm: PluginManager): void {
+  pm.registerCorePanel("playback.transport", { title: "Transport", location: "toolbar", component: () => <TransportPanel />, defaultEnabled: true });
+  pm.registerCoreCommand("notation.play", "Play", () => { useEditorStore.getState().play(); });
+  pm.registerCoreCommand("notation.pause", "Pause", () => { useEditorStore.getState().pause(); });
+  pm.registerCoreCommand("notation.stop", "Stop Playback", () => { useEditorStore.getState().stopPlayback(); });
+}
+
+// --- Built-in Instruments plugin ---
 
 let player: SmplrPlayer | null = null;
 
-export const PlaybackPlugin: NotationPlugin = {
-  id: "notation.playback",
-  name: "Playback",
+export const BuiltinInstrumentsPlugin: NotationPlugin = {
+  id: "notation.builtin-instruments",
+  name: "Built-in Instruments",
   version: "1.0.0",
-  description: "Transport controls and SoundFont instrument playback",
+  description: "General MIDI instrument sounds via SoundFont",
 
   activate(api: PluginAPI) {
-    // Create SoundFont player and wire into transport engine
     player = new SmplrPlayer();
     const score = api.getScore();
     const instrumentIds = score.parts.map((p) => p.instrumentId);
     player.preloadForScore(instrumentIds.length > 0 ? instrumentIds : [""]);
     Transport.setNotePlayer(player);
 
-    // Register playback service so EditorState can delegate to us
     api.registerPlaybackService({
       play: (s, startTick) => Transport.play(s, startTick),
       pause: () => Transport.pause(),
@@ -270,12 +278,6 @@ export const PlaybackPlugin: NotationPlugin = {
       updateScore: (s) => Transport.updateScore(s),
       setCallbacks: (opts) => Transport.setCallbacks(opts),
     });
-
-    // Register transport UI
-    api.registerPanel("playback.transport", { title: "Transport", location: "toolbar", component: () => <TransportPanel />, defaultEnabled: true });
-    api.registerCommand("notation.play", "Play", () => { useEditorStore.getState().play(); });
-    api.registerCommand("notation.pause", "Pause", () => { useEditorStore.getState().pause(); });
-    api.registerCommand("notation.stop", "Stop Playback", () => { useEditorStore.getState().stopPlayback(); });
   },
 
   deactivate() {

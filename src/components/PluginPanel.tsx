@@ -13,7 +13,7 @@ interface PluginPanelProps {
 const CATEGORY_ORDER: Record<string, number> = { Feature: 0, Transform: 1 };
 
 function categorize(pluginId: string): string {
-  const featureIds = ["notation.views", "notation.playback", "notation.ai-chat", "notation.part-manager", "notation.musicxml"];
+  const featureIds = ["notation.views", "notation.builtin-instruments", "notation.ai-chat", "notation.export"];
   return featureIds.includes(pluginId) ? "Feature" : "Transform";
 }
 

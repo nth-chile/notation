@@ -2,7 +2,8 @@ import type { Score } from "../model/score";
 import { initRenderer } from "../renderer/vexBridge";
 import { renderScore } from "../renderer/ScoreRenderer";
 import { totalPageCount, DEFAULT_LAYOUT, type LayoutConfig } from "../renderer/SystemLayout";
-import { fullScoreConfig, type ViewConfig } from "../views/ViewMode";
+import { fullScoreConfig, type ViewConfig, type AnnotationFilter } from "../views/ViewMode";
+import { getSettings, type DisplaySettings } from "../settings";
 import { jsPDF } from "jspdf";
 
 /** Scale factor for print resolution (300dpi / 96dpi) */
@@ -33,7 +34,18 @@ const PAGE_SIZES: Record<PageSize, { width: number; height: number; inWidth: num
  * When a viewConfig is provided, it is used to filter which parts are rendered.
  */
 export async function exportPDF(score: Score, viewConfig?: ViewConfig, options?: PDFExportOptions): Promise<void> {
-  const baseConfig = viewConfig ?? fullScoreConfig();
+  const rawConfig = viewConfig ?? fullScoreConfig();
+  // Apply app-level display settings to filter annotations
+  const display = getSettings().display;
+  const DISPLAY_TO_FILTER: [keyof DisplaySettings, AnnotationFilter[]][] = [
+    ["showLyrics", ["lyric"]], ["showChordSymbols", ["chord-symbol"]],
+    ["showRehearsalMarks", ["rehearsal-mark"]], ["showTempoMarks", ["tempo-mark"]],
+    ["showDynamics", ["dynamic", "hairpin"]],
+  ];
+  const hidden = DISPLAY_TO_FILTER.filter(([k]) => !display[k]).flatMap(([, f]) => f);
+  const baseConfig = hidden.length > 0
+    ? { ...rawConfig, showAnnotations: rawConfig.showAnnotations.filter((a) => !hidden.includes(a)) }
+    : rawConfig;
   const size = PAGE_SIZES[options?.pageSize ?? "letter"];
   const isLandscape = (options?.orientation ?? "portrait") === "landscape";
   const pageWidth = isLandscape ? size.height : size.width;

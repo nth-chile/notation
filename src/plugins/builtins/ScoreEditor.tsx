@@ -1,6 +1,7 @@
-import type { NotationPlugin, PluginAPI } from "../PluginAPI";
+import type { PluginManager } from "../PluginManager";
 import { useEditorStore } from "../../state";
 import { useHotkey } from "../../hooks/useHotkey";
+import { exportToMusicXML } from "../../musicxml/export";
 import type { DurationType, Accidental } from "../../model";
 import { Separator } from "@/components/ui/separator";
 import { TooltipButton } from "@/components/ui/tooltip-button";
@@ -118,111 +119,117 @@ function NoteInputPanel() {
   );
 }
 
-export const ScoreEditorPlugin: NotationPlugin = {
-  id: "notation.score-editor",
-  name: "Score Editor",
-  version: "1.0.0",
-  description: "Duration, accidental, octave, and dot note input controls",
-  activate(api: PluginAPI) {
-    api.registerPanel("score-editor.note-input", { title: "Note Input", location: "toolbar", component: () => <NoteInputPanel />, defaultEnabled: true });
+/** Register core editor commands and panels. Not a plugin — always active. */
+export function registerCoreEditor(pm: PluginManager): void {
+  pm.registerCorePanel("score-editor.note-input", { title: "Note Input", location: "toolbar", component: () => <NoteInputPanel />, defaultEnabled: true });
 
-    api.registerCommand("notation.file-history", "File History", () => {
-      import("../../components/HistoryModal").then((m) => m.showHistoryModal());
-    });
+  pm.registerCoreCommand("notation.file-history", "File History", () => {
+    import("../../components/HistoryModal").then((m) => m.showHistoryModal());
+  });
 
-    api.registerCommand("notation.go-to-measure", "Go to measure...", () => {
-      const store = useEditorStore.getState();
-      store.setPopover(store.popover === "go-to-measure" ? null : "go-to-measure");
-    });
+  pm.registerCoreCommand("notation.go-to-measure", "Go to measure...", () => {
+    const store = useEditorStore.getState();
+    store.setPopover(store.popover === "go-to-measure" ? null : "go-to-measure");
+  });
 
-    // Articulations
-    const articulations = [
-      "staccato", "accent", "tenuto", "fermata", "marcato",
-      "trill", "mordent", "turn", "up-bow", "down-bow",
-    ] as const;
-    for (const art of articulations) {
-      api.registerCommand(`notation.articulation-${art}`, `Toggle ${art}`, () => {
-        useEditorStore.getState().toggleArticulation(art);
-      });
-    }
+  // Articulations
+  const articulations = [
+    "staccato", "accent", "tenuto", "fermata", "marcato",
+    "trill", "mordent", "turn", "up-bow", "down-bow",
+  ] as const;
+  for (const art of articulations) {
+    pm.registerCoreCommand(`notation.articulation-${art}`, `Toggle ${art}`, () => {
+      useEditorStore.getState().toggleArticulation(art);
+    });
+  }
 
-    // Clef changes
-    const clefs = ["treble", "bass", "alto", "tenor"] as const;
-    for (const clef of clefs) {
-      api.registerCommand(`notation.clef-${clef}`, `Change clef to ${clef}`, () => {
-        useEditorStore.getState().changeClef({ type: clef });
-      });
-    }
+  // Clef changes
+  const clefs = ["treble", "bass", "alto", "tenor"] as const;
+  for (const clef of clefs) {
+    pm.registerCoreCommand(`notation.clef-${clef}`, `Change clef to ${clef}`, () => {
+      useEditorStore.getState().changeClef({ type: clef });
+    });
+  }
 
-    // Views
-    api.registerCommand("notation.view-full-score", "View: Full Score", () => {
-      useEditorStore.getState().setViewMode("full-score");
-    });
-    api.registerCommand("notation.view-tab", "View: Tab", () => {
-      useEditorStore.getState().setViewMode("tab");
-    });
+  // Views
+  pm.registerCoreCommand("notation.view-full-score", "View: Full Score", () => {
+    useEditorStore.getState().setViewMode("full-score");
+  });
+  pm.registerCoreCommand("notation.view-tab", "View: Tab", () => {
+    useEditorStore.getState().setViewMode("tab");
+  });
 
-    // Pickup measure
-    api.registerCommand("notation.toggle-pickup", "Toggle pickup measure", () => {
-      useEditorStore.getState().togglePickup();
-    });
+  // Pickup measure
+  pm.registerCoreCommand("notation.toggle-pickup", "Toggle pickup measure", () => {
+    useEditorStore.getState().togglePickup();
+  });
 
-    // Editing
-    api.registerCommand("notation.insert-rest", "Insert rest", () => {
-      useEditorStore.getState().insertRest();
-    });
-    api.registerCommand("notation.delete", "Delete note", () => {
-      useEditorStore.getState().deleteNote();
-    });
-    api.registerCommand("notation.insert-measure", "Insert measure", () => {
-      useEditorStore.getState().insertMeasure();
-    });
-    api.registerCommand("notation.delete-measure", "Delete measure", () => {
-      useEditorStore.getState().deleteMeasure();
-    });
-    api.registerCommand("notation.undo", "Undo", () => {
-      useEditorStore.getState().undo();
-    });
-    api.registerCommand("notation.redo", "Redo", () => {
-      useEditorStore.getState().redo();
-    });
+  // Editing
+  pm.registerCoreCommand("notation.insert-rest", "Insert rest", () => {
+    useEditorStore.getState().insertRest();
+  });
+  pm.registerCoreCommand("notation.delete", "Delete note", () => {
+    useEditorStore.getState().deleteNote();
+  });
+  pm.registerCoreCommand("notation.insert-measure", "Insert measure", () => {
+    useEditorStore.getState().insertMeasure();
+  });
+  pm.registerCoreCommand("notation.delete-measure", "Delete measure", () => {
+    useEditorStore.getState().deleteMeasure();
+  });
+  pm.registerCoreCommand("notation.undo", "Undo", () => {
+    useEditorStore.getState().undo();
+  });
+  pm.registerCoreCommand("notation.redo", "Redo", () => {
+    useEditorStore.getState().redo();
+  });
 
-    // Annotation modes
-    api.registerCommand("notation.chord-mode", "Enter chord input", () => {
-      useEditorStore.getState().enterChordMode();
-    });
-    // Lyric mode is registered by the Lyrics plugin, not here
-    api.registerCommand("notation.toggle-slur", "Toggle slur", () => {
-      useEditorStore.getState().toggleSlur();
-    });
-    api.registerCommand("notation.toggle-step-entry", "Toggle step entry", () => {
-      useEditorStore.getState().toggleStepEntry();
-    });
-    api.registerCommand("notation.toggle-grace-note", "Toggle grace note mode", () => {
-      useEditorStore.getState().toggleGraceNoteMode();
-    });
+  // Annotation modes
+  pm.registerCoreCommand("notation.chord-mode", "Enter chord input", () => {
+    useEditorStore.getState().enterChordMode();
+  });
+  pm.registerCoreCommand("notation.toggle-slur", "Toggle slur", () => {
+    useEditorStore.getState().toggleSlur();
+  });
+  pm.registerCoreCommand("notation.toggle-step-entry", "Toggle step entry", () => {
+    useEditorStore.getState().toggleStepEntry();
+  });
+  pm.registerCoreCommand("notation.toggle-grace-note", "Toggle grace note mode", () => {
+    useEditorStore.getState().toggleGraceNoteMode();
+  });
 
-    // Popovers
-    api.registerCommand("notation.dynamics", "Dynamics...", () => {
-      useEditorStore.getState().setPopover("dynamics");
-    });
-    api.registerCommand("notation.tempo", "Tempo...", () => {
-      useEditorStore.getState().setPopover("tempo");
-    });
-    api.registerCommand("notation.time-signature", "Time signature...", () => {
-      useEditorStore.getState().setPopover("time-sig");
-    });
-    api.registerCommand("notation.key-signature", "Key signature...", () => {
-      useEditorStore.getState().setPopover("key-sig");
-    });
-    api.registerCommand("notation.rehearsal-mark", "Rehearsal mark...", () => {
-      useEditorStore.getState().setPopover("rehearsal");
-    });
-    api.registerCommand("notation.barline", "Barline...", () => {
-      useEditorStore.getState().setPopover("barline");
-    });
-    api.registerCommand("notation.toggle-metronome", "Toggle metronome", () => {
-      useEditorStore.getState().toggleMetronome();
-    });
-  },
-};
+  // Popovers
+  pm.registerCoreCommand("notation.dynamics", "Dynamics...", () => {
+    useEditorStore.getState().setPopover("dynamics");
+  });
+  pm.registerCoreCommand("notation.tempo", "Tempo...", () => {
+    useEditorStore.getState().setPopover("tempo");
+  });
+  pm.registerCoreCommand("notation.time-signature", "Time signature...", () => {
+    useEditorStore.getState().setPopover("time-sig");
+  });
+  pm.registerCoreCommand("notation.key-signature", "Key signature...", () => {
+    useEditorStore.getState().setPopover("key-sig");
+  });
+  pm.registerCoreCommand("notation.rehearsal-mark", "Rehearsal mark...", () => {
+    useEditorStore.getState().setPopover("rehearsal");
+  });
+  pm.registerCoreCommand("notation.barline", "Barline...", () => {
+    useEditorStore.getState().setPopover("barline");
+  });
+  pm.registerCoreCommand("notation.toggle-metronome", "Toggle metronome", () => {
+    useEditorStore.getState().toggleMetronome();
+  });
+
+  pm.registerCoreCommand("notation.export-musicxml", "Export as MusicXML", () => {
+    const score = useEditorStore.getState().score;
+    const content = exportToMusicXML(score);
+    const blob = new Blob([content], { type: "application/vnd.recordare.musicxml+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${score.title || "Untitled"}.musicxml`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
