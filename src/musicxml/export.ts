@@ -1,4 +1,5 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
+import { getInstrument } from "../model/instruments";
 import type { NoteEvent, NoteHead, TupletRatio, Articulation } from "../model/note";
 import type { Pitch } from "../model/pitch";
 import type { Duration } from "../model/duration";
@@ -68,14 +69,11 @@ function durationXml(d: Duration, tuplet?: TupletRatio): string {
   return xml;
 }
 
-function tieXml(tied: boolean | undefined, isChordTag: boolean): string {
-  if (!tied) return "";
-  // For tied notes, we emit tie start. A complete implementation would track
-  // stop ties as well, but for basic export, start is sufficient.
+function tieXml(tieStart: boolean | undefined, tieStop: boolean | undefined, isChordTag: boolean): string {
   let xml = "";
-  if (!isChordTag) {
-    xml += `        <tie type="start"/>\n`;
-  }
+  if (isChordTag) return xml;
+  if (tieStop) xml += `        <tie type="stop"/>\n`;
+  if (tieStart) xml += `        <tie type="start"/>\n`;
   return xml;
 }
 
@@ -97,17 +95,21 @@ const ART_TO_XML: Record<string, { parent: "articulations" | "ornaments" | "nota
 };
 
 function notationsXml(
-  tied: boolean | undefined,
+  tieStart: boolean | undefined,
   tupletPosition?: "start" | "stop",
   slurPositions?: ("start" | "stop")[],
-  articulations?: Articulation[]
+  articulations?: Articulation[],
+  tieStop?: boolean,
 ): string {
   const hasSlurs = slurPositions && slurPositions.length > 0;
   const hasArts = articulations && articulations.length > 0;
-  if (!tied && !tupletPosition && !hasSlurs && !hasArts) return "";
+  if (!tieStart && !tieStop && !tupletPosition && !hasSlurs && !hasArts) return "";
 
   let xml = `        <notations>\n`;
-  if (tied) {
+  if (tieStop) {
+    xml += `          <tied type="stop"/>\n`;
+  }
+  if (tieStart) {
     xml += `          <tied type="start"/>\n`;
   }
   if (tupletPosition) {
@@ -164,6 +166,32 @@ function lyricXml(lyrics: Lyric[]): string {
   return xml;
 }
 
+/** Map chord symbol text (after root) to MusicXML kind values. */
+function chordTextToKind(text: string): string {
+  const t = text.toLowerCase().replace(/\s/g, "");
+  if (!t || t === "maj" || t === "major") return "major";
+  if (t === "m" || t === "min" || t === "minor" || t === "-") return "minor";
+  if (t === "7" || t === "dom7") return "dominant";
+  if (t === "maj7" || t === "major7" || t === "M7" || t === "Δ7" || t === "△7") return "major-seventh";
+  if (t === "m7" || t === "min7" || t === "-7" || t === "minor7") return "minor-seventh";
+  if (t === "dim" || t === "o" || t === "°") return "diminished";
+  if (t === "aug" || t === "+" || t === "#5") return "augmented";
+  if (t === "dim7" || t === "o7" || t === "°7") return "diminished-seventh";
+  if (t === "m7b5" || t === "ø" || t === "ø7") return "half-diminished";
+  if (t === "sus4" || t === "sus") return "suspended-fourth";
+  if (t === "sus2") return "suspended-second";
+  if (t === "6") return "major-sixth";
+  if (t === "m6" || t === "min6") return "minor-sixth";
+  if (t === "9") return "dominant-ninth";
+  if (t === "maj9") return "major-ninth";
+  if (t === "m9" || t === "min9") return "minor-ninth";
+  if (t === "11") return "dominant-11th";
+  if (t === "13") return "dominant-13th";
+  if (t === "aug7" || t === "+7") return "augmented-seventh";
+  if (t === "5" || t === "power") return "power";
+  return "other";
+}
+
 function harmonyXml(chordSymbols: ChordSymbol[]): string {
   let xml = "";
   for (const cs of chordSymbols) {
@@ -182,9 +210,9 @@ function harmonyXml(chordSymbols: ChordSymbol[]): string {
       xml += `          <root-alter>${alter}</root-alter>\n`;
     }
     xml += `        </root>\n`;
-    // Kind — store full text as "other" for now since chord symbol parsing is complex
     const kindText = text.slice(kindStart);
-    xml += `        <kind text="${esc(kindText)}">other</kind>\n`;
+    const kind = chordTextToKind(kindText);
+    xml += `        <kind${kindText ? ` text="${esc(kindText)}"` : ""}>${kind}</kind>\n`;
     xml += `      </harmony>\n`;
   }
   return xml;
@@ -223,9 +251,12 @@ function exportNoteEvent(
   event: NoteEvent,
   voiceNumber: number,
   annotations: Annotation[],
-  tupletPosition?: "start" | "stop"
+  tupletPosition?: "start" | "stop",
+  prevTied?: boolean,
+  staffNumber?: number,
 ): string {
   let xml = "";
+  const staffXml = staffNumber != null ? `        <staff>${staffNumber}</staff>\n` : "";
   const tuplet = event.tuplet;
 
   // Emit dynamics attached to this event
@@ -236,15 +267,16 @@ function exportNoteEvent(
     xml += dynamicDirectionXml(dynamics);
   }
 
-  // Emit hairpin starts/stops at this event
-  const hairpinEvents: { hairpin: Hairpin; position: "start" | "stop" }[] = [];
+  // Emit hairpin starts before note, stops collected for after note
+  const hairpinStarts: { hairpin: Hairpin; position: "start" }[] = [];
+  const hairpinStops: { hairpin: Hairpin; position: "stop" }[] = [];
   for (const a of annotations) {
     if (a.kind !== "hairpin") continue;
-    if (a.startEventId === event.id) hairpinEvents.push({ hairpin: a, position: "start" });
-    if (a.endEventId === event.id) hairpinEvents.push({ hairpin: a, position: "stop" });
+    if (a.startEventId === event.id) hairpinStarts.push({ hairpin: a, position: "start" });
+    if (a.endEventId === event.id) hairpinStops.push({ hairpin: a, position: "stop" });
   }
-  if (hairpinEvents.length > 0) {
-    xml += hairpinDirectionXml(hairpinEvents);
+  if (hairpinStarts.length > 0) {
+    xml += hairpinDirectionXml(hairpinStarts);
   }
 
   // Compute slur positions for this event
@@ -262,7 +294,7 @@ function exportNoteEvent(
     xml += `      <note>\n`;
     xml += `        <rest/>\n`;
     xml += durationXml(event.duration, tuplet);
-    xml += `        <voice>${voiceNumber}</voice>\n`;
+    xml += `        <voice>${voiceNumber}</voice>\n${staffXml}`;
     xml += notationsXml(undefined, tupletPosition, slurPositions);
     xml += `      </note>\n`;
   } else if (event.kind === "grace") {
@@ -270,7 +302,7 @@ function exportNoteEvent(
     xml += `        <grace${event.slash ? ' slash="yes"' : ''}/>\n`;
     xml += pitchXml(event.head.pitch);
     xml += durationXml(event.duration);
-    xml += `        <voice>${voiceNumber}</voice>\n`;
+    xml += `        <voice>${voiceNumber}</voice>\n${staffXml}`;
     xml += accidentalXml(event.head.pitch);
     xml += notationsXml(undefined, undefined, undefined, arts);
     xml += `      </note>\n`;
@@ -279,10 +311,10 @@ function exportNoteEvent(
     xml += `      <note>\n`;
     xml += pitchXml(head.pitch);
     xml += durationXml(event.duration, tuplet);
-    xml += tieXml(head.tied, false);
-    xml += `        <voice>${voiceNumber}</voice>\n`;
+    xml += tieXml(head.tied, prevTied, false);
+    xml += `        <voice>${voiceNumber}</voice>\n${staffXml}`;
     xml += accidentalXml(head.pitch);
-    xml += notationsXml(head.tied, tupletPosition, slurPositions, arts);
+    xml += notationsXml(head.tied, tupletPosition, slurPositions, arts, prevTied);
     const lyrics = findLyricForEvent(annotations, event.id);
     xml += lyricXml(lyrics);
     xml += `      </note>\n`;
@@ -296,16 +328,21 @@ function exportNoteEvent(
       }
       xml += pitchXml(head.pitch);
       xml += durationXml(event.duration, tuplet);
-      xml += tieXml(head.tied, i > 0);
-      xml += `        <voice>${voiceNumber}</voice>\n`;
+      xml += tieXml(head.tied, i === 0 ? prevTied : undefined, i > 0);
+      xml += `        <voice>${voiceNumber}</voice>\n${staffXml}`;
       xml += accidentalXml(head.pitch);
-      xml += notationsXml(head.tied, i === 0 ? tupletPosition : undefined, i === 0 ? slurPositions : undefined, i === 0 ? arts : undefined);
+      xml += notationsXml(head.tied, i === 0 ? tupletPosition : undefined, i === 0 ? slurPositions : undefined, i === 0 ? arts : undefined, i === 0 ? prevTied : undefined);
       if (i === 0) {
         const lyrics = findLyricForEvent(annotations, event.id);
         xml += lyricXml(lyrics);
       }
       xml += `      </note>\n`;
     }
+  }
+
+  // Emit hairpin stops after the note
+  if (hairpinStops.length > 0) {
+    xml += hairpinDirectionXml(hairpinStops);
   }
 
   return xml;
@@ -315,7 +352,8 @@ function exportMeasure(
   measure: Measure,
   measureNumber: number,
   isFirstMeasure: boolean,
-  prevMeasure?: Measure
+  prevMeasure?: Measure,
+  staveCount = 1,
 ): string {
   const xmlMeasureNum = measure.isPickup ? "0" : measureNumber;
   let xml = `    <measure number="${xmlMeasureNum}"${measure.isPickup ? ' implicit="yes"' : ""}>\n`;
@@ -334,6 +372,9 @@ function exportMeasure(
     xml += `      <attributes>\n`;
     if (isFirstMeasure) {
       xml += `        <divisions>${MUSICXML_DIVISIONS}</divisions>\n`;
+      if (staveCount >= 2) {
+        xml += `        <staves>${staveCount}</staves>\n`;
+      }
     }
     if (
       isFirstMeasure ||
@@ -365,11 +406,23 @@ function exportMeasure(
       !prevMeasure ||
       prevMeasure.clef.type !== measure.clef.type
     ) {
-      const clefInfo = CLEF_TO_XML[measure.clef.type];
-      xml += `        <clef>\n`;
-      xml += `          <sign>${clefInfo.sign}</sign>\n`;
-      xml += `          <line>${clefInfo.line}</line>\n`;
-      xml += `        </clef>\n`;
+      if (staveCount >= 2 && isFirstMeasure) {
+        // Grand staff: treble on staff 1, bass on staff 2
+        xml += `        <clef number="1">\n`;
+        xml += `          <sign>G</sign>\n`;
+        xml += `          <line>2</line>\n`;
+        xml += `        </clef>\n`;
+        xml += `        <clef number="2">\n`;
+        xml += `          <sign>F</sign>\n`;
+        xml += `          <line>4</line>\n`;
+        xml += `        </clef>\n`;
+      } else {
+        const clefInfo = CLEF_TO_XML[measure.clef.type];
+        xml += `        <clef>\n`;
+        xml += `          <sign>${clefInfo.sign}</sign>\n`;
+        xml += `          <line>${clefInfo.line}</line>\n`;
+        xml += `        </clef>\n`;
+      }
     }
     xml += `      </attributes>\n`;
   }
@@ -439,13 +492,11 @@ function exportMeasure(
     }
   }
 
-  // Chord symbols (harmony elements come before notes at their position)
-  const chordSymbols = measure.annotations.filter(
-    (a): a is ChordSymbol => a.kind === "chord-symbol"
-  );
-  if (chordSymbols.length > 0) {
-    xml += harmonyXml(chordSymbols);
-  }
+  // Collect chord symbols sorted by beat offset for interleaved export
+  const chordSymbols = measure.annotations
+    .filter((a): a is ChordSymbol => a.kind === "chord-symbol")
+    .sort((a, b) => a.beatOffset - b.beatOffset);
+  const emittedChords = new Set<string>();
 
   // Export voices
   for (let vi = 0; vi < measure.voices.length; vi++) {
@@ -483,8 +534,6 @@ function exportMeasure(
         const isStart = !prevTuplet || prevTuplet.actual !== curTuplet.actual || prevTuplet.normal !== curTuplet.normal;
         const isStop = !nextTuplet || nextTuplet.actual !== curTuplet.actual || nextTuplet.normal !== curTuplet.normal;
         if (isStart && isStop) {
-          // Single-event tuplet: emit start, then we'd need a separate stop but MusicXML
-          // expects start on first and stop on last. For a single note, emit start.
           tupletPos = "start";
         } else if (isStart) {
           tupletPos = "start";
@@ -493,7 +542,24 @@ function exportMeasure(
         }
       }
 
-      xml += exportNoteEvent(event, voiceNumber, measure.annotations, tupletPos);
+      // Emit chord symbols attached to this note
+      for (const cs of chordSymbols) {
+        if (cs.noteEventId === event.id && !emittedChords.has(cs.noteEventId)) {
+          xml += harmonyXml([cs]);
+          emittedChords.add(cs.noteEventId);
+        }
+      }
+
+      // Check if previous note was tied (for tie stop)
+      let prevWasTied = false;
+      if (ei > 0) {
+        const prev = events[ei - 1];
+        if (prev.kind === "note") prevWasTied = !!prev.head.tied;
+        else if (prev.kind === "chord") prevWasTied = prev.heads.some(h => h.tied);
+      }
+      const staffNum = staveCount >= 2 ? (voice.staff ?? 0) + 1 : undefined;
+      xml += exportNoteEvent(event, voiceNumber, measure.annotations, tupletPos, prevWasTied, staffNum);
+
     }
   }
 
@@ -571,9 +637,12 @@ export function exportToMusicXML(score: Score): string {
     const partId = `P${i + 1}`;
     xml += `  <part id="${partId}">\n`;
 
+    const instrument = getInstrument(part.instrumentId);
+    const staveCount = instrument?.staves ?? 1;
+
     for (let m = 0; m < part.measures.length; m++) {
       const prevMeasure = m > 0 ? part.measures[m - 1] : undefined;
-      xml += exportMeasure(part.measures[m], m + 1, m === 0, prevMeasure);
+      xml += exportMeasure(part.measures[m], m + 1, m === 0, prevMeasure, staveCount);
     }
 
     xml += `  </part>\n`;

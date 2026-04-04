@@ -394,7 +394,7 @@ export function renderScore(
     }
 
     // Draw part names on the left
-    if (rawCtx.save && showPartNames) {
+    if (rawCtx.save && showPartNames && filteredScore.parts.length > 1) {
       for (let filteredPi = 0; filteredPi < filteredScore.parts.length; filteredPi++) {
         const part = filteredScore.parts[filteredPi];
         const sc = partStaveCount(filteredScore, filteredPi);

@@ -227,9 +227,11 @@ function parseMeasure(
   let divisions = currentDivisions;
   const annotations: Annotation[] = [];
 
-  // Group note events by voice
+  // Group note events by voice, track staff assignments
   const voiceEvents = new Map<number, NoteEvent[]>();
+  const voiceStaffMap = new Map<number, number>();
   let currentTick = 0;
+  let lastFlushedEventId: NoteEventId | null = null;
 
   // Pending harmonies — assigned to notes as they're processed
   let pendingHarmonies: ChordSymbol[] = [];
@@ -311,13 +313,7 @@ function parseMeasure(
       }
       pendingDynamicLevels = [];
 
-      // Start a hairpin at this event if pending
-      if (pendingWedgeStart) {
-        openHairpinStartId = pendingChordEventId!;
-        openHairpinType = pendingWedgeStart;
-        pendingWedgeStart = null;
-      }
-
+      lastFlushedEventId = pendingChordEventId;
       pendingChordHeads = [];
       pendingChordDuration = null;
       pendingChordEventId = null;
@@ -360,6 +356,9 @@ function parseMeasure(
         const isGrace = getDirectChild(el, "grace") !== null;
         const voiceText = getTextContent(el, "voice");
         const voiceNum = voiceText ? parseInt(voiceText, 10) : 1;
+        const staffText = getTextContent(el, "staff");
+        const staffNum = staffText ? parseInt(staffText, 10) : 1;
+        if (!voiceStaffMap.has(voiceNum)) voiceStaffMap.set(voiceNum, staffNum);
 
         if (!isChord) {
           // Flush any pending chord from previous note
@@ -416,6 +415,12 @@ function parseMeasure(
             h.noteEventId = rest.id;
             annotations.push(h);
           }
+          // Start a hairpin at this event if pending
+          if (pendingWedgeStart) {
+            openHairpinStartId = rest.id;
+            openHairpinType = pendingWedgeStart;
+            pendingWedgeStart = null;
+          }
           currentTick += durationDivs;
         } else if (isGrace) {
           // Grace note — no duration consumed
@@ -468,6 +473,12 @@ function parseMeasure(
               h.beatOffset = currentTick;
               h.noteEventId = eventId;
               annotations.push(h);
+            }
+            // Start a hairpin at this event if pending
+            if (pendingWedgeStart) {
+              openHairpinStartId = eventId;
+              openHairpinType = pendingWedgeStart;
+              pendingWedgeStart = null;
             }
             currentTick += durationDivs;
           }
@@ -634,8 +645,8 @@ function parseMeasure(
           if (wedgeType === "crescendo" || wedgeType === "diminuendo") {
             pendingWedgeStart = wedgeType;
           } else if (wedgeType === "stop" && openHairpinStartId && openHairpinType) {
-            // Close the hairpin — endEventId is the last note we saw
-            const endId = pendingChordEventId ?? openHairpinStartId;
+            // Close the hairpin — endEventId is the current pending note or last flushed
+            const endId = pendingChordEventId ?? lastFlushedEventId ?? openHairpinStartId;
             annotations.push({
               kind: "hairpin",
               type: openHairpinType,
@@ -670,9 +681,11 @@ function parseMeasure(
   const sortedVoiceNums = Array.from(voiceEvents.keys()).sort((a, b) => a - b);
 
   for (const voiceNum of sortedVoiceNums) {
+    const staffNum = voiceStaffMap.get(voiceNum) ?? 1;
     voices.push({
       id: newId<VoiceId>("vce"),
       events: voiceEvents.get(voiceNum)!,
+      ...(staffNum > 1 ? { staff: staffNum - 1 } : {}),
     });
   }
 
@@ -690,12 +703,14 @@ function parseMeasure(
     navigation.volta = barlineResult.volta;
   }
 
-  // Match chord symbols to note events by tick position (voice 1)
+  // Match chord symbols without noteEventId to note events by tick position (voice 1)
   const v1Events = voices[0]?.events ?? [];
   for (const ann of annotations) {
     if (ann.kind !== "chord-symbol") continue;
+    if (ann.noteEventId) continue; // Already assigned during parsing
     let tick = 0;
     for (const ev of v1Events) {
+      if (ev.kind === "grace") continue;
       if (tick >= ann.beatOffset) {
         ann.noteEventId = ev.id;
         break;
