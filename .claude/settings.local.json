@@ -52,7 +52,9 @@
       "Bash(grep:*)",
       "Bash(lsof -ti:1420)",
       "Bash(xargs ls:*)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(ls /Users/jared/work/nubium/src/commands/*.ts)",
+      "Bash(git commit -m ':*)"
     ]
   }
 }

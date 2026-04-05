@@ -304,17 +304,6 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
             )}
           >
             <div className="flex items-center gap-1">
-              <TooltipButton variant="ghost" size="icon" onClick={undo} tooltip={`Undo (${hotkey("undo")})`} actionId="undo">
-                <Undo2 className="h-4 w-4" />
-              </TooltipButton>
-              <TooltipButton variant="ghost" size="icon" onClick={redo} tooltip={`Redo (${hotkey("redo")})`} actionId="redo">
-                <Redo2 className="h-4 w-4" />
-              </TooltipButton>
-            </div>
-
-            <Separator orientation="vertical" />
-
-            <div className="flex items-center gap-1">
               {onNew && (
                 <TooltipButton variant="ghost" size="sm" onClick={onNew} tooltip={`New score (${hotkey("file:new")})`} actionId="file:new">
                   New
@@ -330,6 +319,17 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
                   Save
                 </TooltipButton>
               )}
+            </div>
+
+            <Separator orientation="vertical" />
+
+            <div className="flex items-center gap-1">
+              <TooltipButton variant="ghost" size="icon" onClick={undo} tooltip={`Undo (${hotkey("undo")})`} actionId="undo">
+                <Undo2 className="h-4 w-4" />
+              </TooltipButton>
+              <TooltipButton variant="ghost" size="icon" onClick={redo} tooltip={`Redo (${hotkey("redo")})`} actionId="redo">
+                <Redo2 className="h-4 w-4" />
+              </TooltipButton>
             </div>
 
             {primary.visible.length > 0 && <Separator orientation="vertical" />}

@@ -410,7 +410,7 @@ export function renderScore(
             y: layout.y,
             width: layout.width,
             height: config.staffHeight,
-            noteStartX: result.vexStave?.getNoteStartX() ?? (layout.x + 60),
+            noteStartX: ('vexStave' in result && result.vexStave) ? result.vexStave.getNoteStartX() : (layout.x + 60),
           });
 
           for (const nb of result.noteBoxes) {

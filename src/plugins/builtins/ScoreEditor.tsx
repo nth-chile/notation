@@ -6,13 +6,48 @@ import type { DurationType, Accidental } from "../../model";
 import { Separator } from "@/components/ui/separator";
 import { TooltipButton } from "@/components/ui/tooltip-button";
 
-const DURATIONS: { type: DurationType; label: string; actionId: string }[] = [
-  { type: "whole", label: "W", actionId: "duration:whole" },
-  { type: "half", label: "H", actionId: "duration:half" },
-  { type: "quarter", label: "Q", actionId: "duration:quarter" },
-  { type: "eighth", label: "8", actionId: "duration:eighth" },
-  { type: "16th", label: "16", actionId: "duration:16th" },
-  { type: "32nd", label: "32", actionId: "duration:32nd" },
+/** SVG note icons for duration buttons */
+function NoteIcon({ type, className }: { type: DurationType; className?: string }) {
+  const size = 16;
+  const headY = 11;
+  const stemTop = 2;
+  const filledStemX = 11.2;
+  const openStemX = 12;
+  const filledStem = <line x1={filledStemX} y1={headY} x2={filledStemX} y2={stemTop} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />;
+  const openStem = <line x1={openStemX} y1={headY} x2={openStemX} y2={stemTop} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />;
+  const filledHead = <ellipse cx={8} cy={headY} rx="4" ry="3" fill="currentColor" transform="rotate(-20 8 11)" />;
+  const openHead = <ellipse cx={8} cy={headY} rx="4" ry="3" fill="none" stroke="currentColor" strokeWidth="2" transform="rotate(-20 8 11)" />;
+  const flag = (count: number) => {
+    const sx = filledStemX;
+    const flags = [];
+    for (let i = 0; i < count; i++) {
+      const y = stemTop + i * 4;
+      flags.push(<path key={i} d={`M${sx},${y} Q${sx + 5},${y + 2} ${sx + 3},${y + 5}`} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />);
+    }
+    return <>{flags}</>;
+  };
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={className}>
+      {type === "whole" && (
+        <ellipse cx={8} cy={headY} rx="4" ry="3" fill="none" stroke="currentColor" strokeWidth="2" transform="rotate(-20 8 11)" />
+      )}
+      {type === "half" && <>{openHead}{openStem}</>}
+      {type === "quarter" && <>{filledHead}{filledStem}</>}
+      {type === "eighth" && <>{filledHead}{filledStem}{flag(1)}</>}
+      {type === "16th" && <>{filledHead}{filledStem}{flag(2)}</>}
+      {type === "32nd" && <>{filledHead}{filledStem}{flag(3)}</>}
+    </svg>
+  );
+}
+
+const DURATIONS: { type: DurationType; icon: React.ReactNode; actionId: string }[] = [
+  { type: "whole", icon: <NoteIcon type="whole" />, actionId: "duration:whole" },
+  { type: "half", icon: <NoteIcon type="half" />, actionId: "duration:half" },
+  { type: "quarter", icon: <NoteIcon type="quarter" />, actionId: "duration:quarter" },
+  { type: "eighth", icon: <NoteIcon type="eighth" />, actionId: "duration:eighth" },
+  { type: "16th", icon: <NoteIcon type="16th" />, actionId: "duration:16th" },
+  { type: "32nd", icon: <NoteIcon type="32nd" />, actionId: "duration:32nd" },
 ];
 
 const ACCIDENTALS: { acc: Accidental; label: string }[] = [
@@ -35,6 +70,7 @@ function NoteInputPanel() {
   return (
     <>
       <div className="flex items-center gap-1">
+        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Mode</span>
         <TooltipButton
           variant={inputState.stepEntry ? "default" : "ghost"}
           size="icon"
@@ -45,25 +81,31 @@ function NoteInputPanel() {
         >
           N
         </TooltipButton>
-        <TooltipButton
-          variant={inputState.insertMode ? "default" : "ghost"}
-          size="icon"
-          onClick={toggleInsertMode}
-          tooltip={`Insert mode (${hotkey("toggle-insert-mode")})`}
-          actionId="toggle-insert-mode"
-          className="text-xs font-bold"
-        >
-          I
-        </TooltipButton>
+        {inputState.stepEntry && (
+          <TooltipButton
+            variant={inputState.insertMode ? "default" : "ghost"}
+            size="icon"
+            onClick={toggleInsertMode}
+            tooltip={`Insert mode (${hotkey("toggle-insert-mode")})`}
+            actionId="toggle-insert-mode"
+            className="text-xs font-bold"
+          >
+            I
+          </TooltipButton>
+        )}
         <TooltipButton
           variant={inputState.graceNoteMode ? "default" : "ghost"}
           size="icon"
           onClick={toggleGraceNoteMode}
           tooltip={`Grace note (${hotkey("toggle-grace-note")})`}
           actionId="toggle-grace-note"
-          className="text-xs font-bold italic"
         >
-          G
+          <svg width="12" height="16" viewBox="0 0 12 16">
+            <ellipse cx="4.5" cy="12" rx="3" ry="2.2" fill="currentColor" transform="rotate(-20 4.5 12)" />
+            <line x1="6.5" y1="12" x2="6.5" y2="3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            <path d="M6.5,3 Q10,4 9,7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            <line x1="3" y1="8" x2="11" y2="4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          </svg>
         </TooltipButton>
         <TooltipButton
           variant={inputState.pitchBeforeDuration ? "default" : "ghost"}
@@ -71,9 +113,12 @@ function NoteInputPanel() {
           onClick={togglePitchBeforeDuration}
           tooltip={`Pitch before duration (${hotkey("toggle-pitch-before-duration")})`}
           actionId="toggle-pitch-before-duration"
-          className="text-xs font-bold"
         >
-          K
+          <svg width="14" height="16" viewBox="0 0 14 16">
+            <text x="7" y="6.5" textAnchor="middle" fill="currentColor" fontSize="7" fontWeight="bold" fontFamily="sans-serif">A</text>
+            <ellipse cx="5" cy="13" rx="2.5" ry="1.8" fill="currentColor" transform="rotate(-20 5 13)" />
+            <line x1="6.8" y1="13" x2="6.8" y2="8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
         </TooltipButton>
         <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Duration</span>
         {DURATIONS.map((d) => (
@@ -84,9 +129,8 @@ function NoteInputPanel() {
             onClick={() => setDuration(d.type)}
             tooltip={`${d.type} (${hotkey(d.actionId)})`}
             actionId={d.actionId}
-            className="text-base"
           >
-            {d.label}
+            {d.icon}
           </TooltipButton>
         ))}
         <TooltipButton
@@ -120,12 +164,6 @@ function NoteInputPanel() {
         ))}
       </div>
 
-      <Separator orientation="vertical" />
-
-      <div className="flex items-center gap-1">
-        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Octave</span>
-        <span className="text-sm font-semibold min-w-[20px] text-center">{inputState.octave}</span>
-      </div>
     </>
   );
 }

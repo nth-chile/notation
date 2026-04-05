@@ -2,6 +2,7 @@ import type { Command, EditorSnapshot } from "./Command";
 import type { PitchClass, Octave, Accidental, Duration } from "../model";
 import { newId, type NoteEventId } from "../model/ids";
 import { durationToTicks, measureCapacity, voiceTicksUsed } from "../model/duration";
+import { appendMeasureToAllParts } from "./measureUtils";
 
 export class InsertNote implements Command {
   description = "Insert note";
@@ -43,48 +44,51 @@ export class InsertNote implements Command {
     if (currentTicks + newTicks > cap) {
       // Auto-advance to next measure
       const part = score.parts[partIndex];
-      if (part && measureIndex < part.measures.length - 1) {
-        input.cursor.measureIndex = measureIndex + 1;
-        input.cursor.eventIndex = 0;
+      if (!part) return { score, inputState: input };
 
-        // Ensure target voice exists in next measure
-        const nextMeasure = part.measures[input.cursor.measureIndex];
-        while (nextMeasure.voices.length <= voiceIndex) {
-          nextMeasure.voices.push({
-            id: newId<import("../model/ids").VoiceId>("vce"),
-            events: [],
-            staff: staveIndex,
-          });
-        }
+      // Auto-append a new measure to all parts if at the end
+      if (measureIndex >= part.measures.length - 1) {
+        appendMeasureToAllParts(score);
+      }
 
-        // Insert in the next measure
-        const nextVoice = nextMeasure.voices[voiceIndex];
-        const nextCap = measureCapacity(
-          nextMeasure.timeSignature.numerator,
-          nextMeasure.timeSignature.denominator
-        );
-        const nextTicks = voiceTicksUsed(nextVoice.events);
-        if (nextTicks + newTicks > nextCap) {
-          // Next measure also full, just move cursor
-          return { score, inputState: input };
-        }
+      input.cursor.measureIndex = measureIndex + 1;
+      input.cursor.eventIndex = 0;
 
-        nextVoice.events.splice(0, 0, {
-          kind: "note",
-          id: newId<NoteEventId>("evt"),
-          duration: this.duration,
-          head: {
-            pitch: {
-              pitchClass: this.pitchClass,
-              accidental: this.accidental,
-              octave: this.octave,
-            },
-          },
+      // Ensure target voice exists in next measure
+      const nextMeasure = part.measures[input.cursor.measureIndex];
+      while (nextMeasure.voices.length <= voiceIndex) {
+        nextMeasure.voices.push({
+          id: newId<import("../model/ids").VoiceId>("vce"),
+          events: [],
+          staff: staveIndex,
         });
-        input.cursor.eventIndex = 1;
+      }
+
+      // Insert in the next measure
+      const nextVoice = nextMeasure.voices[voiceIndex];
+      const nextCap = measureCapacity(
+        nextMeasure.timeSignature.numerator,
+        nextMeasure.timeSignature.denominator
+      );
+      const nextTicks = voiceTicksUsed(nextVoice.events);
+      if (nextTicks + newTicks > nextCap) {
+        // Next measure also full, just move cursor
         return { score, inputState: input };
       }
-      // No next measure, do nothing
+
+      nextVoice.events.splice(0, 0, {
+        kind: "note",
+        id: newId<NoteEventId>("evt"),
+        duration: this.duration,
+        head: {
+          pitch: {
+            pitchClass: this.pitchClass,
+            accidental: this.accidental,
+            octave: this.octave,
+          },
+        },
+      });
+      input.cursor.eventIndex = 1;
       return { score, inputState: input };
     }
 

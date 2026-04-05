@@ -770,23 +770,60 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   toggleStepEntry() {
-    set((s) => ({
-      inputState: {
-        ...s.inputState,
-        stepEntry: !s.inputState.stepEntry,
-      },
-    }));
+    set((s) => {
+      const newStep = !s.inputState.stepEntry;
+      const cursor = s.inputState.cursor;
+      // Entering step entry (not insert): auto-select note at cursor
+      // Leaving step entry: clear note selection
+      let noteSelection = s.noteSelection;
+      if (newStep && !s.inputState.insertMode && cursorOnExistingEvent(s.score, cursor)) {
+        noteSelection = {
+          partIndex: cursor.partIndex,
+          voiceIndex: cursor.voiceIndex,
+          startMeasure: cursor.measureIndex,
+          startEvent: cursor.eventIndex,
+          endMeasure: cursor.measureIndex,
+          endEvent: cursor.eventIndex,
+          anchorMeasure: cursor.measureIndex,
+          anchorEvent: cursor.eventIndex,
+        };
+      } else if (!newStep) {
+        noteSelection = null;
+      }
+      return {
+        inputState: { ...s.inputState, stepEntry: newStep },
+        noteSelection,
+      };
+    });
   },
 
   toggleInsertMode() {
-    set((s) => ({
-      inputState: {
-        ...s.inputState,
-        insertMode: !s.inputState.insertMode,
-        // Insert mode implies step entry
-        stepEntry: !s.inputState.insertMode ? true : s.inputState.stepEntry,
-      },
-    }));
+    set((s) => {
+      const newInsert = !s.inputState.insertMode;
+      const newStep = newInsert ? true : s.inputState.stepEntry;
+      // Insert mode on: clear note selection (cursor is insertion point)
+      // Insert mode off, still in step entry: auto-select note at cursor
+      const cursor = s.inputState.cursor;
+      let noteSelection = s.noteSelection;
+      if (newInsert) {
+        noteSelection = null;
+      } else if (newStep && cursorOnExistingEvent(s.score, cursor)) {
+        noteSelection = {
+          partIndex: cursor.partIndex,
+          voiceIndex: cursor.voiceIndex,
+          startMeasure: cursor.measureIndex,
+          startEvent: cursor.eventIndex,
+          endMeasure: cursor.measureIndex,
+          endEvent: cursor.eventIndex,
+          anchorMeasure: cursor.measureIndex,
+          anchorEvent: cursor.eventIndex,
+        };
+      }
+      return {
+        inputState: { ...s.inputState, insertMode: newInsert, stepEntry: newStep },
+        noteSelection,
+      };
+    });
   },
 
   togglePitchBeforeDuration() {
