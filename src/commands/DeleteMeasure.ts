@@ -1,4 +1,5 @@
 import type { Command, EditorSnapshot } from "./Command";
+import { factory } from "../model";
 
 export class DeleteMeasure implements Command {
   description = "Delete measure";
@@ -13,11 +14,6 @@ export class DeleteMeasure implements Command {
 
     // Don't delete the last measure
     if (part.measures.length <= 1) return state;
-
-    // Only delete if measure is empty (all voices have no events)
-    const measure = part.measures[measureIndex];
-    const isEmpty = measure.voices.every((v) => v.events.length === 0);
-    if (!isEmpty) return state;
 
     part.measures.splice(measureIndex, 1);
 

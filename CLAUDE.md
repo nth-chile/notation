@@ -43,6 +43,7 @@ Shift+C: chord input | Shift+L: lyric input
 Shift+D: dynamics | Shift+G: grace note mode | Shift+S: slur (start/end)
 Shift+R: rehearsal mark | Shift+B: barline
 Ctrl+T: time signature | Ctrl+K: key signature | Ctrl+Shift+T: tempo
+I: insert mode (push subsequent notes forward)
 N: step entry mode
 Shift+X: toggle cross-staff
 

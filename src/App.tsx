@@ -106,12 +106,23 @@ export function App() {
     }
   }, [score, filePath, setFilePath]);
 
-  const handleNew = useCallback(() => {
+  const handleNew = useCallback(async () => {
     setScore(emptyScore());
     setFilePath(null);
     useEditorStore.getState().markClean();
     useEditorStore.getState().setAutoSaveStatus(null);
-    localStorage.removeItem("NOTATION_AUTOSAVE");
+    localStorage.removeItem("nubium-autosave");
+    // Clear Tauri recovery file
+    try {
+      const [fs, pathMod] = await Promise.all([
+        import("@tauri-apps/plugin-fs"),
+        import("@tauri-apps/api/path"),
+      ]);
+      const dataDir = await pathMod.appDataDir();
+      await fs.remove(`${dataDir}recovery/recovery.json`);
+    } catch {
+      // not in Tauri or file doesn't exist
+    }
   }, [setScore, setFilePath]);
 
   const handleOpen = useCallback(async () => {

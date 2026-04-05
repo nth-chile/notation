@@ -160,7 +160,7 @@ function TransportPanel() {
           onBlur={handleTempoCommit}
           onKeyDown={(e) => { if (e.key === "Enter") handleTempoCommit(); else if (e.key === "Escape") setTempoInput(null); }}
           onFocus={() => setTempoInput(String(score.tempo))}
-          className="w-12 h-7 text-center text-sm font-semibold"
+          className="w-14 h-7 text-center text-sm font-semibold"
         />
       </div>
 
@@ -176,17 +176,11 @@ function TransportPanel() {
         <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M5 19.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5L15 5H9L5 19.5Z" />
           <path d="M9 5h6" />
-          <path d="M12 18l4-11" />
+          <path d="M12 18l2.6-7.2" />
           <circle cx="15" cy="10" r="1.5" fill="currentColor" />
         </svg>
       </TooltipButton>
 
-      <Separator orientation="vertical" />
-
-      <div className="flex items-center gap-1">
-        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Pos</span>
-        <span className="text-sm font-semibold font-mono min-w-[48px]">{positionDisplay}</span>
-      </div>
     </>
   );
 }

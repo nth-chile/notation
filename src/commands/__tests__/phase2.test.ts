@@ -223,7 +223,7 @@ describe("DeleteMeasure", () => {
     expect(result.score.parts[0].measures).toHaveLength(1);
   });
 
-  it("does not delete a non-empty measure", () => {
+  it("deletes a non-empty measure", () => {
     const m1 = factory.measure([
       factory.voice([factory.note("C", 4, factory.dur("quarter"))]),
     ]);
@@ -237,7 +237,7 @@ describe("DeleteMeasure", () => {
     const cmd = new DeleteMeasure();
     const result = cmd.execute(snap);
 
-    expect(result.score.parts[0].measures).toHaveLength(2);
+    expect(result.score.parts[0].measures).toHaveLength(1);
   });
 
   it("does not delete the last remaining measure", () => {
