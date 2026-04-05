@@ -29,7 +29,6 @@ export function KeyboardShortcuts() {
   const redo = useEditorStore((s) => s.redo);
   const setVoice = useEditorStore((s) => s.setVoice);
   const insertMeasure = useEditorStore((s) => s.insertMeasure);
-  const deleteMeasure = useEditorStore((s) => s.deleteMeasure);
   const enterChordMode = useEditorStore((s) => s.enterChordMode);
   const enterLyricMode = useEditorStore((s) => s.enterLyricMode);
   const textInputMode = useEditorStore((s) => s.inputState.textInputMode);
@@ -60,6 +59,7 @@ export function KeyboardShortcuts() {
   const copySelection = useEditorStore((s) => s.copySelection);
   const pasteAtCursor = useEditorStore((s) => s.pasteAtCursor);
   const clipboardMeasures = useEditorStore((s) => s.clipboardMeasures);
+  const clipboardEvents = useEditorStore((s) => s.clipboardEvents);
 
   useEffect(() => {
     // Action handlers — keyed by shortcut action id
@@ -130,15 +130,14 @@ export function KeyboardShortcuts() {
         }
       },
       "escape": () => { setSelection(null); setNoteSelection(null); useEditorStore.setState((s) => ({ inputState: { ...s.inputState, pendingPitch: null } })); },
-      "copy": () => { if (selection) copySelection(); },
-      "paste": () => { if (clipboardMeasures) pasteAtCursor(); },
-      "cut": () => { if (selection) { copySelection(); deleteSelectedMeasures(); } },
+      "copy": () => { if (selection || noteSelection) copySelection(); },
+      "paste": () => { if (clipboardMeasures || clipboardEvents) pasteAtCursor(); },
+      "cut": () => { if (selection) { copySelection(); deleteSelectedMeasures(); } else if (noteSelection) { copySelection(); deleteNoteSelection(); } },
 
       // Editing
       "undo": () => undo(),
       "redo": () => redo(),
       "insert-measure": () => insertMeasure(),
-      "delete-measure": () => deleteMeasure(),
 
       // Voices
       "voice:1": () => setVoice(0),
@@ -196,10 +195,10 @@ export function KeyboardShortcuts() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     insertNote, insertRest, deleteNote, setDuration, toggleDot, setAccidental,
-    moveCursor, changeOctave, nudgePitch, undo, redo, setVoice, insertMeasure, deleteMeasure,
+    moveCursor, changeOctave, nudgePitch, undo, redo, setVoice, insertMeasure,
     enterChordMode, enterLyricMode, textInputMode, isPlaying, play,
     pause, stopPlayback, toggleMetronome, moveCursorPart, setViewMode, selection,
-    copySelection, pasteAtCursor, clipboardMeasures, deleteSelectedMeasures,
+    copySelection, pasteAtCursor, clipboardMeasures, clipboardEvents, deleteSelectedMeasures,
     toggleArticulation, toggleStepEntry, toggleInsertMode, togglePitchBeforeDuration, toggleGraceNoteMode, toggleSlur, toggleCrossStaff, popover, setPopover,
     setSelection, setNoteSelection, extendSelection, extendNoteSelection,
     noteSelection, deleteNoteSelection,

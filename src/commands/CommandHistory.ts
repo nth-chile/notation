@@ -32,6 +32,13 @@ export class CommandHistory {
     }
   }
 
+  /** Push a before-snapshot so the next state change can be undone */
+  pushSnapshot(before: EditorSnapshot): void {
+    const noOp: Command = { execute: (s) => s, undo: (s) => s, description: "paste" };
+    this.undoStack.push({ command: noOp, before: structuredClone(before) });
+    this.redoStack = [];
+  }
+
   execute(command: Command, state: EditorSnapshot): EditorSnapshot {
     const before = structuredClone(state);
     const after = command.execute(state);

@@ -65,7 +65,7 @@ import { getGlobalPluginManager } from "../plugins/PluginManager";
 
 const history = new CommandHistory();
 
-const AUTOSAVE_KEY = "notation-autosave";
+const AUTOSAVE_KEY = "nubium-autosave";
 const AUTOSAVE_DEBOUNCE_MS = 2000;
 
 interface EditorStore {
@@ -89,6 +89,7 @@ interface EditorStore {
   selection: Selection | null;
   noteSelection: NoteSelection | null;
   clipboardMeasures: Measure[] | null;
+  clipboardEvents: { voiceIndex: number; events: import("../model/note").NoteEvent[] } | null;
   /** Position of the last note entered — nudge commands target this when cursor has advanced past it */
   lastEnteredPosition: CursorPosition | null;
 
@@ -327,6 +328,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   selection: null,
   noteSelection: null,
   clipboardMeasures: null,
+  clipboardEvents: null,
   lastEnteredPosition: null,
   isPlaying: false,
   playbackTick: null,
@@ -772,8 +774,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       inputState: {
         ...s.inputState,
         stepEntry: !s.inputState.stepEntry,
-        // Turning off step entry also turns off insert mode (it's a sub-mode)
-        insertMode: !s.inputState.stepEntry ? s.inputState.insertMode : false,
       },
     }));
   },
@@ -1122,12 +1122,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const part = state.score.parts[cursor.partIndex];
     if (!part) return;
 
-    const sel = state.selection ?? {
-      partIndex: cursor.partIndex,
-      measureStart: cursor.measureIndex,
-      measureEnd: cursor.measureIndex,
-    };
+    // First press: just select the current measure
+    if (!state.selection) {
+      set({
+        selection: { partIndex: cursor.partIndex, measureStart: cursor.measureIndex, measureEnd: cursor.measureIndex },
+        noteSelection: null,
+      });
+      return;
+    }
 
+    // Subsequent presses: extend in the given direction
+    const sel = state.selection;
     if (direction === "right") {
       const newEnd = Math.min(sel.measureEnd + 1, part.measures.length - 1);
       set({ selection: { ...sel, measureEnd: newEnd }, noteSelection: null });
@@ -1154,49 +1159,138 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   copySelection() {
     const state = get();
-    if (!state.selection) return;
-    const { partIndex, measureStart, measureEnd } = state.selection;
-    const part = state.score.parts[partIndex];
-    if (!part) return;
-    const measures = part.measures.slice(measureStart, measureEnd + 1);
-    // Deep clone to detach from live score
-    const cloned = structuredClone(measures);
-    set({ clipboardMeasures: cloned });
+    if (state.selection) {
+      const { partIndex, measureStart, measureEnd } = state.selection;
+      const part = state.score.parts[partIndex];
+      if (!part) return;
+      const measures = part.measures.slice(measureStart, measureEnd + 1);
+      set({ clipboardMeasures: structuredClone(measures), clipboardEvents: null });
+    } else if (state.noteSelection) {
+      const ns = state.noteSelection;
+      const part = state.score.parts[ns.partIndex];
+      if (!part) return;
+      // Collect only the selected events from the active voice
+      const events: import("../model/note").NoteEvent[] = [];
+      for (let m = ns.startMeasure; m <= ns.endMeasure; m++) {
+        const voice = part.measures[m]?.voices[ns.voiceIndex];
+        if (!voice) continue;
+        const startIdx = m === ns.startMeasure ? ns.startEvent : 0;
+        const endIdx = m === ns.endMeasure ? ns.endEvent : voice.events.length - 1;
+        events.push(...voice.events.slice(startIdx, endIdx + 1));
+      }
+      set({ clipboardEvents: structuredClone({ voiceIndex: ns.voiceIndex, events }), clipboardMeasures: null });
+    }
   },
 
   pasteAtCursor() {
     const state = get();
+    const { cursor } = state.inputState;
+
+    // Note-level paste: overwrite events at cursor position
+    if (state.clipboardEvents && state.clipboardEvents.events.length > 0) {
+      const score = structuredClone(state.score);
+      const part = score.parts[cursor.partIndex];
+      if (!part) return;
+      const measure = part.measures[cursor.measureIndex];
+      if (!measure) return;
+      const voice = measure.voices[cursor.voiceIndex];
+      if (!voice) return;
+
+      const newEvents = structuredClone(state.clipboardEvents.events).map((e: any) => {
+        e.id = newId<NoteEventId>("evt");
+        return e;
+      });
+      const replaceCount = Math.min(newEvents.length, voice.events.length - cursor.eventIndex);
+      voice.events.splice(cursor.eventIndex, replaceCount, ...newEvents);
+
+      const newEventIdx = Math.min(cursor.eventIndex + newEvents.length, voice.events.length) - 1;
+      // Push snapshot for undo (before-paste state)
+      history.pushSnapshot({ score: state.score, inputState: state.inputState });
+      set({
+        score,
+        inputState: { ...state.inputState, cursor: { ...cursor, eventIndex: Math.max(0, newEventIdx) } },
+        selection: null,
+        noteSelection: null,
+      });
+      return;
+    }
+
+    // Measure-level paste
     if (!state.clipboardMeasures || state.clipboardMeasures.length === 0) return;
     const score = structuredClone(state.score);
-    const { cursor } = state.inputState;
     const part = score.parts[cursor.partIndex];
     if (!part) return;
 
-    // Deep clone clipboard and regenerate all IDs
+    history.pushSnapshot({ score: state.score, inputState: state.inputState });
+
+    const refMeasure = part.measures[cursor.measureIndex];
+    const targetInstrument = getInstrument(part.instrumentId);
+    const targetStaves = targetInstrument?.staves ?? 1;
+
     const measuresToInsert: Measure[] = structuredClone(state.clipboardMeasures).map((m) => {
       m.id = newId<MeasureId>("msr");
+
+      if (refMeasure) {
+        m.clef = { ...refMeasure.clef };
+        m.keySignature = { ...refMeasure.keySignature };
+        m.timeSignature = { ...refMeasure.timeSignature };
+      }
+
+      m.annotations = m.annotations.filter(
+        (a) => a.kind !== "chord-symbol" && a.kind !== "lyric" && a.kind !== "rehearsal-mark" && a.kind !== "tempo-mark"
+      );
+      m.navigation = undefined;
+      m.barlineEnd = "single";
+
+      const idMap = new Map<NoteEventId, NoteEventId>();
       for (const voice of m.voices) {
         voice.id = newId<VoiceId>("vce");
+        if (targetStaves < 2) {
+          voice.staff = undefined;
+        }
         for (const event of voice.events) {
+          const oldId = event.id;
           event.id = newId<NoteEventId>("evt");
+          idMap.set(oldId, event.id);
+          if (targetStaves < 2 && "renderStaff" in event) {
+            delete (event as any).renderStaff;
+          }
+        }
+      }
+      // Update annotation references to new event IDs
+      for (const ann of m.annotations) {
+        if ("noteEventId" in ann && ann.noteEventId) {
+          const newEvtId = idMap.get(ann.noteEventId as NoteEventId);
+          if (newEvtId) (ann as any).noteEventId = newEvtId;
+        }
+        if ("startEventId" in ann && ann.startEventId) {
+          const newId2 = idMap.get(ann.startEventId as NoteEventId);
+          if (newId2) (ann as any).startEventId = newId2;
+        }
+        if ("endEventId" in ann && ann.endEventId) {
+          const newId2 = idMap.get(ann.endEventId as NoteEventId);
+          if (newId2) (ann as any).endEventId = newId2;
         }
       }
       return m;
     });
 
-    // Insert at the measure after the cursor
-    const insertIndex = cursor.measureIndex + 1;
-    part.measures.splice(insertIndex, 0, ...measuresToInsert);
+    const startIndex = cursor.measureIndex;
+    for (let i = 0; i < measuresToInsert.length; i++) {
+      const targetIdx = startIndex + i;
+      if (targetIdx >= part.measures.length) break;
+      part.measures[targetIdx].voices = measuresToInsert[i].voices;
+      const pastedAnnotations = measuresToInsert[i].annotations;
+      if (pastedAnnotations.length > 0) {
+        const existing = part.measures[targetIdx].annotations;
+        part.measures[targetIdx].annotations = [...existing, ...pastedAnnotations];
+      }
+    }
 
-    const newCursor = {
-      ...cursor,
-      measureIndex: insertIndex + measuresToInsert.length - 1,
-      eventIndex: 0,
-    };
-
+    const lastPasted = Math.min(startIndex + measuresToInsert.length - 1, part.measures.length - 1);
     set({
       score,
-      inputState: { ...state.inputState, cursor: newCursor },
+      inputState: { ...state.inputState, cursor: { ...cursor, measureIndex: lastPasted, eventIndex: 0 } },
       selection: null,
     });
   },
@@ -1993,23 +2087,43 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
 }));
 
-// --- Auto-save: debounced save to localStorage on score changes ---
+// --- Auto-save: debounced save to localStorage + Tauri app data dir ---
 
 import { saveSnapshot } from "../fileio/history";
+
+const RECOVERY_FILENAME = "recovery.json";
+
+async function getTauriRecoveryPath(): Promise<{ fs: any; path: string } | null> {
+  try {
+    const [fs, pathMod] = await Promise.all([
+      import("@tauri-apps/plugin-fs"),
+      import("@tauri-apps/api/path"),
+    ]);
+    const dataDir = await pathMod.appDataDir();
+    await fs.mkdir(`${dataDir}recovery`, { recursive: true });
+    return { fs, path: `${dataDir}recovery/${RECOVERY_FILENAME}` };
+  } catch {
+    return null;
+  }
+}
 
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function autoSave(score: Score, filePath: string | null): Promise<void> {
   try {
     const serialized = serializeScore(score);
-
-    // Persist JSON to localStorage for crash recovery
     const payload = JSON.stringify({ score: serialized, filePath, savedAt: Date.now() });
-    localStorage.setItem(AUTOSAVE_KEY, payload);
+
+    // Try Tauri app data dir first, fall back to localStorage
+    const tauri = await getTauriRecoveryPath();
+    if (tauri) {
+      await tauri.fs.writeTextFile(tauri.path, payload);
+    } else {
+      localStorage.setItem(AUTOSAVE_KEY, payload);
+    }
 
     // Save a snapshot to file history
     saveSnapshot(serialized, score.title || "Untitled");
-    // Note: disk write only happens on explicit Save (Ctrl+S)
   } catch {
     // ignore storage errors
   }
@@ -2046,12 +2160,24 @@ useEditorStore.subscribe((state, prevState) => {
   }
 });
 
-// --- Restore from localStorage on init ---
+// --- Restore from Tauri app data dir or localStorage on init ---
 
-function restoreAutoSave(): void {
+async function restoreAutoSave(): Promise<void> {
   try {
-    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    // Try Tauri first
+    const tauri = await getTauriRecoveryPath();
+    let raw: string | null = null;
+    if (tauri) {
+      try {
+        raw = await tauri.fs.readTextFile(tauri.path);
+      } catch {
+        // no recovery file yet
+      }
+    }
+    // Fall back to localStorage (browser or first run)
+    if (!raw) raw = localStorage.getItem(AUTOSAVE_KEY);
     if (!raw) return;
+
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed.score === "string") {
       const score = deserializeScore(parsed.score);
