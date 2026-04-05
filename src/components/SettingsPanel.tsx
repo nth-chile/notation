@@ -2,9 +2,39 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getSettings, updateSettings, subscribeSettings, type AppSettings, type DisplaySettings, SHORTCUT_ACTIONS, formatBinding, eventToBinding, defaultKeyBindings, type KeyBinding } from "../settings";
 import type { ClefType } from "../model";
 import { useEditorStore } from "../state";
+import { useLayoutStore } from "../state/LayoutState";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
+
+const TOOLBAR_GROUPS = [
+  { id: "score-editor.modes", label: "Modes" },
+  { id: "score-editor.duration", label: "Duration" },
+  { id: "score-editor.accidentals", label: "Accidentals" },
+  { id: "playback.transport", label: "Playback" },
+  { id: "view-switcher", label: "Views" },
+];
+
+function ToolbarSettings() {
+  const toolbarHidden = useLayoutStore((s) => s.toolbarHidden);
+  const toggleToolbarGroup = useLayoutStore((s) => s.toggleToolbarGroup);
+
+  return (
+    <div className="space-y-2">
+      {TOOLBAR_GROUPS.map(({ id, label }) => (
+        <label key={id} className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!toolbarHidden.includes(id)}
+            onChange={() => toggleToolbarGroup(id)}
+            className="rounded"
+          />
+          {label}
+        </label>
+      ))}
+    </div>
+  );
+}
 
 interface SettingsPanelProps {
   visible: boolean;
@@ -227,6 +257,11 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
                 </div>
               ))}
             </div>
+          </section>
+
+          <section>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Toolbar</h3>
+            <ToolbarSettings />
           </section>
 
           <section>

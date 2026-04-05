@@ -56,11 +56,8 @@ const ACCIDENTALS: { acc: Accidental; label: string }[] = [
   { acc: "sharp", label: "\u266F" },
 ];
 
-function NoteInputPanel() {
+function ModesPanel() {
   const inputState = useEditorStore((s) => s.inputState);
-  const setDuration = useEditorStore((s) => s.setDuration);
-  const toggleDot = useEditorStore((s) => s.toggleDot);
-  const setAccidental = useEditorStore((s) => s.setAccidental);
   const toggleStepEntry = useEditorStore((s) => s.toggleStepEntry);
   const toggleInsertMode = useEditorStore((s) => s.toggleInsertMode);
   const toggleGraceNoteMode = useEditorStore((s) => s.toggleGraceNoteMode);
@@ -68,109 +65,123 @@ function NoteInputPanel() {
   const hotkey = useHotkey();
 
   return (
-    <>
-      <div className="flex items-center gap-1">
-        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Mode</span>
+    <div className="flex items-center gap-1">
+      <TooltipButton
+        variant={inputState.stepEntry ? "default" : "ghost"}
+        size="icon"
+        onClick={toggleStepEntry}
+        tooltip={`Step entry (${hotkey("toggle-step-entry")})`}
+        actionId="toggle-step-entry"
+        className="text-xs font-bold"
+      >
+        N
+      </TooltipButton>
+      {inputState.stepEntry && (
         <TooltipButton
-          variant={inputState.stepEntry ? "default" : "ghost"}
+          variant={inputState.insertMode ? "default" : "ghost"}
           size="icon"
-          onClick={toggleStepEntry}
-          tooltip={`Step entry (${hotkey("toggle-step-entry")})`}
-          actionId="toggle-step-entry"
+          onClick={toggleInsertMode}
+          tooltip={`Insert mode (${hotkey("toggle-insert-mode")})`}
+          actionId="toggle-insert-mode"
           className="text-xs font-bold"
         >
-          N
+          I
         </TooltipButton>
-        {inputState.stepEntry && (
-          <TooltipButton
-            variant={inputState.insertMode ? "default" : "ghost"}
-            size="icon"
-            onClick={toggleInsertMode}
-            tooltip={`Insert mode (${hotkey("toggle-insert-mode")})`}
-            actionId="toggle-insert-mode"
-            className="text-xs font-bold"
-          >
-            I
-          </TooltipButton>
-        )}
+      )}
+      <TooltipButton
+        variant={inputState.graceNoteMode ? "default" : "ghost"}
+        size="icon"
+        onClick={toggleGraceNoteMode}
+        tooltip={`Grace note (${hotkey("toggle-grace-note")})`}
+        actionId="toggle-grace-note"
+      >
+        <svg width="12" height="16" viewBox="0 0 12 16">
+          <ellipse cx="4.5" cy="12" rx="3" ry="2.2" fill="currentColor" transform="rotate(-20 4.5 12)" />
+          <line x1="6.5" y1="12" x2="6.5" y2="3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          <path d="M6.5,3 Q10,4 9,7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          <line x1="3" y1="8" x2="11" y2="4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      </TooltipButton>
+      <TooltipButton
+        variant={inputState.pitchBeforeDuration ? "default" : "ghost"}
+        size="icon"
+        onClick={togglePitchBeforeDuration}
+        tooltip={`Pitch before duration (${hotkey("toggle-pitch-before-duration")})`}
+        actionId="toggle-pitch-before-duration"
+      >
+        <svg width="14" height="16" viewBox="0 0 14 16">
+          <text x="7" y="6.5" textAnchor="middle" fill="currentColor" fontSize="7" fontWeight="bold" fontFamily="sans-serif">A</text>
+          <ellipse cx="5" cy="13" rx="2.5" ry="1.8" fill="currentColor" transform="rotate(-20 5 13)" />
+          <line x1="6.8" y1="13" x2="6.8" y2="8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      </TooltipButton>
+    </div>
+  );
+}
+
+function DurationPanel() {
+  const inputState = useEditorStore((s) => s.inputState);
+  const setDuration = useEditorStore((s) => s.setDuration);
+  const toggleDot = useEditorStore((s) => s.toggleDot);
+  const hotkey = useHotkey();
+
+  return (
+    <div className="flex items-center gap-1">
+      {DURATIONS.map((d) => (
         <TooltipButton
-          variant={inputState.graceNoteMode ? "default" : "ghost"}
+          key={d.type}
+          variant={inputState.duration.type === d.type ? "secondary" : "ghost"}
           size="icon"
-          onClick={toggleGraceNoteMode}
-          tooltip={`Grace note (${hotkey("toggle-grace-note")})`}
-          actionId="toggle-grace-note"
+          onClick={() => setDuration(d.type)}
+          tooltip={`${d.type} (${hotkey(d.actionId)})`}
+          actionId={d.actionId}
         >
-          <svg width="12" height="16" viewBox="0 0 12 16">
-            <ellipse cx="4.5" cy="12" rx="3" ry="2.2" fill="currentColor" transform="rotate(-20 4.5 12)" />
-            <line x1="6.5" y1="12" x2="6.5" y2="3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-            <path d="M6.5,3 Q10,4 9,7" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-            <line x1="3" y1="8" x2="11" y2="4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-          </svg>
+          {d.icon}
         </TooltipButton>
+      ))}
+      <TooltipButton
+        variant={inputState.duration.dots > 0 ? "secondary" : "ghost"}
+        size="icon"
+        onClick={toggleDot}
+        tooltip={`Dot (${hotkey("toggle-dot")})`}
+        actionId="toggle-dot"
+        className="text-base"
+      >
+        {"\u2022"}{inputState.duration.dots > 0 ? inputState.duration.dots : ""}
+      </TooltipButton>
+    </div>
+  );
+}
+
+function AccidentalPanel() {
+  const inputState = useEditorStore((s) => s.inputState);
+  const setAccidental = useEditorStore((s) => s.setAccidental);
+  const hotkey = useHotkey();
+
+  return (
+    <div className="flex items-center gap-1">
+      {ACCIDENTALS.map((a) => (
         <TooltipButton
-          variant={inputState.pitchBeforeDuration ? "default" : "ghost"}
+          key={a.acc}
+          variant={inputState.accidental === a.acc && a.acc !== "natural" ? "secondary" : "ghost"}
           size="icon"
-          onClick={togglePitchBeforeDuration}
-          tooltip={`Pitch before duration (${hotkey("toggle-pitch-before-duration")})`}
-          actionId="toggle-pitch-before-duration"
-        >
-          <svg width="14" height="16" viewBox="0 0 14 16">
-            <text x="7" y="6.5" textAnchor="middle" fill="currentColor" fontSize="7" fontWeight="bold" fontFamily="sans-serif">A</text>
-            <ellipse cx="5" cy="13" rx="2.5" ry="1.8" fill="currentColor" transform="rotate(-20 5 13)" />
-            <line x1="6.8" y1="13" x2="6.8" y2="8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          </svg>
-        </TooltipButton>
-        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Duration</span>
-        {DURATIONS.map((d) => (
-          <TooltipButton
-            key={d.type}
-            variant={inputState.duration.type === d.type ? "secondary" : "ghost"}
-            size="icon"
-            onClick={() => setDuration(d.type)}
-            tooltip={`${d.type} (${hotkey(d.actionId)})`}
-            actionId={d.actionId}
-          >
-            {d.icon}
-          </TooltipButton>
-        ))}
-        <TooltipButton
-          variant={inputState.duration.dots > 0 ? "secondary" : "ghost"}
-          size="icon"
-          onClick={toggleDot}
-          tooltip={`Dot (${hotkey("toggle-dot")})`}
-          actionId="toggle-dot"
+          onClick={() => setAccidental(a.acc)}
+          tooltip={hotkey(`accidental:${a.acc}`) ? `${a.acc} (${hotkey(`accidental:${a.acc}`)})` : a.acc}
+          actionId={`accidental:${a.acc}`}
           className="text-base"
         >
-          {"\u2022"}{inputState.duration.dots > 0 ? inputState.duration.dots : ""}
+          {a.label}
         </TooltipButton>
-      </div>
-
-      <Separator orientation="vertical" />
-
-      <div className="flex items-center gap-1">
-        <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Accidental</span>
-        {ACCIDENTALS.map((a) => (
-          <TooltipButton
-            key={a.acc}
-            variant={inputState.accidental === a.acc && a.acc !== "natural" ? "secondary" : "ghost"}
-            size="icon"
-            onClick={() => setAccidental(a.acc)}
-            tooltip={hotkey(`accidental:${a.acc}`) ? `${a.acc} (${hotkey(`accidental:${a.acc}`)})` : a.acc}
-            actionId={`accidental:${a.acc}`}
-            className="text-base"
-          >
-            {a.label}
-          </TooltipButton>
-        ))}
-      </div>
-
-    </>
+      ))}
+    </div>
   );
 }
 
 /** Register core editor commands and panels. Not a plugin — always active. */
 export function registerCoreEditor(pm: PluginManager): void {
-  pm.registerCorePanel("score-editor.note-input", { title: "Note Input", location: "toolbar", component: () => <NoteInputPanel />, defaultEnabled: true });
+  pm.registerCorePanel("score-editor.modes", { title: "Modes", location: "toolbar", component: () => <ModesPanel />, defaultEnabled: true });
+  pm.registerCorePanel("score-editor.duration", { title: "Duration", location: "toolbar", component: () => <DurationPanel />, defaultEnabled: true });
+  pm.registerCorePanel("score-editor.accidentals", { title: "Accidentals", location: "toolbar", component: () => <AccidentalPanel />, defaultEnabled: true });
 
   pm.registerCoreCommand("nubium.file-history", "File History", () => {
     import("../../components/HistoryModal").then((m) => m.showHistoryModal());

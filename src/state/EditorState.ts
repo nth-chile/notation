@@ -819,6 +819,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           anchorEvent: cursor.eventIndex,
         };
       }
+      updateSettings({ insertMode: newInsert });
       return {
         inputState: { ...s.inputState, insertMode: newInsert, stepEntry: newStep },
         noteSelection,
