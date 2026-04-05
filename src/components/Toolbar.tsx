@@ -20,7 +20,7 @@ import { useLayoutStore } from "../state/LayoutState";
 import { useHotkey } from "../hooks/useHotkey";
 import { TooltipButton } from "./ui/tooltip-button";
 import { Separator } from "./ui/separator";
-import { PanelLeft, PanelRight, Undo2, Redo2, Settings, Puzzle, GripVertical } from "lucide-react";
+import { PanelLeft, PanelRight, Undo2, Redo2, Settings, Puzzle } from "lucide-react";
 import { Button } from "./ui/button";
 import { ContextMenu, ContextMenuCheckbox, ContextMenuSeparator, ContextMenuItem, ContextMenuLabel } from "./ui/context-menu";
 import { cn } from "@/lib/utils";
@@ -84,20 +84,14 @@ function SortableToolbarGroup({ group, isOverlay }: { group: ToolbarGroup; isOve
     <div
       ref={setNodeRef}
       style={style}
+      {...attributes}
+      {...listeners}
       className={cn(
-        "flex items-center gap-1 rounded px-1",
+        "flex items-center gap-1 rounded px-1 cursor-grab",
         isDragging && "opacity-40",
         isOverlay && "bg-popover shadow-lg border rounded-md px-2 py-1"
       )}
     >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab text-muted-foreground hover:text-foreground shrink-0"
-        title={`Drag to reorder "${group.label}"`}
-      >
-        <GripVertical className="h-3 w-3" />
-      </div>
       {group.component()}
     </div>
   );
@@ -384,9 +378,7 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
               </TooltipButton>
             )}
 
-            {hasLeftPanels && secondary.visible.length > 0 && (
-              <Separator orientation="vertical" />
-            )}
+            <div className="flex-1" />
 
             <SortableContext items={secondary.visible.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
               {secondary.visible.map((group, i) => (

@@ -21,6 +21,7 @@ export interface AppSettings {
   viewMode: string;
   display: DisplaySettings;
   pitchBeforeDuration: boolean;
+  insertMode: boolean;
 }
 
 const STORAGE_KEY = "nubium-settings";
@@ -52,6 +53,7 @@ function defaultSettings(): AppSettings {
     viewMode: "full-score",
     display: defaultDisplaySettings(),
     pitchBeforeDuration: false,
+    insertMode: false,
   };
 }
 

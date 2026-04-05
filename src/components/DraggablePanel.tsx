@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useLayoutStore } from "../state/LayoutState";
@@ -6,6 +7,43 @@ import { cn } from "@/lib/utils";
 import { ChevronDown, GripVertical, MoreVertical } from "lucide-react";
 
 import type { PanelMenuItem } from "../plugins/PluginAPI";
+
+function PortalMenu({ menuRef, items, onClose }: { menuRef: React.RefObject<HTMLDivElement | null>; items: PanelMenuItem[]; onClose: () => void }) {
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    const el = menuRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.right - 120 });
+    }
+  }, [menuRef]);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuRef, onClose]);
+
+  return (
+    <div
+      className="fixed bg-popover border rounded-md shadow-md z-[9999] py-1 min-w-[120px]"
+      style={{ top: pos.top, left: pos.left }}
+    >
+      {items.map((item) => (
+        <button
+          key={item.label}
+          onClick={() => { item.onClick(); onClose(); }}
+          className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent cursor-pointer"
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface DraggablePanelProps {
   id: string;
@@ -36,17 +74,6 @@ export function DraggablePanel({ id, title, children, isOverlay, menuItems, fill
     transition,
   };
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [menuOpen]);
-
   return (
     <div
       ref={setNodeRef}
@@ -73,7 +100,7 @@ export function DraggablePanel({ id, title, children, isOverlay, menuItems, fill
 
         <button
           onClick={() => toggleCollapsed(id)}
-          className="p-0.5 rounded-sm hover:bg-accent cursor-pointer"
+          className="p-1 rounded-sm hover:bg-accent cursor-pointer"
           title={collapsed ? "Expand panel" : "Collapse panel"}
         >
           <ChevronDown
@@ -88,23 +115,14 @@ export function DraggablePanel({ id, title, children, isOverlay, menuItems, fill
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="p-0.5 rounded-sm hover:bg-accent cursor-pointer"
+              className="p-1 rounded-sm hover:bg-accent cursor-pointer"
               title="Panel options"
             >
               <MoreVertical className="h-3 w-3 text-muted-foreground" />
             </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-popover border rounded-md shadow-md z-50 py-1 min-w-[120px]">
-                {menuItems.map((item) => (
-                  <button
-                    key={item.label}
-                    onClick={() => { item.onClick(); setMenuOpen(false); }}
-                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent cursor-pointer"
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+            {menuOpen && createPortal(
+              <PortalMenu menuRef={menuRef} items={menuItems} onClose={() => setMenuOpen(false)} />,
+              document.body,
             )}
           </div>
         )}

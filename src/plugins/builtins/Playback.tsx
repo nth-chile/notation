@@ -240,7 +240,7 @@ function formatPosition(
 
 /** Register core transport panel and playback commands. Not a plugin — always active. */
 export function registerCoreTransport(pm: PluginManager): void {
-  pm.registerCorePanel("playback.transport", { title: "Transport", location: "toolbar", component: () => <TransportPanel />, defaultEnabled: true });
+  pm.registerCorePanel("playback.transport", { title: "Playback", location: "toolbar", component: () => <TransportPanel />, defaultEnabled: true });
   pm.registerCoreCommand("nubium.play", "Play", () => { useEditorStore.getState().play(); });
   pm.registerCoreCommand("nubium.pause", "Pause", () => { useEditorStore.getState().pause(); });
   pm.registerCoreCommand("nubium.stop", "Stop Playback", () => { useEditorStore.getState().stopPlayback(); });
