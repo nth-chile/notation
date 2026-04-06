@@ -56,6 +56,28 @@ export function App() {
       showNotification: (message, type) => {
         showToast(message, type);
       },
+      getPlaybackState: () => {
+        const s = useEditorStore.getState();
+        return { isPlaying: s.isPlaying, tick: s.playbackTick };
+      },
+      getMeasurePositions: () => useEditorStore.getState().measurePositions,
+      play: () => useEditorStore.getState().play() as Promise<void>,
+      pause: () => useEditorStore.getState().pause(),
+      stop: () => useEditorStore.getState().stopPlayback(),
+      seekToMeasure: (measureIndex: number) => {
+        const store = useEditorStore.getState();
+        const cursor = store.inputState.cursor;
+        store.setCursorDirect({ ...cursor, measureIndex, eventIndex: 0 });
+      },
+      scrollToMeasure: (measureIndex: number) => {
+        const positions = useEditorStore.getState().measurePositions;
+        const pos = positions.find((p) => p.measureIndex === measureIndex);
+        if (!pos) return;
+        const container = document.querySelector("[data-score-container]");
+        if (container) {
+          container.scrollTo({ top: pos.y - 40, behavior: "smooth" });
+        }
+      },
     });
 
     const pm = pluginManagerRef.current;
@@ -85,6 +107,30 @@ export function App() {
     }
 
     setGlobalPluginManager(pm);
+
+    // Subscribe to state changes and emit plugin events
+    let prevScore = useEditorStore.getState().score;
+    let prevSelection = useEditorStore.getState().selection;
+    let prevCursor = useEditorStore.getState().inputState.cursor;
+    let prevIsPlaying = useEditorStore.getState().isPlaying;
+    useEditorStore.subscribe((state) => {
+      if (state.score !== prevScore) {
+        prevScore = state.score;
+        pm.emitEvent("scoreChanged", state.score);
+      }
+      if (state.selection !== prevSelection) {
+        prevSelection = state.selection;
+        pm.emitEvent("selectionChanged", state.selection);
+      }
+      if (state.inputState.cursor !== prevCursor) {
+        prevCursor = state.inputState.cursor;
+        pm.emitEvent("cursorChanged", state.inputState.cursor);
+      }
+      if (state.isPlaying !== prevIsPlaying) {
+        prevIsPlaying = state.isPlaying;
+        pm.emitEvent("playbackStateChanged", { isPlaying: state.isPlaying, tick: state.playbackTick });
+      }
+    });
 
     // Updater commands
     pm.registerCoreCommand("nubium.check-updates", "Check for Updates", () => checkForUpdates(true));

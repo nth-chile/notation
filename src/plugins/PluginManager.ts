@@ -9,6 +9,11 @@ import type {
   ViewRegistration,
   ImporterConfig,
   ExporterConfig,
+  MeasurePosition,
+  PluginEventType,
+  PluginEventCallback,
+  PluginEventData,
+  MidiNoteEvent,
 } from "./PluginAPI";
 import { serialize, deserialize } from "../serialization";
 
@@ -65,6 +70,12 @@ type ScoreApplier = (score: Score) => void;
 type CursorGetter = () => CursorPosition;
 type SelectionGetter = () => Selection | null;
 type NotificationShower = (message: string, type?: "info" | "error" | "success") => void;
+type PlaybackStateGetter = () => { isPlaying: boolean; tick: number | null };
+type MeasurePositionsGetter = () => MeasurePosition[];
+type PlayAction = () => Promise<void>;
+type VoidAction = () => void;
+type SeekAction = (measureIndex: number) => void;
+type ScrollAction = (measureIndex: number) => void;
 
 const STORAGE_KEY = "nubium-plugin-states";
 
@@ -114,12 +125,20 @@ export class PluginManager {
   private exporterRegistry: Map<string, ExporterEntry> = new Map();
   private playbackService: { pluginId: string; service: PlaybackService } | null = null;
   private listeners: Set<() => void> = new Set();
+  private eventListeners: Map<PluginEventType, Map<string, Set<PluginEventCallback<PluginEventType>>>> = new Map();
 
   private getScore: ScoreGetter;
   private applyScore: ScoreApplier;
   private getCursor: CursorGetter;
   private getSelection: SelectionGetter;
   private showNotification: NotificationShower;
+  private getPlaybackState: PlaybackStateGetter;
+  private getMeasurePositions: MeasurePositionsGetter;
+  private playAction: PlayAction;
+  private pauseAction: VoidAction;
+  private stopAction: VoidAction;
+  private seekAction: SeekAction;
+  private scrollToMeasureAction: ScrollAction;
 
   constructor(opts: {
     getScore: ScoreGetter;
@@ -127,12 +146,26 @@ export class PluginManager {
     getCursor: CursorGetter;
     getSelection: SelectionGetter;
     showNotification: NotificationShower;
+    getPlaybackState: PlaybackStateGetter;
+    getMeasurePositions: MeasurePositionsGetter;
+    play: PlayAction;
+    pause: VoidAction;
+    stop: VoidAction;
+    seekToMeasure: SeekAction;
+    scrollToMeasure: ScrollAction;
   }) {
     this.getScore = opts.getScore;
     this.applyScore = opts.applyScore;
     this.getCursor = opts.getCursor;
     this.getSelection = opts.getSelection;
     this.showNotification = opts.showNotification;
+    this.getPlaybackState = opts.getPlaybackState;
+    this.getMeasurePositions = opts.getMeasurePositions;
+    this.playAction = opts.play;
+    this.pauseAction = opts.pause;
+    this.stopAction = opts.stop;
+    this.seekAction = opts.seekToMeasure;
+    this.scrollToMeasureAction = opts.scrollToMeasure;
   }
 
   /** Subscribe to changes (plugin enable/disable, registrations) */
@@ -146,6 +179,50 @@ export class PluginManager {
   private notify(): void {
     for (const listener of this.listeners) {
       listener();
+    }
+  }
+
+  /** Emit an event to all plugin listeners */
+  emitEvent<T extends PluginEventType>(event: T, data: PluginEventData[T]): void {
+    const byPlugin = this.eventListeners.get(event);
+    if (!byPlugin) return;
+    for (const callbacks of byPlugin.values()) {
+      for (const cb of callbacks) {
+        try {
+          (cb as PluginEventCallback<T>)(data);
+        } catch (e) {
+          console.error(`Plugin event handler error (${event}):`, e);
+        }
+      }
+    }
+  }
+
+  private addEventListener<T extends PluginEventType>(
+    pluginId: string, event: T, callback: PluginEventCallback<T>,
+  ): void {
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, new Map());
+    }
+    const byPlugin = this.eventListeners.get(event)!;
+    if (!byPlugin.has(pluginId)) {
+      byPlugin.set(pluginId, new Set());
+    }
+    byPlugin.get(pluginId)!.add(callback as PluginEventCallback<PluginEventType>);
+  }
+
+  private removeEventListener<T extends PluginEventType>(
+    pluginId: string, event: T, callback: PluginEventCallback<T>,
+  ): void {
+    const byPlugin = this.eventListeners.get(event);
+    if (!byPlugin) return;
+    const callbacks = byPlugin.get(pluginId);
+    if (!callbacks) return;
+    callbacks.delete(callback as PluginEventCallback<PluginEventType>);
+  }
+
+  private removeAllEventListeners(pluginId: string): void {
+    for (const byPlugin of this.eventListeners.values()) {
+      byPlugin.delete(pluginId);
     }
   }
 
@@ -218,6 +295,26 @@ export class PluginManager {
       },
       registerPlaybackService: (service: PlaybackService) => {
         this.playbackService = { pluginId, service };
+      },
+
+      // Playback control
+      play: () => this.playAction(),
+      pause: () => this.pauseAction(),
+      stop: () => this.stopAction(),
+      seekToMeasure: (measureIndex: number) => this.seekAction(measureIndex),
+      isPlaying: () => this.getPlaybackState().isPlaying,
+      getPlaybackTick: () => this.getPlaybackState().tick,
+
+      // Viewport
+      getVisibleMeasures: () => this.getMeasurePositions(),
+      scrollToMeasure: (measureIndex: number) => this.scrollToMeasureAction(measureIndex),
+
+      // Event hooks
+      on: <T extends PluginEventType>(event: T, callback: PluginEventCallback<T>) => {
+        this.addEventListener(pluginId, event, callback);
+      },
+      off: <T extends PluginEventType>(event: T, callback: PluginEventCallback<T>) => {
+        this.removeEventListener(pluginId, event, callback);
       },
     };
   }
@@ -318,6 +415,7 @@ export class PluginManager {
       this.playbackService = null;
     }
 
+    this.removeAllEventListeners(pluginId);
     entry.plugin.deactivate?.();
     entry.enabled = false;
 

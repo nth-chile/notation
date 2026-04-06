@@ -70,6 +70,39 @@ export interface PlaybackService {
   }): void;
 }
 
+export interface MeasurePosition {
+  partIndex: number;
+  measureIndex: number;
+  staveIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type PluginEventType =
+  | "scoreChanged"
+  | "selectionChanged"
+  | "cursorChanged"
+  | "playbackStateChanged"
+  | "midiNote";
+
+export interface MidiNoteEvent {
+  note: number;
+  velocity: number;
+  channel: number;
+}
+
+export type PluginEventData = {
+  scoreChanged: Score;
+  selectionChanged: Selection | null;
+  cursorChanged: CursorPosition;
+  playbackStateChanged: { isPlaying: boolean; tick: number | null };
+  midiNote: MidiNoteEvent;
+};
+
+export type PluginEventCallback<T extends PluginEventType> = (data: PluginEventData[T]) => void;
+
 export interface NubiumPlugin {
   id: string;
   name: string;
@@ -120,4 +153,20 @@ export interface PluginAPI {
 
   // Service registration
   registerPlaybackService(service: PlaybackService): void;
+
+  // Playback control
+  play(): Promise<void>;
+  pause(): void;
+  stop(): void;
+  seekToMeasure(measureIndex: number): void;
+  isPlaying(): boolean;
+  getPlaybackTick(): number | null;
+
+  // Viewport
+  getVisibleMeasures(): MeasurePosition[];
+  scrollToMeasure(measureIndex: number): void;
+
+  // Event hooks
+  on<T extends PluginEventType>(event: T, callback: PluginEventCallback<T>): void;
+  off<T extends PluginEventType>(event: T, callback: PluginEventCallback<T>): void;
 }
