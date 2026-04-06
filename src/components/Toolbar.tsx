@@ -25,10 +25,6 @@ import { Button } from "./ui/button";
 import { ContextMenu, ContextMenuCheckbox, ContextMenuSeparator, ContextMenuItem, ContextMenuLabel } from "./ui/context-menu";
 import { cn } from "@/lib/utils";
 import type { PanelRegistration } from "../plugins/PluginManager";
-import { getPartDisplay } from "../views/ViewMode";
-import { getSettings, subscribeSettings } from "../settings";
-import { Music, Guitar, Slash } from "lucide-react";
-
 /** A toolbar group definition */
 export interface ToolbarGroup {
   id: string;
@@ -45,40 +41,6 @@ interface ToolbarProps {
   onOpen?: () => void;
   onSave?: () => void;
   toolbarPanels?: PanelRegistration[];
-}
-
-function NotationToggles() {
-  const viewConfig = useEditorStore((s) => s.viewConfig);
-  const toggleNotation = useEditorStore((s) => s.toggleNotation);
-  const partIndex = useEditorStore((s) => s.inputState.cursor.partIndex);
-  const display = getPartDisplay(viewConfig, partIndex);
-
-  const [displaySettings, setDisplaySettings] = useState(getSettings().display);
-  React.useEffect(() => subscribeSettings((s) => setDisplaySettings(s.display)), []);
-
-  const buttons = [
-    { key: "standard" as const, show: displaySettings.showStandardToggle, active: display.standard, icon: <Music className="h-3.5 w-3.5" />, title: "Standard notation" },
-    { key: "tab" as const, show: displaySettings.showTabToggle, active: display.tab, icon: <span className="text-xs font-bold leading-none">TAB</span>, title: "Tab notation" },
-    { key: "slash" as const, show: displaySettings.showSlashToggle, active: display.slash, icon: <Slash className="h-3.5 w-3.5" />, title: "Slash notation" },
-  ];
-  const visible = buttons.filter((b) => b.show);
-  if (visible.length <= 1) return null;
-
-  return (
-    <div className="flex items-center gap-0.5">
-      {visible.map((b) => (
-        <Button
-          key={b.key}
-          variant={b.active ? "secondary" : "ghost"}
-          size="sm"
-          onClick={() => toggleNotation(b.key)}
-          title={b.title}
-        >
-          {b.icon}
-        </Button>
-      ))}
-    </div>
-  );
 }
 
 /** A single sortable group in a toolbar row */
@@ -166,12 +128,6 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
 
   const allGroups: ToolbarGroup[] = useMemo(() => {
     const groups: ToolbarGroup[] = [];
-    groups.push({
-      id: "notation-toggles",
-      label: "Notation",
-      defaultRow: "secondary",
-      component: () => <NotationToggles />,
-    });
     for (const panel of toolbarPanels) {
       groups.push({
         id: panel.id,

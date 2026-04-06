@@ -94,7 +94,7 @@ function detectRestRuns(
 export interface ScoreRenderResult {
   noteBoxes: Map<NoteEventId, NoteBox>;
   annotationBoxes: AnnotationBox[];
-  measurePositions: { partIndex: number; measureIndex: number; staveIndex: number; x: number; y: number; width: number; height: number; noteStartX: number }[];
+  measurePositions: { partIndex: number; measureIndex: number; staveIndex: number; x: number; y: number; width: number; height: number; noteStartX: number; isTab?: boolean }[];
   contentHeight: number;
 }
 
@@ -360,6 +360,7 @@ export function renderScore(
                   width: combinedWidth,
                   height: isTabStave ? TAB_STAFF_HEIGHT : config.staffHeight,
                   noteStartX: layout.x + 60,
+                  isTab: isTabStave || undefined,
                 });
               }
             }
@@ -450,6 +451,7 @@ export function renderScore(
             width: layout.width,
             height: isTabStave ? TAB_STAFF_HEIGHT : config.staffHeight,
             noteStartX: ('vexStave' in result && result.vexStave) ? result.vexStave.getNoteStartX() : (layout.x + 60),
+            isTab: isTabStave || undefined,
           });
 
           for (const nb of result.noteBoxes) {
@@ -644,8 +646,10 @@ function drawCursor(
     }
   }
 
-  const staffTop = mp.y;
-  const staffBottom = mp.y + (mp.height || config.staffHeight);
+  // Tab staves have VexFlow headroom (4 line-spacings = 52px) above the first line
+  const tabOffset = mp.isTab ? 4 * 13 : 0;
+  const staffTop = mp.y + tabOffset;
+  const staffBottom = staffTop + config.staffHeight;
 
   rawCtx.save();
 
@@ -673,7 +677,7 @@ function drawCursor(
   rawCtx.fill();
 
   // Draw tab string highlight — shows which string the tab cursor is on
-  if (viewConfig && getEffectiveInputMode(viewConfig, cursor.partIndex) === "tab") {
+  if (viewConfig && getEffectiveInputMode(viewConfig, cursor.partIndex, useEditorStore.getState().inputState.tabInputActive) === "tab") {
     const { tabString } = useEditorStore.getState().inputState;
     // VexFlow TabStave: spacingBetweenLinesPx=13, spaceAboveStaffLn=4 (inherited)
     // getYForLine(n) = y + n * 13 + 4 * 13 = y + 13n + 52

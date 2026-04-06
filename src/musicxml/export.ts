@@ -6,6 +6,8 @@ import type { Duration } from "../model/duration";
 import type { Annotation, ChordSymbol, Lyric, DynamicMark, Hairpin, Slur } from "../model/annotations";
 import { durationToTicks, type DurationType } from "../model/duration";
 import { getBeamGroups } from "../renderer/beaming";
+import type { ViewConfig } from "../views/ViewMode";
+import { getPartDisplay } from "../views/ViewMode";
 import {
   DURATION_TYPE_TO_XML,
   DURATION_DIVISIONS,
@@ -359,6 +361,14 @@ function exportNoteEvent(
       }
       xml += `      </note>\n`;
     }
+  } else if (event.kind === "slash") {
+    xml += `      <note>\n`;
+    xml += `        <pitch>\n          <step>B</step>\n          <octave>4</octave>\n        </pitch>\n`;
+    xml += durationXml(event.duration, tuplet);
+    xml += `        <voice>${voiceNumber}</voice>\n${staffXml}`;
+    xml += `        <notehead>slash</notehead>\n`;
+    xml += notationsXml(undefined, tupletPosition, slurPositions);
+    xml += `      </note>\n`;
   }
 
   // Emit hairpin stops after the note
@@ -375,6 +385,7 @@ function exportMeasure(
   isFirstMeasure: boolean,
   prevMeasure?: Measure,
   staveCount = 1,
+  slashHint = false,
 ): string {
   const xmlMeasureNum = measure.isPickup ? "0" : measureNumber;
   let xml = `    <measure number="${xmlMeasureNum}"${measure.isPickup ? ' implicit="yes"' : ""}>\n`;
@@ -447,6 +458,11 @@ function exportMeasure(
         xml += `          <line>${clefInfo.line}</line>\n`;
         xml += `        </clef>\n`;
       }
+    }
+    if (slashHint && isFirstMeasure) {
+      xml += `        <measure-style>\n`;
+      xml += `          <slash type="start" use-stems="yes"/>\n`;
+      xml += `        </measure-style>\n`;
     }
     xml += `      </attributes>\n`;
   }
@@ -643,7 +659,7 @@ function exportMeasure(
   return xml;
 }
 
-export function exportToMusicXML(score: Score): string {
+export function exportToMusicXML(score: Score, viewConfig?: ViewConfig): string {
   let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
   xml += `<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">\n`;
   xml += `<score-partwise version="4.0">\n`;
@@ -686,10 +702,12 @@ export function exportToMusicXML(score: Score): string {
 
     const instrument = getInstrument(part.instrumentId);
     const staveCount = instrument?.staves ?? 1;
+    const partDisplay = viewConfig ? getPartDisplay(viewConfig, i) : undefined;
+    const slashHint = partDisplay?.slash ?? false;
 
     for (let m = 0; m < part.measures.length; m++) {
       const prevMeasure = m > 0 ? part.measures[m - 1] : undefined;
-      xml += exportMeasure(part.measures[m], m + 1, m === 0, prevMeasure, staveCount);
+      xml += exportMeasure(part.measures[m], m + 1, m === 0, prevMeasure, staveCount, slashHint);
     }
 
     xml += `  </part>\n`;

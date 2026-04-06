@@ -59,8 +59,9 @@ export function getPartDisplay(viewConfig: ViewConfig, partIndex: number): Notat
   return viewConfig.notationDisplay[partIndex] ?? DEFAULT_NOTATION_DISPLAY;
 }
 
-/** Derive input mode from notation display for the cursor's current part */
-export function getEffectiveInputMode(viewConfig: ViewConfig, partIndex: number): InputMode {
+/** Derive input mode: tab when cursor is on a tab stave, or when tab-only display */
+export function getEffectiveInputMode(viewConfig: ViewConfig, partIndex: number, tabInputActive?: boolean): InputMode {
+  if (tabInputActive) return "tab";
   const display = getPartDisplay(viewConfig, partIndex);
   // Tab-only → tab input mode; otherwise standard
   if (display.tab && !display.standard && !display.slash) return "tab";

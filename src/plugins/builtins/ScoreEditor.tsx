@@ -345,8 +345,8 @@ export function registerCoreEditor(pm: PluginManager): void {
   }
 
   pm.registerCoreCommand("nubium.export-musicxml", "Export as MusicXML", () => {
-    const score = useEditorStore.getState().score;
-    const content = exportToMusicXML(score);
+    const { score, viewConfig } = useEditorStore.getState();
+    const content = exportToMusicXML(score, viewConfig);
     const blob = new Blob([content], { type: "application/vnd.recordare.musicxml+xml" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

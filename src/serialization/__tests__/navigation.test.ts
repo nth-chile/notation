@@ -103,6 +103,48 @@ describe("Navigation mark serialization", () => {
     expect(event.duration.dots).toBe(1);
   });
 
+  it("round-trips all slash durations", () => {
+    const durations: Array<"whole" | "half" | "quarter" | "eighth" | "16th" | "32nd"> =
+      ["whole", "half", "quarter", "eighth", "16th", "32nd"];
+    for (const dur of durations) {
+      const m = factory.measure([
+        factory.voice([factory.slash(factory.dur(dur))]),
+      ]);
+      const score = factory.score(`Slash ${dur}`, "Test", [
+        factory.part("P1", "P1", [m]),
+      ]);
+      const text = serialize(score);
+      const json = JSON.parse(text);
+      expect(json.parts[0].measures[0].voices[0].events[0].type).toBe("slash");
+      expect(json.parts[0].measures[0].voices[0].events[0].duration).toBe(dur);
+
+      const restored = deserialize(text);
+      const event = restored.parts[0].measures[0].voices[0].events[0];
+      expect(event.kind).toBe("slash");
+      expect(event.duration.type).toBe(dur);
+    }
+  });
+
+  it("round-trips slash with rests in same voice", () => {
+    const m = factory.measure([
+      factory.voice([
+        factory.slash(factory.dur("quarter")),
+        factory.rest(factory.dur("quarter")),
+        factory.slash(factory.dur("half")),
+      ]),
+    ]);
+    const score = factory.score("Mixed", "Test", [
+      factory.part("P1", "P1", [m]),
+    ]);
+    const text = serialize(score);
+    const restored = deserialize(text);
+    const events = restored.parts[0].measures[0].voices[0].events;
+    expect(events).toHaveLength(3);
+    expect(events[0].kind).toBe("slash");
+    expect(events[1].kind).toBe("rest");
+    expect(events[2].kind).toBe("slash");
+  });
+
   it("round-trips repeat-both barline", () => {
     const m = factory.measure([factory.voice([])]);
     m.barlineEnd = "repeat-both";

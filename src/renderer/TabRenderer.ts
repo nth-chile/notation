@@ -82,9 +82,20 @@ function eventToTabNote(
 
   // Dead notes: render "X" on each string position
   const isDead = hasArticulation(event, "dead-note");
+  // Ghost notes: render fret in parentheses
+  const isGhost = hasArticulation(event, "ghost-note");
+
+  let tabPositions: { str: number; fret: string | number }[];
+  if (isDead) {
+    tabPositions = positions.map((p) => ({ str: p.str, fret: "X" as unknown as number }));
+  } else if (isGhost) {
+    tabPositions = positions.map((p) => ({ str: p.str, fret: `(${p.fret})` as unknown as number }));
+  } else {
+    tabPositions = positions;
+  }
 
   const tn = new TabNote({
-    positions: isDead ? positions.map((p) => ({ str: p.str, fret: "X" as unknown as number })) : positions,
+    positions: tabPositions,
     duration: dur,
   });
   // Add articulations as modifiers
@@ -151,7 +162,20 @@ function addArticulationModifier(tn: TabNote, art: Articulation): void {
       tn.addModifier(fp);
       break;
     }
+    case "tapping": {
+      const tap = new VFAnnotation("T")
+        .setVerticalJustification(VFAnnotation.VerticalJustify.TOP);
+      tn.addModifier(tap);
+      break;
+    }
+    case "tremolo-picking": {
+      const tp = new VFAnnotation("TP")
+        .setVerticalJustification(VFAnnotation.VerticalJustify.TOP);
+      tn.addModifier(tp);
+      break;
+    }
     // slide-up, slide-down, hammer-on, pull-off are handled as ties between notes
+    // ghost-note, dead-note handled in eventToTabNote
     default:
       break;
   }

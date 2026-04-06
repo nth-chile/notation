@@ -1,5 +1,5 @@
 export { exportToMusicXML } from "./export";
-export { importFromMusicXML } from "./import";
+export { importFromMusicXML, type MusicXMLImportResult } from "./import";
 export {
   DURATION_TYPE_TO_XML,
   XML_TO_DURATION_TYPE,

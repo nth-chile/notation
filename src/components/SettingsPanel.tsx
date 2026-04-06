@@ -14,10 +14,9 @@ const TOOLBAR_GROUPS = [
   { id: "score-editor.duration", label: "Duration" },
   { id: "score-editor.accidentals", label: "Accidentals" },
   { id: "playback.transport", label: "Playback" },
-  { id: "notation-toggles", label: "Notation" },
 ];
 
-const VIEW_BUTTON_SETTINGS: [keyof DisplaySettings, string][] = [
+const NOTATION_TOGGLE_SETTINGS: [keyof DisplaySettings, string][] = [
   ["showStandardToggle", "Standard"],
   ["showTabToggle", "Tab"],
   ["showSlashToggle", "Slash"],
@@ -42,23 +41,24 @@ function ToolbarSettings() {
             />
             {label}
           </label>
-          {id === "notation-toggles" && !toolbarHidden.includes(id) && (
-            <div className="ml-6 mt-1 space-y-1">
-              {VIEW_BUTTON_SETTINGS.map(([key, btnLabel]) => (
-                <label key={key} className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={settings.display[key]}
-                    onChange={(e) => updateSettings({ display: { ...settings.display, [key]: e.target.checked } })}
-                    className="accent-primary"
-                  />
-                  {btnLabel}
-                </label>
-              ))}
-            </div>
-          )}
         </div>
       ))}
+      <div className="pt-2 border-t mt-2">
+        <span className="text-sm font-medium">Notation Toggles (Parts Panel)</span>
+        <div className="ml-2 mt-1 space-y-1">
+          {NOTATION_TOGGLE_SETTINGS.map(([key, btnLabel]) => (
+            <label key={key} className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.display[key]}
+                onChange={(e) => updateSettings({ display: { ...settings.display, [key]: e.target.checked } })}
+                className="accent-primary"
+              />
+              {btnLabel}
+            </label>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

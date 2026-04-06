@@ -1,8 +1,9 @@
 import { exportToMusicXML } from "../musicxml";
 import type { Score } from "../model";
+import type { ViewConfig } from "../views/ViewMode";
 
-export async function saveScore(score: Score, filePath?: string): Promise<string> {
-  const content = exportToMusicXML(score);
+export async function saveScore(score: Score, filePath?: string, viewConfig?: ViewConfig): Promise<string> {
+  const content = exportToMusicXML(score, viewConfig);
 
   // Try Tauri native file dialog
   try {

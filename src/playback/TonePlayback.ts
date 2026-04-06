@@ -171,6 +171,9 @@ function applyArticulations(
       case "accent": case "marcato": velocity = Math.min(127, velocity * 1.3); break;
       case "tenuto": durationMultiplier = 1.0; break;
       case "fermata": durationMultiplier *= 1.5; break;
+      case "ghost-note": velocity = Math.max(20, velocity * 0.5); break;
+      case "palm-mute": durationMultiplier *= 0.4; break;
+      case "dead-note": velocity = Math.max(20, velocity * 0.3); durationMultiplier *= 0.15; break;
     }
   }
   return { velocity, durationMultiplier };

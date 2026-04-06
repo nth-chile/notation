@@ -82,7 +82,7 @@ interface EditorStore {
   // Rendering
   noteBoxes: Map<NoteEventId, NoteBox>;
   annotationBoxes: AnnotationBox[];
-  measurePositions: { partIndex: number; measureIndex: number; staveIndex: number; x: number; y: number; width: number; height: number; noteStartX: number }[];
+  measurePositions: { partIndex: number; measureIndex: number; staveIndex: number; x: number; y: number; width: number; height: number; noteStartX: number; isTab?: boolean }[];
   titlePositions: { title?: { x: number; y: number; width: number; height: number }; composer?: { x: number; y: number; width: number; height: number } };
   editingTitle: boolean;
   editingComposer: boolean;
@@ -128,7 +128,7 @@ interface EditorStore {
   deleteSelectedMeasures(): void;
   copySelection(): void;
   pasteAtCursor(): void;
-  setCursorDirect(cursor: CursorPosition): void;
+  setCursorDirect(cursor: CursorPosition, tabInputActive?: boolean): void;
   setTitle(title: string): void;
   setComposer(composer: string): void;
   undo(): void;
@@ -1012,7 +1012,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setScore(score: Score) {
-    set({ score });
+    set((s) => ({
+      score,
+      viewConfig: { ...s.viewConfig, notationDisplay: {} },
+    }));
   },
 
   setFilePath(path: string | null) {
@@ -1346,8 +1349,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
-  setCursorDirect(cursor) {
-    set((s) => ({ inputState: { ...s.inputState, cursor } }));
+  setCursorDirect(cursor, tabInputActive?: boolean) {
+    set((s) => ({
+      inputState: {
+        ...s.inputState,
+        cursor,
+        tabInputActive: tabInputActive ?? s.inputState.tabInputActive,
+        // Reset tab fret buffer when switching staves
+        tabFretBuffer: tabInputActive !== undefined && tabInputActive !== s.inputState.tabInputActive ? "" : s.inputState.tabFretBuffer,
+      },
+    }));
   },
 
 
@@ -1400,7 +1411,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (ev.kind === "rest" || ev.kind === "slash") return ev;
       const arts = ev.articulations ?? [];
       const has = arts.some((a) => a.kind === kind);
-      const newArts = has ? arts.filter((a) => a.kind !== kind) : [...arts, { kind } as import("../model/note").Articulation];
+      const newArt: import("../model/note").Articulation = kind === "bend"
+        ? { kind: "bend", semitones: 2 }
+        : { kind } as import("../model/note").Articulation;
+      const newArts = has ? arts.filter((a) => a.kind !== kind) : [...arts, newArt];
       return { ...ev, articulations: newArts.length > 0 ? newArts : undefined };
     };
 
