@@ -1,4 +1,5 @@
 import type { NubiumPlugin, PluginAPI } from "../PluginAPI";
+import { getGlobalPluginManager } from "../PluginManager";
 import { midiToPitch } from "../../model/pitch";
 import type { PitchClass, Octave } from "../../model/pitch";
 import { useEditorStore } from "../../state/EditorState";
@@ -25,6 +26,13 @@ function handleMidiData(status: number, note: number, velocity: number) {
       }));
     }
     store.insertNote(pitch.pitchClass as PitchClass);
+
+    // Emit MIDI event to plugin listeners
+    getGlobalPluginManager()?.emitEvent("midiNote", {
+      note,
+      velocity,
+      channel: status & 0x0f,
+    });
   }
 }
 
