@@ -79,6 +79,7 @@ export interface MeasurePosition {
   y: number;
   width: number;
   height: number;
+  isTab?: boolean;
 }
 
 export type PluginEventType =

@@ -32,6 +32,7 @@ import {
   registerCoreTransport,
   ClipboardPlugin,
   MidiInputPlugin,
+  GuitarPlugin,
 } from "./plugins";
 import { setGlobalPluginManager } from "./plugins/PluginManager";
 import { isCommunityPluginsEnabled, loadAllInstalled } from "./plugins/CommunityRegistry";
@@ -99,6 +100,7 @@ export function App() {
     pm.registerAndActivate(ChordAnalysisPlugin, true);
     pm.registerAndActivate(ClipboardPlugin, false);
     pm.registerAndActivate(MidiInputPlugin, false);
+    pm.registerAndActivate(GuitarPlugin, true);
 
     // Load installed community plugins
     if (isCommunityPluginsEnabled()) {
@@ -156,7 +158,7 @@ export function App() {
   const rightPanels = pm.getPanels("sidebar-right");
   const handleSave = useCallback(async () => {
     try {
-      const path = await saveScore(score, filePath ?? undefined);
+      const path = await saveScore(score, filePath ?? undefined, useEditorStore.getState().viewConfig);
       setFilePath(path);
       useEditorStore.getState().markClean();
       useEditorStore.getState().setAutoSaveStatus("Saved");
@@ -191,6 +193,13 @@ export function App() {
       if (!result) return;
       setScore(result.score);
       setFilePath(result.path);
+      // Apply display hints from MusicXML (slash regions, tab staff-type)
+      if (Object.keys(result.displayHints).length > 0) {
+        for (const [pi, hints] of Object.entries(result.displayHints)) {
+          if (hints.slash) useEditorStore.getState().toggleNotation("slash", Number(pi));
+          if (hints.tab) useEditorStore.getState().toggleNotation("tab", Number(pi));
+        }
+      }
       useEditorStore.getState().markClean();
       useEditorStore.getState().setAutoSaveStatus(null);
     } catch (err) {

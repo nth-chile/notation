@@ -61,6 +61,6 @@ jobs:
           releaseName: Nubium ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: ''
           releaseDraft: true
-          prerelease: true
+          prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}

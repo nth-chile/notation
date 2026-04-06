@@ -613,6 +613,75 @@ describe("MusicXML Import", () => {
     expect(score.parts[0].measures[0].clef.type).toBe("treble");
     expect(score.parts[1].measures[0].clef.type).toBe("bass");
   });
+
+  it("should detect instruments from part name", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Guitar</part-name></score-part>
+    <score-part id="P2"><part-name>Bass</part-name></score-part>
+    <score-part id="P3"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><rest/><duration>1920</duration><type>whole</type><voice>1</voice></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><rest/><duration>1920</duration><type>whole</type><voice>1</voice></note>
+    </measure>
+  </part>
+  <part id="P3">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <staves>2</staves>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><rest/><duration>1920</duration><type>whole</type><voice>1</voice></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+    const score = importFromMusicXML(xml);
+    expect(score.parts[0].instrumentId).toBe("guitar");
+    expect(score.parts[1].instrumentId).toBe("bass");
+    expect(score.parts[2].instrumentId).toBe("piano");
+  });
+
+  it("should detect instruments from MIDI program", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1">
+      <part-name>Lead</part-name>
+      <midi-instrument id="P1-I1"><midi-program>26</midi-program></midi-instrument>
+    </score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><rest/><duration>1920</duration><type>whole</type><voice>1</voice></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+    const score = importFromMusicXML(xml);
+    // MIDI program 26 (1-based) = GM 25 (0-based) = Guitar
+    expect(score.parts[0].instrumentId).toBe("guitar");
+  });
 });
 
 describe("MusicXML Round-trip", () => {
@@ -1214,6 +1283,228 @@ describe("MusicXML Round-trip", () => {
     );
     expect(chords.length).toBe(1);
     expect(chords[0].kind === "chord-symbol" && chords[0].text).toContain("D");
+  });
+
+  it("should export slash notes with notehead element", () => {
+    const s1 = factory.slash(factory.dur("quarter"));
+    const s2 = factory.slash(factory.dur("quarter"));
+    const s3 = factory.slash(factory.dur("half"));
+    const v = factory.voice([s1, s2, s3]);
+    const m = factory.measure([v]);
+    const score = factory.score("Slash Export", "", [factory.part("Guitar", "Gtr", [m])]);
+    const xml = exportToMusicXML(score);
+
+    expect(xml).toContain("<notehead>slash</notehead>");
+    // Should use B4 as the pitch placeholder
+    expect(xml).toContain("<step>B</step>");
+    expect(xml).toContain("<octave>4</octave>");
+    // Should have correct durations
+    expect(xml).toContain("<type>quarter</type>");
+    expect(xml).toContain("<type>half</type>");
+  });
+
+  it("should export dotted slash notes", () => {
+    const s = factory.slash(factory.dur("quarter", 1));
+    const v = factory.voice([s]);
+    const m = factory.measure([v]);
+    const score = factory.score("Dotted Slash Export", "", [factory.part("Guitar", "Gtr", [m])]);
+    const xml = exportToMusicXML(score);
+
+    expect(xml).toContain("<notehead>slash</notehead>");
+    expect(xml).toContain("<dot/>");
+  });
+
+  it("should import slash notes from notehead element", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Guitar</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>480</divisions>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note>
+        <pitch><step>B</step><octave>4</octave></pitch>
+        <duration>480</duration>
+        <type>quarter</type>
+        <voice>1</voice>
+        <notehead>slash</notehead>
+      </note>
+      <note>
+        <pitch><step>B</step><octave>4</octave></pitch>
+        <duration>480</duration>
+        <type>quarter</type>
+        <voice>1</voice>
+        <notehead>slash</notehead>
+      </note>
+      <note>
+        <pitch><step>B</step><octave>4</octave></pitch>
+        <duration>960</duration>
+        <type>half</type>
+        <voice>1</voice>
+        <notehead>slash</notehead>
+      </note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+    const score = importFromMusicXML(xml);
+    const events = score.parts[0].measures[0].voices[0].events;
+    expect(events).toHaveLength(3);
+    expect(events[0].kind).toBe("slash");
+    expect(events[0].duration.type).toBe("quarter");
+    expect(events[1].kind).toBe("slash");
+    expect(events[2].kind).toBe("slash");
+    expect(events[2].duration.type).toBe("half");
+  });
+
+  it("should round-trip slash notes through export/import", () => {
+    const s1 = factory.slash(factory.dur("quarter"));
+    const s2 = factory.slash(factory.dur("eighth"));
+    const s3 = factory.slash(factory.dur("eighth"));
+    const s4 = factory.slash(factory.dur("half"));
+    const v = factory.voice([s1, s2, s3, s4]);
+    const m = factory.measure([v]);
+    const score = factory.score("Slash RT", "", [factory.part("Guitar", "Gtr", [m])]);
+
+    const xml = exportToMusicXML(score);
+    const imported = importFromMusicXML(xml);
+
+    const events = imported.parts[0].measures[0].voices[0].events;
+    expect(events).toHaveLength(4);
+    expect(events[0].kind).toBe("slash");
+    expect(events[0].duration.type).toBe("quarter");
+    expect(events[1].kind).toBe("slash");
+    expect(events[1].duration.type).toBe("eighth");
+    expect(events[2].kind).toBe("slash");
+    expect(events[2].duration.type).toBe("eighth");
+    expect(events[3].kind).toBe("slash");
+    expect(events[3].duration.type).toBe("half");
+  });
+
+  it("should round-trip slash with chord symbols", () => {
+    const s1 = factory.slash(factory.dur("half"));
+    const s2 = factory.slash(factory.dur("half"));
+    const v = factory.voice([s1, s2]);
+    const m = factory.measure([v], {
+      annotations: [
+        { kind: "chord-symbol", text: "Am7", beatOffset: 0, noteEventId: s1.id },
+        { kind: "chord-symbol", text: "Dm7", beatOffset: 960, noteEventId: s2.id },
+      ],
+    });
+    const score = factory.score("Slash+Chords", "", [factory.part("Guitar", "Gtr", [m])]);
+
+    const xml = exportToMusicXML(score);
+    expect(xml).toContain("<notehead>slash</notehead>");
+    expect(xml).toContain("<root-step>A</root-step>");
+    expect(xml).toContain("<root-step>D</root-step>");
+
+    const imported = importFromMusicXML(xml);
+    const events = imported.parts[0].measures[0].voices[0].events;
+    expect(events).toHaveLength(2);
+    expect(events[0].kind).toBe("slash");
+    expect(events[1].kind).toBe("slash");
+
+    const chords = imported.parts[0].measures[0].annotations.filter(
+      (a) => a.kind === "chord-symbol"
+    );
+    expect(chords).toHaveLength(2);
+  });
+
+  it("should round-trip slash with different time signatures", () => {
+    // 3/4 time
+    const s1 = factory.slash(factory.dur("quarter"));
+    const s2 = factory.slash(factory.dur("quarter"));
+    const s3 = factory.slash(factory.dur("quarter"));
+    const v = factory.voice([s1, s2, s3]);
+    const m = factory.measure([v], {
+      timeSignature: { numerator: 3, denominator: 4 },
+    });
+    const score = factory.score("Slash 3/4", "", [factory.part("Guitar", "Gtr", [m])]);
+
+    const xml = exportToMusicXML(score);
+    expect(xml).toContain("<beats>3</beats>");
+    expect(xml).toContain("<beat-type>4</beat-type>");
+
+    const imported = importFromMusicXML(xml);
+    expect(imported.parts[0].measures[0].timeSignature.numerator).toBe(3);
+    const events = imported.parts[0].measures[0].voices[0].events;
+    expect(events).toHaveLength(3);
+    expect(events.every((e) => e.kind === "slash")).toBe(true);
+  });
+
+  it("should round-trip slash with key signatures", () => {
+    const s1 = factory.slash(factory.dur("whole"));
+    const v = factory.voice([s1]);
+    const m = factory.measure([v], {
+      keySignature: { fifths: -3 },
+    });
+    const score = factory.score("Slash Eb", "", [factory.part("Guitar", "Gtr", [m])]);
+
+    const xml = exportToMusicXML(score);
+    expect(xml).toContain("<fifths>-3</fifths>");
+
+    const imported = importFromMusicXML(xml);
+    expect(imported.parts[0].measures[0].keySignature.fifths).toBe(-3);
+    expect(imported.parts[0].measures[0].voices[0].events[0].kind).toBe("slash");
+  });
+
+  it("should round-trip all slash durations", () => {
+    const durations: Array<"whole" | "half" | "quarter" | "eighth" | "16th" | "32nd"> =
+      ["whole", "half", "quarter", "eighth", "16th", "32nd"];
+    for (const dur of durations) {
+      const s = factory.slash(factory.dur(dur));
+      const v = factory.voice([s]);
+      const m = factory.measure([v]);
+      const score = factory.score(`Slash ${dur}`, "", [factory.part("T", "T", [m])]);
+
+      const xml = exportToMusicXML(score);
+      const imported = importFromMusicXML(xml);
+      const event = imported.parts[0].measures[0].voices[0].events[0];
+      expect(event.kind).toBe("slash");
+      expect(event.duration.type).toBe(dur);
+    }
+  });
+
+  it("should round-trip slash with rests in same measure", () => {
+    const s1 = factory.slash(factory.dur("quarter"));
+    const r = factory.rest(factory.dur("quarter"));
+    const s2 = factory.slash(factory.dur("half"));
+    const v = factory.voice([s1, r, s2]);
+    const m = factory.measure([v]);
+    const score = factory.score("Slash+Rest", "", [factory.part("T", "T", [m])]);
+
+    const xml = exportToMusicXML(score);
+    const imported = importFromMusicXML(xml);
+    const events = imported.parts[0].measures[0].voices[0].events;
+    expect(events).toHaveLength(3);
+    expect(events[0].kind).toBe("slash");
+    expect(events[1].kind).toBe("rest");
+    expect(events[2].kind).toBe("slash");
+  });
+
+  it("should round-trip multi-part with slash on some parts", () => {
+    // Part 1: standard notes
+    const n1 = factory.note("C", 4, factory.dur("whole"));
+    const m1 = factory.measure([factory.voice([n1])]);
+    const p1 = factory.part("Piano", "Pno", [m1]);
+
+    // Part 2: slash notation
+    const s1 = factory.slash(factory.dur("quarter"));
+    const s2 = factory.slash(factory.dur("quarter"));
+    const s3 = factory.slash(factory.dur("half"));
+    const m2 = factory.measure([factory.voice([s1, s2, s3])]);
+    const p2 = factory.part("Guitar", "Gtr", [m2]);
+
+    const score = factory.score("Multi-part Slash", "", [p1, p2]);
+    const xml = exportToMusicXML(score);
+    const imported = importFromMusicXML(xml);
+
+    expect(imported.parts).toHaveLength(2);
+    expect(imported.parts[0].measures[0].voices[0].events[0].kind).toBe("note");
+    expect(imported.parts[1].measures[0].voices[0].events[0].kind).toBe("slash");
+    expect(imported.parts[1].measures[0].voices[0].events).toHaveLength(3);
   });
 
   it("should round-trip volta brackets", () => {

@@ -28,6 +28,8 @@ export interface InputState {
   tabString: number;
   /** Buffer for multi-digit fret entry (e.g., "1" then "2" → fret 12). */
   tabFretBuffer: string;
+  /** True when cursor is on a tab stave (enables tab input regardless of other staves). */
+  tabInputActive: boolean;
 }
 
 export function defaultInputState(): InputState {
@@ -54,5 +56,6 @@ export function defaultInputState(): InputState {
     pendingPitch: null,
     tabString: 1,
     tabFretBuffer: "",
+    tabInputActive: false,
   };
 }

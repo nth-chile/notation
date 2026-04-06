@@ -1,11 +1,12 @@
 import type { Score, Part, Measure, Voice } from "../model/score";
-import type { NoteEvent, NoteHead, Note, Chord, Rest, GraceNote, TupletRatio, Articulation, ArticulationKind } from "../model/note";
+import type { NoteEvent, NoteHead, Note, Chord, Rest, Slash, GraceNote, TupletRatio, Articulation, ArticulationKind } from "../model/note";
 import type { Pitch, PitchClass, Accidental, Octave } from "../model/pitch";
 import { durationToTicks, type Duration, type DurationType } from "../model/duration";
 import type { Clef, ClefType, TimeSignature, KeySignature, BarlineType } from "../model/time";
 import type { NavigationMarks, Volta } from "../model/navigation";
 import type { Annotation, ChordSymbol, Lyric, DynamicMark, Hairpin, Slur, DynamicLevel } from "../model/annotations";
 import { newId, type ScoreId, type PartId, type MeasureId, type VoiceId, type NoteEventId } from "../model/ids";
+import { INSTRUMENTS } from "../model/instruments";
 import {
   XML_TO_DURATION_TYPE,
   ALTER_TO_ACCIDENTAL,
@@ -13,6 +14,48 @@ import {
   MUSICXML_DIVISIONS,
   DURATION_DIVISIONS,
 } from "./types";
+
+/** Detect instrument from MusicXML part metadata */
+function detectInstrument(
+  partName: string,
+  midiProgram: number | null,
+  staveCount: number,
+  clefType: ClefType,
+): string {
+  // 1. Match by MIDI program number (most reliable)
+  // MusicXML uses 1-based program numbers, our instruments use 0-based GM
+  if (midiProgram !== null) {
+    const gm0 = midiProgram - 1;
+    const byMidi = INSTRUMENTS.find((i) => i.midiProgram === gm0 && gm0 !== 0);
+    if (byMidi) return byMidi.id;
+  }
+
+  // 2. Match by part name (case-insensitive substring)
+  const lower = partName.toLowerCase();
+  for (const inst of INSTRUMENTS) {
+    const instLower = inst.name.toLowerCase();
+    if (lower.includes(instLower) || lower === inst.id) {
+      return inst.id;
+    }
+  }
+  // Common aliases
+  if (lower.includes("gtr") || lower.includes("guit")) return "guitar";
+  if (lower.includes("pno") || lower.includes("keys") || lower.includes("keyboard")) return "piano";
+  if (lower.includes("vln") || lower.includes("fiddle")) return "violin";
+  if (lower.includes("vla")) return "viola";
+  if (lower.includes("vc.") || lower.includes("vlc")) return "cello";
+  if (lower.includes("sax") && lower.includes("alt")) return "alto-sax";
+  if (lower.includes("sax") && lower.includes("ten")) return "tenor-sax";
+  if (lower.includes("tpt") || lower.includes("trp")) return "trumpet";
+  if (lower.includes("drum") || lower.includes("perc")) return "drums";
+
+  // 3. Use stave count — 2 staves means piano
+  if (staveCount >= 2) return "piano";
+
+  // 4. Default by clef
+  if (clefType === "bass") return "bass";
+  return "piano";
+}
 
 function getTextContent(parent: Element, tagName: string): string | null {
   const el = parent.getElementsByTagName(tagName)[0];
@@ -429,6 +472,28 @@ function parseMeasure(
             pendingWedgeStart = null;
           }
           currentTick += durationDivs;
+        } else if (!isGrace && getTextContent(el, "notehead") === "slash") {
+          // Slash notation note
+          if (!voiceEvents.has(voiceNum)) voiceEvents.set(voiceNum, []);
+          const slashEvt: Slash = {
+            kind: "slash",
+            id: newId<NoteEventId>("evt"),
+            duration,
+            ...(tuplet ? { tuplet } : {}),
+          };
+          voiceEvents.get(voiceNum)!.push(slashEvt);
+          if (pendingHarmonies.length > 0) {
+            const h = pendingHarmonies.shift()!;
+            h.beatOffset = currentTick;
+            h.noteEventId = slashEvt.id;
+            annotations.push(h);
+          }
+          if (pendingWedgeStart) {
+            openHairpinStartId = slashEvt.id;
+            openHairpinType = pendingWedgeStart;
+            pendingWedgeStart = null;
+          }
+          currentTick += durationDivs;
         } else if (isGrace) {
           // Grace note — no duration consumed
           const pitch = parsePitch(el);
@@ -770,7 +835,15 @@ function parseMeasure(
   return { measure, clef, timeSig, keySig, divisions, hairpinState: { openStartId: openHairpinStartId, openType: openHairpinType } };
 }
 
-export function importFromMusicXML(xml: string): Score {
+export interface MusicXMLImportResult {
+  score: Score;
+  /** Per-part display hints detected from MusicXML (slash regions, tab staff-type) */
+  displayHints: Record<number, { slash?: boolean; tab?: boolean }>;
+}
+
+export function importFromMusicXML(xml: string): Score;
+export function importFromMusicXML(xml: string, withHints: true): MusicXMLImportResult;
+export function importFromMusicXML(xml: string, withHints?: true): Score | MusicXMLImportResult {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, "application/xml");
 
@@ -795,8 +868,8 @@ export function importFromMusicXML(xml: string): Score {
     }
   }
 
-  // Parse part list for names
-  const partNames = new Map<string, { name: string; abbreviation: string }>();
+  // Parse part list for names and MIDI info
+  const partNames = new Map<string, { name: string; abbreviation: string; midiProgram: number | null }>();
   const partListEl = scoreEl.getElementsByTagName("part-list")[0];
   if (partListEl) {
     const scoreParts = partListEl.getElementsByTagName("score-part");
@@ -808,12 +881,15 @@ export function importFromMusicXML(xml: string): Score {
         ?? (getDirectChild(sp, "part-name-display")
           ? getTextContent(getDirectChild(sp, "part-name-display")!, "display-text") ?? ""
           : "");
-      partNames.set(id, { name, abbreviation });
+      const midiInstEl = getDirectChild(sp, "midi-instrument");
+      const midiProgram = midiInstEl ? getNumberContent(midiInstEl, "midi-program") : null;
+      partNames.set(id, { name, abbreviation, midiProgram });
     }
   }
 
   // Parse parts
   const parts: Part[] = [];
+  const displayHints: Record<number, { slash?: boolean; tab?: boolean }> = {};
   const partEls = getDirectChildren(scoreEl, "part");
 
   for (const partEl of partEls) {
@@ -821,7 +897,19 @@ export function importFromMusicXML(xml: string): Score {
     const partInfo = partNames.get(partId) ?? {
       name: `Part ${parts.length + 1}`,
       abbreviation: "",
+      midiProgram: null,
     };
+
+    // Detect stave count from first measure's <attributes><staves>
+    let xmlStaveCount = 1;
+    const firstMeasureEl = getDirectChild(partEl, "measure");
+    if (firstMeasureEl) {
+      const attrEl = getDirectChild(firstMeasureEl, "attributes");
+      if (attrEl) {
+        const stavesNum = getNumberContent(attrEl, "staves");
+        if (stavesNum !== null) xmlStaveCount = stavesNum;
+      }
+    }
 
     let currentClef: Clef = { type: "treble" };
     let currentTimeSig: TimeSignature = { numerator: 4, denominator: 4 };
@@ -849,18 +937,51 @@ export function importFromMusicXML(xml: string): Score {
       hairpinState = result.hairpinState;
     }
 
+    // Detect display hints: <measure-style><slash> and <staff-details><staff-type>tab
+    const partIdx = parts.length;
+    const hints: { slash?: boolean; tab?: boolean } = {};
+    for (const mEl of measureEls) {
+      // Check <attributes><staff-details><staff-type>tab</staff-type>
+      const attrEl = getDirectChild(mEl, "attributes");
+      if (attrEl) {
+        const staffDetails = getDirectChild(attrEl, "staff-details");
+        if (staffDetails && getTextContent(staffDetails, "staff-type") === "tab") {
+          hints.tab = true;
+        }
+      }
+      // Check <measure-style><slash type="start"/>
+      const msEl = attrEl ? getDirectChild(attrEl, "measure-style") : null;
+      if (msEl) {
+        const slashEl = getDirectChild(msEl, "slash");
+        if (slashEl && slashEl.getAttribute("type") === "start") {
+          hints.slash = true;
+        }
+      }
+      if (hints.slash && hints.tab) break; // found both, no need to keep scanning
+    }
+    if (hints.slash || hints.tab) {
+      displayHints[partIdx] = hints;
+    }
+
+    const instrumentId = detectInstrument(
+      partInfo.name,
+      partInfo.midiProgram,
+      xmlStaveCount,
+      currentClef.type,
+    );
+
     parts.push({
       id: newId<PartId>("prt"),
       name: partInfo.name,
       abbreviation: partInfo.abbreviation,
-      instrumentId: "piano",
+      instrumentId,
       muted: false,
       solo: false,
       measures,
     });
   }
 
-  return {
+  const score: Score = {
     id: newId<ScoreId>("scr"),
     title,
     composer,
@@ -868,4 +989,7 @@ export function importFromMusicXML(xml: string): Score {
     tempo: 120,
     parts,
   };
+
+  if (withHints) return { score, displayHints };
+  return score;
 }

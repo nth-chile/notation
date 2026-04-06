@@ -1,4 +1,4 @@
-import { importFromMusicXML } from "../musicxml";
+import { importFromMusicXML, type MusicXMLImportResult } from "../musicxml";
 import JSZip from "jszip";
 import type { Score } from "../model";
 
@@ -25,7 +25,14 @@ async function extractMxl(data: ArrayBuffer): Promise<string> {
   throw new Error("No MusicXML file found in .mxl archive");
 }
 
-export async function loadScore(): Promise<{ score: Score; path: string } | null> {
+export type LoadResult = { score: Score; path: string; displayHints: MusicXMLImportResult["displayHints"] };
+
+export async function loadScore(): Promise<LoadResult | null> {
+  function fromXml(xml: string, path: string): LoadResult {
+    const result = importFromMusicXML(xml, true);
+    return { score: result.score, path, displayHints: result.displayHints };
+  }
+
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const { readTextFile } = await import("@tauri-apps/plugin-fs");
@@ -43,11 +50,11 @@ export async function loadScore(): Promise<{ score: Score; path: string } | null
       const { readFile } = await import("@tauri-apps/plugin-fs");
       const buf = await readFile(path as string);
       const xml = await extractMxl(buf.buffer as ArrayBuffer);
-      return { score: importFromMusicXML(xml), path: path as string };
+      return fromXml(xml, path as string);
     }
 
     const content = await readTextFile(path as string);
-    return { score: importFromMusicXML(content), path: path as string };
+    return fromXml(content, path as string);
   } catch {
     return new Promise((resolve) => {
       const input = document.createElement("input");
@@ -59,11 +66,11 @@ export async function loadScore(): Promise<{ score: Score; path: string } | null
         if (isMxlExtension(file.name)) {
           const buf = await file.arrayBuffer();
           const xml = await extractMxl(buf);
-          resolve({ score: importFromMusicXML(xml), path: file.name });
+          resolve(fromXml(xml, file.name));
           return;
         }
         const text = await file.text();
-        resolve({ score: importFromMusicXML(text), path: file.name });
+        resolve(fromXml(text, file.name));
       };
       input.click();
     });

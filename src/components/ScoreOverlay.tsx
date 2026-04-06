@@ -191,7 +191,10 @@ export function ScoreOverlay({ width, height }: Props) {
         const a = drag.anchor;
         const clickedVoice = score.parts[a.partIndex]?.measures[a.measureIndex]?.voices[a.voiceIndex];
         const stave = clickedVoice?.staff ?? 0;
-        setCursorDirect({ partIndex: a.partIndex, measureIndex: a.measureIndex, voiceIndex: a.voiceIndex, eventIndex: a.eventIndex, staveIndex: stave });
+        const dblMp = measurePositions.find((mp) =>
+          mp.partIndex === a.partIndex && mp.measureIndex === a.measureIndex && mp.staveIndex === stave
+        );
+        setCursorDirect({ partIndex: a.partIndex, measureIndex: a.measureIndex, voiceIndex: a.voiceIndex, eventIndex: a.eventIndex, staveIndex: stave }, dblMp?.isTab ?? false);
         setNoteSelection({
           partIndex: a.partIndex,
           voiceIndex: a.voiceIndex,
@@ -219,7 +222,7 @@ export function ScoreOverlay({ width, height }: Props) {
           const staffVoiceIdx = measure?.voices.findIndex((v) => (v.staff ?? 0) === clickedStave);
           voiceIndex = staffVoiceIdx != null && staffVoiceIdx >= 0 ? staffVoiceIdx : 0;
         }
-        setCursorDirect({ partIndex: mp.partIndex, measureIndex: mp.measureIndex, voiceIndex, eventIndex: 0, staveIndex: clickedStave });
+        setCursorDirect({ partIndex: mp.partIndex, measureIndex: mp.measureIndex, voiceIndex, eventIndex: 0, staveIndex: clickedStave }, mp.isTab ?? false);
         setSelection({
           partIndex: mp.partIndex,
           measureStart: mp.measureIndex,
@@ -244,13 +247,17 @@ export function ScoreOverlay({ width, height }: Props) {
     if (nb) {
       const clickedVoice = score.parts[nb.partIndex]?.measures[nb.measureIndex]?.voices[nb.voiceIndex];
       const clickedStaveIndex = clickedVoice?.staff ?? 0;
+      // Detect if clicked note is on a tab stave
+      const clickedMp = measurePositions.find((mp) =>
+        mp.partIndex === nb.partIndex && mp.measureIndex === nb.measureIndex && mp.staveIndex === clickedStaveIndex
+      );
       setCursorDirect({
         partIndex: nb.partIndex,
         measureIndex: nb.measureIndex,
         voiceIndex: nb.voiceIndex,
         eventIndex: nb.eventIndex,
         staveIndex: clickedStaveIndex,
-      });
+      }, clickedMp?.isTab ?? false);
 
       if (e.shiftKey && noteAnchorRef.current &&
           noteAnchorRef.current.partIndex === nb.partIndex &&
@@ -317,7 +324,7 @@ export function ScoreOverlay({ width, height }: Props) {
         voiceIndex,
         eventIndex: 0,
         staveIndex: clickedStave,
-      });
+      }, mp.isTab ?? false);
 
       if (e.shiftKey && anchorRef.current) {
         setSelection({

@@ -32,7 +32,10 @@ export type Articulation =
   | { kind: "fingerpick-p" }
   | { kind: "fingerpick-i" }
   | { kind: "fingerpick-m" }
-  | { kind: "fingerpick-a" };
+  | { kind: "fingerpick-a" }
+  | { kind: "ghost-note" }
+  | { kind: "tapping" }
+  | { kind: "tremolo-picking" };
 
 export type ArticulationKind = Articulation["kind"];
 

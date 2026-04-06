@@ -185,7 +185,7 @@ export function KeyboardShortcuts() {
       if (textInputMode) return;
 
       // Tab input mode: intercept digit keys for fret entry and arrows for string nav
-      if (getEffectiveInputMode(viewConfig, useEditorStore.getState().inputState.cursor.partIndex) === "tab") {
+      if (getEffectiveInputMode(viewConfig, useEditorStore.getState().inputState.cursor.partIndex, useEditorStore.getState().inputState.tabInputActive) === "tab") {
         const state = useEditorStore.getState();
         const { tabFretBuffer, tabString } = state.inputState;
 
@@ -266,6 +266,31 @@ export function KeyboardShortcuts() {
         if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && tabFretBuffer) {
           insertTabNote(parseInt(tabFretBuffer, 10), tabString);
           // Fall through to normal cursor handling
+        }
+
+        // Tab technique shortcuts (Guitar Pro style single-key)
+        if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          const key = e.key.toLowerCase();
+          const TAB_TECHNIQUE_MAP: Record<string, import("../model/note").ArticulationKind> = {
+            b: "bend",
+            s: "slide-up",
+            h: "hammer-on",
+            p: "pull-off",
+            v: "vibrato",
+            x: "dead-note",
+            o: "ghost-note",
+            t: "tapping",
+            m: "palm-mute",
+            l: "let-ring",
+          };
+          if (key in TAB_TECHNIQUE_MAP) {
+            e.preventDefault();
+            if (tabFretBuffer) {
+              insertTabNote(parseInt(tabFretBuffer, 10), tabString);
+            }
+            toggleArticulation(TAB_TECHNIQUE_MAP[key]);
+            return;
+          }
         }
       }
 
