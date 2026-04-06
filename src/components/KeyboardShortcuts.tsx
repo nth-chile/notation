@@ -160,6 +160,7 @@ export function KeyboardShortcuts() {
       "key-sig-popover": () => setPopover(popover === "key-sig" ? null : "key-sig"),
       "rehearsal-popover": () => setPopover(popover === "rehearsal" ? null : "rehearsal"),
       "barline-popover": () => setPopover(popover === "barline" ? null : "barline"),
+      "navigation-popover": () => setPopover(popover === "navigation-marks" ? null : "navigation-marks"),
 
       // Articulations
       "articulation:accent": () => toggleArticulation("accent"),
