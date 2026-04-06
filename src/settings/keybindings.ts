@@ -98,6 +98,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "key-sig-popover", label: "Key signature", category: "Annotation", defaultBinding: { key: "k", ctrl: true } },
   { id: "rehearsal-popover", label: "Rehearsal mark", category: "Annotation", defaultBinding: { key: "r", shift: true } },
   { id: "barline-popover", label: "Barline", category: "Annotation", defaultBinding: { key: "b", shift: true } },
+  { id: "navigation-popover", label: "Navigation marks", category: "Annotation", defaultBinding: { key: "n", shift: true } },
 
   // Articulations
   { id: "toggle-cross-staff", label: "Toggle cross-staff", category: "Notes", defaultBinding: { key: "x", shift: true } },

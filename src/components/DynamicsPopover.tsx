@@ -263,6 +263,154 @@ function GoToMeasureContent() {
   );
 }
 
+const DS_OPTIONS = [
+  { label: "D.S. al Coda", value: "D.S. al Coda" },
+  { label: "D.S. al Fine", value: "D.S. al Fine" },
+  { label: "D.S.", value: "D.S." },
+];
+
+const DC_OPTIONS = [
+  { label: "D.C. al Fine", value: "D.C. al Fine" },
+  { label: "D.C. al Coda", value: "D.C. al Coda" },
+  { label: "D.C.", value: "D.C." },
+];
+
+function MusicGlyph({ code }: { code: string }) {
+  return <span style={{ fontFamily: "Bravura, Petaluma, serif", fontSize: "20px", lineHeight: 1 }}>{code}</span>;
+}
+
+function NavigationMarksContent() {
+  const setNavigationMark = useEditorStore((s) => s.setNavigationMark);
+  const setVolta = useEditorStore((s) => s.setVolta);
+  const setPopover = useEditorStore((s) => s.setPopover);
+  const score = useEditorStore((s) => s.score);
+  const cursor = useEditorStore((s) => s.inputState.cursor);
+  const [voltaInput, setVoltaInput] = useState("");
+  const voltaRef = useRef<HTMLInputElement>(null);
+
+  // Get current navigation state for the measure
+  const measure = score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
+  const nav = measure?.navigation;
+
+  const toggleMark = (type: "coda" | "segno" | "toCoda" | "fine") => {
+    setNavigationMark(type);
+  };
+
+  const setDS = (value: string) => {
+    const isActive = nav?.dsText === value;
+    if (isActive) {
+      setNavigationMark("ds"); // toggle off
+    } else {
+      setNavigationMark("ds", value);
+    }
+  };
+
+  const setDC = (value: string) => {
+    const isActive = nav?.dcText === value;
+    if (isActive) {
+      setNavigationMark("dc"); // toggle off
+    } else {
+      setNavigationMark("dc", value);
+    }
+  };
+
+  const submitVolta = () => {
+    const text = voltaInput.trim();
+    if (!text) {
+      setVolta(null); // remove
+      return;
+    }
+    const endings = text.split(/[,\s]+/).map(Number).filter((n) => !isNaN(n) && n > 0);
+    if (endings.length > 0) {
+      setVolta({ endings });
+      setPopover(null);
+    }
+  };
+
+  const activeClass = "bg-accent font-medium";
+  const inactiveClass = "hover:bg-accent/50";
+
+  return (
+    <div className="flex flex-col gap-2 min-w-[220px]">
+      {/* Signs */}
+      <div>
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Signs</div>
+        <div className="flex gap-0.5">
+          {([
+            { type: "segno" as const, label: <MusicGlyph code={"\uE047"} />, active: !!nav?.segno },
+            { type: "coda" as const, label: <MusicGlyph code={"\uE048"} />, active: !!nav?.coda },
+            { type: "toCoda" as const, label: "To Coda" as unknown as React.ReactElement, active: !!nav?.toCoda },
+            { type: "fine" as const, label: "Fine" as unknown as React.ReactElement, active: !!nav?.fine },
+          ] as { type: "segno" | "coda" | "toCoda" | "fine"; label: React.ReactNode; active: boolean }[]).map((m) => (
+            <button
+              key={m.type}
+              onClick={() => toggleMark(m.type)}
+              className={`px-2 py-1 text-sm rounded flex items-center justify-center min-w-[40px] ${m.active ? activeClass : inactiveClass}`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* D.S. */}
+      <div>
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Dal Segno</div>
+        <div className="flex gap-0.5">
+          {DS_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setDS(opt.value)}
+              className={`px-2 py-1 text-sm rounded ${nav?.dsText === opt.value ? activeClass : inactiveClass}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* D.C. */}
+      <div>
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Da Capo</div>
+        <div className="flex gap-0.5">
+          {DC_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setDC(opt.value)}
+              className={`px-2 py-1 text-sm rounded ${nav?.dcText === opt.value ? activeClass : inactiveClass}`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* Volta */}
+      <div>
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">
+          Volta {nav?.volta ? `(${nav.volta.endings.join(", ")})` : ""}
+        </div>
+        <div className="flex gap-1">
+          <input
+            ref={voltaRef}
+            value={voltaInput}
+            onChange={(e) => setVoltaInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submitVolta(); }}
+            className="w-20 px-2 py-1 text-sm bg-background border rounded outline-none"
+            placeholder="1, 2"
+          />
+          <button onClick={submitVolta} className="px-2 py-1 text-sm hover:bg-accent rounded">Set</button>
+          {nav?.volta && (
+            <button
+              onClick={() => { setVolta(null); }}
+              className="px-2 py-1 text-sm hover:bg-destructive/20 text-destructive rounded"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const FLOATING_POPOVERS = new Set(["go-to-measure"]);
 
 const CONTENT: Record<string, () => React.ReactNode> = {
@@ -273,6 +421,7 @@ const CONTENT: Record<string, () => React.ReactNode> = {
   rehearsal: RehearsalContent,
   barline: BarlineContent,
   "go-to-measure": GoToMeasureContent,
+  "navigation-marks": NavigationMarksContent,
 };
 
 const LABELS: Record<string, string> = {
@@ -283,6 +432,7 @@ const LABELS: Record<string, string> = {
   rehearsal: "Rehearsal Mark",
   barline: "Barline",
   "go-to-measure": "Go to Measure",
+  "navigation-marks": "Navigation Marks",
 };
 
 export function AnnotationPopover() {

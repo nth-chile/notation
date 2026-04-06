@@ -277,6 +277,33 @@ export function registerCoreEditor(pm: PluginManager): void {
   pm.registerCoreCommand("nubium.barline", "Barline...", () => {
     useEditorStore.getState().setPopover("barline");
   });
+  pm.registerCoreCommand("nubium.navigation-marks", "Navigation marks...", () => {
+    useEditorStore.getState().setPopover("navigation-marks");
+  });
+  pm.registerCoreCommand("nubium.segno", "Toggle segno", () => {
+    useEditorStore.getState().setNavigationMark("segno");
+  });
+  pm.registerCoreCommand("nubium.coda", "Toggle coda", () => {
+    useEditorStore.getState().setNavigationMark("coda");
+  });
+  pm.registerCoreCommand("nubium.to-coda", "Toggle To Coda", () => {
+    useEditorStore.getState().setNavigationMark("toCoda");
+  });
+  pm.registerCoreCommand("nubium.fine", "Toggle Fine", () => {
+    useEditorStore.getState().setNavigationMark("fine");
+  });
+  pm.registerCoreCommand("nubium.ds-al-coda", "D.S. al Coda", () => {
+    useEditorStore.getState().setNavigationMark("ds", "D.S. al Coda");
+  });
+  pm.registerCoreCommand("nubium.ds-al-fine", "D.S. al Fine", () => {
+    useEditorStore.getState().setNavigationMark("ds", "D.S. al Fine");
+  });
+  pm.registerCoreCommand("nubium.dc-al-fine", "D.C. al Fine", () => {
+    useEditorStore.getState().setNavigationMark("dc", "D.C. al Fine");
+  });
+  pm.registerCoreCommand("nubium.dc-al-coda", "D.C. al Coda", () => {
+    useEditorStore.getState().setNavigationMark("dc", "D.C. al Coda");
+  });
   pm.registerCoreCommand("nubium.toggle-metronome", "Toggle metronome", () => {
     useEditorStore.getState().toggleMetronome();
   });

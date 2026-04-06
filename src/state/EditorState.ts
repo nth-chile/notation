@@ -191,7 +191,7 @@ interface EditorStore {
   setNavigationMark(markType: NavigationMarkType, value?: string | boolean): void;
 
   // Popovers
-  popover: "dynamics" | "tempo" | "time-sig" | "key-sig" | "rehearsal" | "barline" | "go-to-measure" | null;
+  popover: "dynamics" | "tempo" | "time-sig" | "key-sig" | "rehearsal" | "barline" | "go-to-measure" | "navigation-marks" | null;
   setPopover(popover: EditorStore["popover"]): void;
   setDynamic(level: import("../model/annotations").DynamicLevel | null): void;
   setTempoMark(bpm: number, beatUnit?: DurationType, text?: string): void;
