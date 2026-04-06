@@ -13,8 +13,7 @@ import type {
   KeySignature,
 } from "../model";
 import type { ClefType } from "../model";
-import type { ViewModeType } from "../views/ViewMode";
-import { getDefaultViewConfig, type ViewConfig } from "../views/ViewMode";
+import { defaultViewConfig, getEffectiveInputMode, getPartDisplay, type ViewConfig, type NotationDisplay } from "../views/ViewMode";
 import { DURATION_TYPES_ORDERED } from "../model";
 import { durationToTicks as durationToTicksFn, TICKS_PER_QUARTER } from "../model/duration";
 import { factory } from "../model";
@@ -24,6 +23,7 @@ import { defaultInputState, type InputState, type CursorPosition } from "../inpu
 import { CommandHistory } from "../commands/CommandHistory";
 import type { Selection, NoteSelection } from "../plugins/PluginAPI";
 import { InsertNote } from "../commands/InsertNote";
+import { InsertTabNote } from "../commands/InsertTabNote";
 import { InsertModeNote } from "../commands/InsertModeNote";
 import { InsertRest } from "../commands/InsertRest";
 import { DeleteNote } from "../commands/DeleteNote";
@@ -95,6 +95,7 @@ interface EditorStore {
 
   // Actions
   insertNote(pitchClass: PitchClass): void;
+  insertTabNote(fret: number, string: number): void;
   insertRest(): void;
   deleteNote(): void;
   setDuration(type: DurationType): void;
@@ -160,6 +161,7 @@ interface EditorStore {
   playbackTick: number | null;
   tempo: number;
   metronomeOn: boolean;
+  countInOn: boolean;
   play(): Promise<void> | void;
   pause(): void;
   stopPlayback(): void;
@@ -167,6 +169,7 @@ interface EditorStore {
   setSwing(swing: import("../model/annotations").SwingSettings | undefined): void;
   setPlaybackTick(tick: number | null): void;
   toggleMetronome(): void;
+  toggleCountIn(): void;
 
   // Phase 5: Multi-track/Part management
   addPart(instrumentId: string): void;
@@ -174,16 +177,18 @@ interface EditorStore {
   reorderPart(partIndex: number, direction: "up" | "down"): void;
   toggleSolo(partIndex: number): void;
   toggleMute(partIndex: number): void;
+  setPartTuning(partIndex: number, tuning: import("../model/guitar").Tuning | undefined): void;
+  setPartCapo(partIndex: number, capo: number): void;
   togglePartVisibility(partIndex: number): void;
   hiddenParts: Set<number>;
   moveCursorToPart(partIndex: number): void;
   moveCursorPart(direction: "up" | "down"): void;
 
   // Phase 9: View modes
-  viewMode: ViewModeType;
   viewConfig: ViewConfig;
-  viewScrollPositions: Record<ViewModeType, number>;
-  setViewMode(mode: ViewModeType): void;
+  toggleNotation(type: "standard" | "tab" | "slash", partIndex?: number): void;
+  /** Set notation display for a specific part directly */
+  setPartNotation(partIndex: number, display: Partial<NotationDisplay>): void;
 
   // Phase 10: Navigation marks
   setRepeatBarline(barlineType: BarlineType): void;
@@ -334,12 +339,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   playbackTick: null,
   tempo: 120,
   metronomeOn: false,
-  viewMode: "full-score" as ViewModeType,
-  viewConfig: getDefaultViewConfig("full-score"),
-  viewScrollPositions: {
-    "full-score": 0,
-    "tab": 0,
-  },
+  countInOn: false,
+  viewConfig: defaultViewConfig(),
   hiddenParts: new Set<number>(),
   popover: null,
 
@@ -505,6 +506,18 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       inputState: result.inputState,
       lastEnteredPosition: { ...cursor },
     });
+  },
+
+  insertTabNote(fret: number, string: number) {
+    const state = get();
+    const { cursor } = state.inputState;
+    const part = state.score.parts[cursor.partIndex];
+    if (!part) return;
+    const tuning = part.tuning;
+    const capo = part.capo ?? 0;
+    const cmd = new InsertTabNote(fret, string, { ...state.inputState.duration }, tuning, capo);
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState, lastEnteredPosition: { ...cursor } });
   },
 
   insertRest() {
@@ -1840,6 +1853,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       },
     });
     service.setMetronome(state.metronomeOn);
+    service.setCountIn(state.countInOn);
 
     // If there's a selection, play only the selected measures (looping)
     const sel = state.selection;
@@ -1925,6 +1939,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
+  toggleCountIn() {
+    set((s) => {
+      const next = !s.countInOn;
+      getGlobalPluginManager()?.getPlaybackService()?.setCountIn(next);
+      return { countInOn: next };
+    });
+  },
+
   // Phase 5: Multi-track/Part management
 
   addPart(instrumentId: string) {
@@ -1991,6 +2013,26 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       part.muted = !part.muted;
       // Update playback reference so mute takes effect during playback
       getGlobalPluginManager()?.getPlaybackService()?.updateScore(score);
+      return { score };
+    });
+  },
+
+  setPartTuning(partIndex: number, tuning: import("../model/guitar").Tuning | undefined) {
+    set((s) => {
+      const score = structuredClone(s.score);
+      const part = score.parts[partIndex];
+      if (!part) return s;
+      part.tuning = tuning;
+      return { score };
+    });
+  },
+
+  setPartCapo(partIndex: number, capo: number) {
+    set((s) => {
+      const score = structuredClone(s.score);
+      const part = score.parts[partIndex];
+      if (!part) return s;
+      part.capo = capo > 0 ? capo : undefined;
       return { score };
     });
   },
@@ -2071,23 +2113,29 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
-  // Phase 9: View modes
+  // Phase 9: View modes (notation display toggles)
 
-  setViewMode(mode: ViewModeType) {
+  toggleNotation(type: "standard" | "tab" | "slash", partIndex?: number) {
     set((s) => {
-      // Save current scroll position for current view
-      const scrollEl = document.querySelector("[data-score-container]");
-      const currentScroll = scrollEl?.scrollTop ?? 0;
-      const newScrollPositions = {
-        ...s.viewScrollPositions,
-        [s.viewMode]: currentScroll,
-      };
+      const newDisplay = { ...s.viewConfig.notationDisplay };
+      // If no partIndex, toggle for the current cursor part
+      const pi = partIndex ?? s.inputState.cursor.partIndex;
+      const current = getPartDisplay(s.viewConfig, pi);
+      const toggled = !current[type];
+      const updated = { ...current, [type]: toggled };
+      // Ensure at least one notation type remains on
+      if (!updated.standard && !updated.tab && !updated.slash) return {};
+      newDisplay[pi] = updated;
+      return { viewConfig: { ...s.viewConfig, notationDisplay: newDisplay } };
+    });
+  },
 
-      return {
-        viewMode: mode,
-        viewConfig: getDefaultViewConfig(mode),
-        viewScrollPositions: newScrollPositions,
-      };
+  setPartNotation(partIndex: number, display: Partial<NotationDisplay>) {
+    set((s) => {
+      const current = getPartDisplay(s.viewConfig, partIndex);
+      const newDisplay = { ...s.viewConfig.notationDisplay };
+      newDisplay[partIndex] = { ...current, ...display };
+      return { viewConfig: { ...s.viewConfig, notationDisplay: newDisplay } };
     });
   },
 
@@ -2194,14 +2242,14 @@ import { updateSettings, getSettings as loadSettings } from "../settings";
 let settingsSaveTimer: ReturnType<typeof setTimeout> | null = null;
 useEditorStore.subscribe((state, prevState) => {
   if (
-    state.viewMode !== prevState.viewMode ||
-    state.metronomeOn !== prevState.metronomeOn
+    state.metronomeOn !== prevState.metronomeOn ||
+    state.countInOn !== prevState.countInOn
   ) {
     if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
     settingsSaveTimer = setTimeout(() => {
       updateSettings({
-        viewMode: state.viewMode,
         metronomeEnabled: state.metronomeOn,
+        countInEnabled: state.countInOn,
       });
     }, 500);
   }
@@ -2242,11 +2290,9 @@ async function restoreAutoSave(): Promise<void> {
 function restoreUiPreferences(): void {
   try {
     const settings = loadSettings();
-    const viewMode = (settings.viewMode ?? "full-score") as ViewModeType;
     useEditorStore.setState({
-      viewMode,
-      viewConfig: getDefaultViewConfig(viewMode),
       metronomeOn: settings.metronomeEnabled ?? false,
+      countInOn: settings.countInEnabled ?? false,
     });
   } catch {
     // ignore

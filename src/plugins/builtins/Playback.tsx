@@ -114,11 +114,13 @@ function TransportPanel() {
   const playbackTick = useEditorStore((s) => s.playbackTick);
   const score = useEditorStore((s) => s.score);
   const metronomeOn = useEditorStore((s) => s.metronomeOn);
+  const countInOn = useEditorStore((s) => s.countInOn);
   const play = useEditorStore((s) => s.play);
   const pause = useEditorStore((s) => s.pause);
   const stopPlayback = useEditorStore((s) => s.stopPlayback);
   const setTempo = useEditorStore((s) => s.setTempo);
   const toggleMetronome = useEditorStore((s) => s.toggleMetronome);
+  const toggleCountIn = useEditorStore((s) => s.toggleCountIn);
   const hotkey = useHotkey();
 
   const [tempoInput, setTempoInput] = useState<string | null>(null);
@@ -179,6 +181,16 @@ function TransportPanel() {
           <path d="M12 18l2.6-7.2" />
           <circle cx="15" cy="10" r="1.5" fill="currentColor" />
         </svg>
+      </TooltipButton>
+
+      <TooltipButton
+        variant={countInOn ? "secondary" : "ghost"}
+        size="icon"
+        onClick={toggleCountIn}
+        tooltip={`Count-in (${hotkey("toggle-count-in")})`}
+        actionId="toggle-count-in"
+      >
+        <span className="text-[10px] font-bold leading-none tracking-tight">1234</span>
       </TooltipButton>
 
     </>
@@ -269,6 +281,7 @@ export const BuiltinInstrumentsPlugin: NubiumPlugin = {
       stop: () => Transport.stop(),
       setTempo: (bpm) => Transport.setTempo(bpm),
       setMetronome: (enabled) => Transport.setMetronome(enabled),
+      setCountIn: (enabled) => Transport.setCountIn(enabled),
       updateScore: (s) => Transport.updateScore(s),
       setCallbacks: (opts) => Transport.setCallbacks(opts),
     });

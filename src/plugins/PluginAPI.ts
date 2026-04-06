@@ -63,6 +63,7 @@ export interface PlaybackService {
   stop(): void;
   setTempo(bpm: number): void;
   setMetronome(enabled: boolean): void;
+  setCountIn(enabled: boolean): void;
   updateScore(score: Score): void;
   setCallbacks(opts: {
     onTick: (tick: number) => void;

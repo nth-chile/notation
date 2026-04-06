@@ -177,6 +177,8 @@ function scoreToJson(score: Score): Record<string, unknown> {
         instrument: part.instrumentId || "piano",
         muted: part.muted || undefined,
         solo: part.solo || undefined,
+        tuning: part.tuning || undefined,
+        capo: part.capo || undefined,
         measures: part.measures.map((m, i) => measureToJson(m, i)),
       };
       return p;
@@ -442,7 +444,7 @@ export function jsonToScore(json: Record<string, unknown>): Score {
           measures.push(parseMeasure(m));
         }
       }
-      parts.push({
+      const part: Part = {
         id: newId<PartId>("prt"),
         name: (p.name as string) || "Part",
         abbreviation: (p.abbreviation as string) || ((p.name as string) || "P").slice(0, 3),
@@ -450,7 +452,10 @@ export function jsonToScore(json: Record<string, unknown>): Score {
         muted: (p.muted as boolean) || false,
         solo: (p.solo as boolean) || false,
         measures,
-      });
+      };
+      if (p.tuning) part.tuning = p.tuning as Part["tuning"];
+      if (typeof p.capo === "number" && p.capo > 0) part.capo = p.capo as number;
+      parts.push(part);
     }
   }
 

@@ -2,7 +2,7 @@ import type { Score } from "../model/score";
 import { initRenderer } from "../renderer/vexBridge";
 import { renderScore } from "../renderer/ScoreRenderer";
 import { totalPageCount, DEFAULT_LAYOUT, type LayoutConfig } from "../renderer/SystemLayout";
-import { fullScoreConfig, type ViewConfig, type AnnotationFilter } from "../views/ViewMode";
+import { defaultViewConfig, type ViewConfig, type AnnotationFilter } from "../views/ViewMode";
 import { getSettings, type DisplaySettings } from "../settings";
 import { jsPDF } from "jspdf";
 
@@ -34,7 +34,7 @@ const PAGE_SIZES: Record<PageSize, { width: number; height: number; inWidth: num
  * When a viewConfig is provided, it is used to filter which parts are rendered.
  */
 export async function exportPDF(score: Score, viewConfig?: ViewConfig, options?: PDFExportOptions): Promise<void> {
-  const rawConfig = viewConfig ?? fullScoreConfig();
+  const rawConfig = viewConfig ?? defaultViewConfig();
   // Apply app-level display settings to filter annotations
   const display = getSettings().display;
   const DISPLAY_TO_FILTER: [keyof DisplaySettings, AnnotationFilter[]][] = [
@@ -44,7 +44,7 @@ export async function exportPDF(score: Score, viewConfig?: ViewConfig, options?:
   ];
   const hidden = DISPLAY_TO_FILTER.filter(([k]) => !display[k]).flatMap(([, f]) => f);
   const baseConfig = hidden.length > 0
-    ? { ...rawConfig, showAnnotations: rawConfig.showAnnotations.filter((a) => !hidden.includes(a)) }
+    ? { ...rawConfig, showAnnotations: rawConfig.showAnnotations.filter((a: AnnotationFilter) => !hidden.includes(a)) }
     : rawConfig;
   const size = PAGE_SIZES[options?.pageSize ?? "letter"];
   const isLandscape = (options?.orientation ?? "portrait") === "landscape";
@@ -155,7 +155,7 @@ export async function exportPDF(score: Score, viewConfig?: ViewConfig, options?:
  */
 export async function exportPartPDF(score: Score, partIndex: number): Promise<void> {
   const config: ViewConfig = {
-    ...fullScoreConfig(),
+    ...defaultViewConfig(),
     partsToShow: [partIndex],
   };
   return exportPDF(score, config);

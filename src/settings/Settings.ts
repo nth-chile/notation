@@ -7,6 +7,9 @@ export interface DisplaySettings {
   showRehearsalMarks: boolean;
   showTempoMarks: boolean;
   showDynamics: boolean;
+  showStandardToggle: boolean;
+  showTabToggle: boolean;
+  showSlashToggle: boolean;
 }
 
 export interface AppSettings {
@@ -15,6 +18,7 @@ export interface AppSettings {
   defaultClef: ClefType;
   autoBeam: boolean;
   metronomeEnabled: boolean;
+  countInEnabled: boolean;
   historyMaxSnapshots: number;
   keyBindings: Record<string, KeyBinding>;
   viewMode: string;
@@ -36,6 +40,9 @@ function defaultDisplaySettings(): DisplaySettings {
     showRehearsalMarks: true,
     showTempoMarks: true,
     showDynamics: true,
+    showStandardToggle: true,
+    showTabToggle: true,
+    showSlashToggle: true,
   };
 }
 
@@ -46,6 +53,7 @@ function defaultSettings(): AppSettings {
     defaultClef: "treble",
     autoBeam: true,
     metronomeEnabled: false,
+    countInEnabled: false,
     historyMaxSnapshots: 50,
     keyBindings: defaultKeyBindings(),
     viewMode: "full-score",

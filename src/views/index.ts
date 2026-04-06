@@ -1,8 +1,7 @@
-export type { ViewModeType, ViewConfig, AnnotationFilter } from "./ViewMode";
+export type { ViewConfig, AnnotationFilter, NotationDisplay, InputMode } from "./ViewMode";
 export {
-  fullScoreConfig,
-  tabConfig,
-  getDefaultViewConfig,
+  defaultViewConfig,
+  getPartDisplay,
+  getEffectiveInputMode,
+  DEFAULT_NOTATION_DISPLAY,
 } from "./ViewMode";
-export { getViewConfig as getFullScoreViewConfig } from "./FullScoreView";
-export { getViewConfig as getTabViewConfig } from "./TabView";

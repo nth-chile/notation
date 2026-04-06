@@ -24,7 +24,6 @@ export { TransposePlugin } from "./builtins/Transpose";
 export { ChordAnalysisPlugin } from "./builtins/ChordAnalysis";
 
 // Built-in feature plugins
-export { ViewsPlugin } from "./builtins/Views";
 export { ExportPlugin } from "./builtins/Export";
 export { BuiltinInstrumentsPlugin, registerCoreTransport } from "./builtins/Playback";
 export { AIChatPlugin } from "./builtins/AIChat";

@@ -16,13 +16,14 @@ import { saveScore } from "./fileio/save";
 import { loadScore } from "./fileio/load";
 import { emptyScore } from "./model/factory";
 import { getSettings, matchesBinding } from "./settings";
+import { recordSave } from "./licensing";
+import { LicenseNag } from "./components/LicenseNag";
 import { useEffect, useCallback, useState, useSyncExternalStore, useRef } from "react";
 import { checkForUpdates, installUpdate } from "./updater";
 import {
   PluginManager,
   TransposePlugin,
   ChordAnalysisPlugin,
-  ViewsPlugin,
   ExportPlugin,
   BuiltinInstrumentsPlugin,
   AIChatPlugin,
@@ -42,6 +43,7 @@ export function App() {
   const setFilePath = useEditorStore((s) => s.setFilePath);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [pluginsVisible, setPluginsVisible] = useState(false);
+  const [nagVisible, setNagVisible] = useState(false);
 
   // Plugin manager singleton
   const pluginManagerRef = useRef<PluginManager | null>(null);
@@ -88,7 +90,6 @@ export function App() {
     registerCoreTransport(pm);
 
     // Register and activate built-in plugins
-    pm.registerAndActivate(ViewsPlugin, false);
     pm.registerAndActivate(BuiltinInstrumentsPlugin, true);
     pm.registerAndActivate(AIChatPlugin, true);
     pm.registerAndActivate(ExportPlugin, true);
@@ -153,14 +154,13 @@ export function App() {
   const toolbarPanels = pm.getPanels("toolbar");
   const leftPanels = pm.getPanels("sidebar-left");
   const rightPanels = pm.getPanels("sidebar-right");
-  const views = pm.getViews();
-
   const handleSave = useCallback(async () => {
     try {
       const path = await saveScore(score, filePath ?? undefined);
       setFilePath(path);
       useEditorStore.getState().markClean();
       useEditorStore.getState().setAutoSaveStatus("Saved");
+      if (recordSave()) setNagVisible(true);
     } catch (err) {
       console.error("Save failed:", err);
     }
@@ -244,7 +244,6 @@ export function App() {
         onOpen={handleOpen}
         onSave={handleSave}
         toolbarPanels={toolbarPanels}
-        views={views}
       />
 
       <PanelLayout leftPanels={leftPanels} rightPanels={rightPanels}>
@@ -264,6 +263,7 @@ export function App() {
       />
       <CommandPalette pluginManager={pluginManagerRef.current} />
       <HistoryModal />
+      <LicenseNag open={nagVisible} onClose={() => setNagVisible(false)} />
       <ToastContainer />
     </div>
     </TooltipProvider>

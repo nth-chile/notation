@@ -4,9 +4,11 @@ import { StaveTie, type StaveNote } from "vexflow";
 import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, renderBrace, clearCanvas, createVexStave, type RenderContext, type NoteBox, type AnnotationBox, type MeasureRenderResult } from "./vexBridge";
 import { getMeasureIndexForTick } from "../playback/TonePlayback";
 import { renderTabMeasure, type TabMeasureRenderResult } from "./TabRenderer";
-import { computeLayout, totalContentHeight, totalPageCount, partStaveCount, DEFAULT_LAYOUT, type LayoutConfig, type SystemLine } from "./SystemLayout";
+import { renderSlashMeasure } from "./SlashRenderer";
+import { computeLayout, totalContentHeight, totalPageCount, partStaveCount, partStandardStaveCount, partHasSlash, partHasTab, DEFAULT_LAYOUT, TAB_STAFF_HEIGHT, type LayoutConfig, type SystemLine } from "./SystemLayout";
 import type { CursorPosition } from "../input/InputState";
 import type { ViewConfig, AnnotationFilter } from "../views/ViewMode";
+import { getPartDisplay, getEffectiveInputMode } from "../views/ViewMode";
 import type { Annotation } from "../model/annotations";
 import type { Selection } from "../plugins/PluginAPI";
 import type { Measure } from "../model";
@@ -103,6 +105,23 @@ const LEFT_MARGIN = DEFAULT_LAYOUT.leftMargin;
 const TOP_MARGIN = DEFAULT_LAYOUT.topMargin;
 const MEASURES_PER_LINE = DEFAULT_LAYOUT.measuresPerLine;
 
+/** Build set of part indices that have tab notation enabled */
+function getTabParts(viewConfig?: ViewConfig): Set<number> | undefined {
+  if (!viewConfig) return undefined;
+  const tabParts = new Set<number>();
+  for (const [idx, display] of Object.entries(viewConfig.notationDisplay)) {
+    if (display.tab) tabParts.add(Number(idx));
+  }
+  return tabParts.size > 0 ? tabParts : undefined;
+}
+
+/** Check if a part shows standard notation (standard or slash) */
+function showsStandard(viewConfig: ViewConfig | undefined, partIndex: number): boolean {
+  if (!viewConfig) return true;
+  const display = getPartDisplay(viewConfig, partIndex);
+  return display.standard || display.slash;
+}
+
 function titleHeight(score: Score): number {
   const state = useEditorStore.getState();
   const hasComposer = !!score.composer || state.editingComposer;
@@ -132,7 +151,7 @@ export function calculateContentHeight(score: Score, viewConfig?: ViewConfig, av
     ...(!viewConfig.layoutConfig.showPartNames ? { partLabelWidth: 0 } : {}),
     ...(pageLayout ? { pageBreaks: true } : {}),
   };
-  return totalContentHeight(filteredScore, config);
+  return totalContentHeight(filteredScore, config, getTabParts(viewConfig), viewConfig);
 }
 
 export function renderScore(
@@ -189,7 +208,8 @@ export function renderScore(
   const tHeight = 48 + (hasComposer ? 22 : 0) + 16;
   config = { ...config, topMargin: config.topMargin + tHeight };
 
-  const systems = computeLayout(filteredScore, config);
+  const tabParts = getTabParts(viewConfig);
+  const systems = computeLayout(filteredScore, config, tabParts, viewConfig);
 
   const allNoteBoxes = new Map<NoteEventId, NoteBox>();
   const allStaveNotes = new Map<NoteEventId, StaveNote>();
@@ -200,7 +220,7 @@ export function renderScore(
 
   // Draw page backgrounds and boundaries when page layout is active
   if (pageLayoutEnabled && rawCtx.save) {
-    const pages = totalPageCount(filteredScore, config);
+    const pages = totalPageCount(filteredScore, config, tabParts, viewConfig);
     rawCtx.save();
     for (let p = 0; p < pages; p++) {
       const pageTop = p * config.pageHeight;
@@ -249,8 +269,13 @@ export function renderScore(
     for (let filteredPi = 0; filteredPi < filteredScore.parts.length; filteredPi++) {
       const originalPi = visiblePartIndices[filteredPi];
       const part = filteredScore.parts[filteredPi];
-      const staveCount = partStaveCount(filteredScore, filteredPi);
-      const useTab = viewConfig?.staffType[originalPi] === "tab";
+      const partDisplay = viewConfig ? getPartDisplay(viewConfig, originalPi) : { standard: true, tab: false, slash: false };
+      const standardStaves = viewConfig ? partStandardStaveCount(filteredScore, filteredPi, viewConfig) : (tabParts?.has(filteredPi) ? 0 : partStaveCount(filteredScore, filteredPi));
+      const hasSlash = viewConfig ? partHasSlash(filteredPi, viewConfig) : false;
+      const hasTab = partDisplay.tab;
+      const slashStaveIdx = hasSlash ? standardStaves : -1;
+      const tabStaveIdx = hasTab ? standardStaves + (hasSlash ? 1 : 0) : -1;
+      const staveCount = standardStaves + (hasSlash ? 1 : 0) + (hasTab ? 1 : 0);
 
       // Detect consecutive rest measure runs for multi-measure rest rendering
       const restRuns = detectRestRuns(part.measures, system.startMeasure, system.endMeasure);
@@ -258,7 +283,7 @@ export function renderScore(
       // For grand staff: collect VexFlow Stave objects per measure/staveIndex for cross-staff rendering.
       // Pre-create bass stave (si=1) so treble (si=0) can use it for cross-staff notes.
       const grandStaffStaves = new Map<string, import("vexflow").Stave>();
-      if (staveCount >= 2) {
+      if (standardStaves >= 2) {
         const bassLayouts = system.staves.filter(
           (s) => s.partIndex === filteredPi && s.staveIndex === 1
         );
@@ -294,7 +319,9 @@ export function renderScore(
 
           // Check for multi-measure rest run starting at this measure
           const restRunLength = restRuns.get(mi);
-          if (restRunLength && !useTab) {
+          const isTabStave = si === tabStaveIdx;
+          const isSlashStave = si === slashStaveIdx;
+          if (restRunLength && !isTabStave && !isSlashStave) {
             // Combine widths of all measures in the rest run
             let combinedWidth = 0;
             for (let r = 0; r < restRunLength; r++) {
@@ -303,7 +330,7 @@ export function renderScore(
             }
 
             let measureToRender = m;
-            if (staveCount === 2 && si === 1) {
+            if (standardStaves === 2 && si === 1) {
               measureToRender = { ...measureToRender, clef: { type: "bass" as const } };
             }
 
@@ -331,7 +358,7 @@ export function renderScore(
                   x: layout.x,
                   y: layout.y,
                   width: combinedWidth,
-                  height: config.staffHeight,
+                  height: isTabStave ? TAB_STAFF_HEIGHT : config.staffHeight,
                   noteStartX: layout.x + 60,
                 });
               }
@@ -350,13 +377,13 @@ export function renderScore(
             };
           }
 
-          // For grand staff, determine the clef for this stave
-          if (staveCount === 2 && si === 1) {
+          // For grand staff, determine the clef for this stave (not tab stave)
+          if (standardStaves === 2 && si === 1 && !isTabStave) {
             measureToRender = { ...measureToRender, clef: { type: "bass" as const } };
           }
 
           let result: MeasureRenderResult | TabMeasureRenderResult;
-          if (useTab && si === 0) {
+          if (isTabStave) {
             // Render as tab staff
             result = renderTabMeasure(
               ctx,
@@ -365,9 +392,19 @@ export function renderScore(
               layout.y,
               layout.width,
               isFirstInLine,
-              undefined,
+              part.tuning,
               originalPi,
-              mi
+              mi,
+              part.capo ?? 0
+            );
+          } else if (si === slashStaveIdx) {
+            // Slash stave: render rhythm slashes on a standard staff
+            const prevMeasure = mi > 0 ? part.measures[mi - 1] : undefined;
+            const { timeSigChanged, keySigChanged } = sigChanges(m, mi, prevMeasure, isFirstInLine);
+            result = renderSlashMeasure(
+              ctx, measureToRender, layout.x, layout.y, layout.width,
+              isFirstInLine, timeSigChanged, keySigChanged,
+              { partIndex: originalPi, measureIndex: mi, prevMeasure },
             );
           } else {
             const prevMeasure = mi > 0 ? part.measures[mi - 1] : undefined;
@@ -378,9 +415,9 @@ export function renderScore(
 
             // For grand staff cross-staff: look up the other stave's VexFlow Stave
             const otherSi = si === 0 ? 1 : 0;
-            const crossStave = staveCount >= 2 ? grandStaffStaves.get(`${mi}:${otherSi}`) : undefined;
+            const crossStave = standardStaves >= 2 ? grandStaffStaves.get(`${mi}:${otherSi}`) : undefined;
             // The other stave's clef for creating StaveNotes with correct pitch mapping
-            const crossClef = staveCount >= 2 ? (si === 0 ? "bass" : "treble") : undefined;
+            const crossClef = standardStaves >= 2 ? (si === 0 ? "bass" : "treble") : undefined;
 
             result = renderMeasure(
               ctx, measureToRender, layout.x, layout.y, layout.width,
@@ -399,7 +436,7 @@ export function renderScore(
             );
 
             // Store stave for cross-staff use by the other stave index
-            if (staveCount >= 2 && 'vexStave' in result && result.vexStave) {
+            if (standardStaves >= 2 && 'vexStave' in result && result.vexStave) {
               grandStaffStaves.set(`${mi}:${si}`, result.vexStave);
             }
           }
@@ -411,7 +448,7 @@ export function renderScore(
             x: layout.x,
             y: layout.y,
             width: layout.width,
-            height: config.staffHeight,
+            height: isTabStave ? TAB_STAFF_HEIGHT : config.staffHeight,
             noteStartX: ('vexStave' in result && result.vexStave) ? result.vexStave.getNoteStartX() : (layout.x + 60),
           });
 
@@ -439,7 +476,7 @@ export function renderScore(
     if (rawCtx.save) {
       for (let filteredPi = 0; filteredPi < filteredScore.parts.length; filteredPi++) {
         const part = filteredScore.parts[filteredPi];
-        const sc = partStaveCount(filteredScore, filteredPi);
+        const sc = viewConfig ? partStandardStaveCount(filteredScore, filteredPi, viewConfig) : partStaveCount(filteredScore, filteredPi, tabParts);
         const stave0Layouts = system.staves.filter(
           (s) => s.partIndex === filteredPi && s.staveIndex === 0
         );
@@ -496,16 +533,18 @@ export function renderScore(
           (s) => s.partIndex === 0 && s.staveIndex === 0
         );
         const lastPartIndex = filteredScore.parts.length - 1;
-        const lastStaveIdx = partStaveCount(filteredScore, lastPartIndex) - 1;
+        const lastTotalStaves = viewConfig ? partStaveCount(filteredScore, lastPartIndex, tabParts, viewConfig) : partStaveCount(filteredScore, lastPartIndex, tabParts);
+        const lastStaveIdx = lastTotalStaves - 1;
         const lastPartStaves = system.staves.filter(
           (s) => s.partIndex === lastPartIndex && s.staveIndex === lastStaveIdx
         );
 
         // Draw if multiple parts, or if single part with grand staff
         const needsBarline = filteredScore.parts.length > 1 || lastStaveIdx > 0;
+        const lastIsTab = viewConfig ? partHasTab(lastPartIndex, viewConfig) && lastStaveIdx === partStandardStaveCount(filteredScore, lastPartIndex, viewConfig) : false;
         if (needsBarline && firstPartStaves.length > 0 && lastPartStaves.length > 0) {
           const topY = firstPartStaves[0].y;
-          const bottomY = lastPartStaves[0].y + config.staffHeight;
+          const bottomY = lastPartStaves[0].y + (lastIsTab ? TAB_STAFF_HEIGHT : config.staffHeight);
           const barlineX = firstPartStaves[0].x;
 
           renderSystemBarline(ctx, barlineX, topY, bottomY);
@@ -524,7 +563,7 @@ export function renderScore(
 
   // Draw cursor
   if (cursor) {
-    drawCursor(ctx, canvas, score, cursor, measurePositions, config, allNoteBoxes, pendingPitch);
+    drawCursor(ctx, canvas, score, cursor, measurePositions, config, allNoteBoxes, pendingPitch, viewConfig);
   }
 
   // Draw playback cursor
@@ -532,7 +571,7 @@ export function renderScore(
     drawPlaybackCursor(ctx, score, playbackTick, measurePositions, config, allNoteBoxes);
   }
 
-  const contentHeight = totalContentHeight(score, config);
+  const contentHeight = totalContentHeight(score, config, tabParts, viewConfig);
 
   return { noteBoxes: allNoteBoxes, annotationBoxes: allAnnotationBoxes, measurePositions, contentHeight };
 }
@@ -548,6 +587,7 @@ function drawCursor(
   config: LayoutConfig,
   noteBoxes?: Map<NoteEventId, NoteBox>,
   pendingPitch?: { pitchClass: import("../model").PitchClass; octave: import("../model").Octave; accidental: import("../model").Accidental } | null,
+  viewConfig?: ViewConfig,
 ): void {
   const mp = measurePositions.find(
     (p) => p.partIndex === cursor.partIndex && p.measureIndex === cursor.measureIndex && p.staveIndex === (cursor.staveIndex ?? 0)
@@ -605,7 +645,7 @@ function drawCursor(
   }
 
   const staffTop = mp.y;
-  const staffBottom = mp.y + config.staffHeight;
+  const staffBottom = mp.y + (mp.height || config.staffHeight);
 
   rawCtx.save();
 
@@ -631,6 +671,36 @@ function drawCursor(
   rawCtx.lineTo(cursorX, staffTop + 8);
   rawCtx.closePath();
   rawCtx.fill();
+
+  // Draw tab string highlight — shows which string the tab cursor is on
+  if (viewConfig && getEffectiveInputMode(viewConfig, cursor.partIndex) === "tab") {
+    const { tabString } = useEditorStore.getState().inputState;
+    // VexFlow TabStave: spacingBetweenLinesPx=13, spaceAboveStaffLn=4 (inherited)
+    // getYForLine(n) = y + n * 13 + 4 * 13 = y + 13n + 52
+    const TAB_LINE_SPACING = 13;
+    const TAB_HEADROOM = 4; // spaceAboveStaffLn in line-spacings
+    const lineIndex = tabString - 1; // string 1→line 0, string 6→line 5
+    const lineY = mp.y + lineIndex * TAB_LINE_SPACING + TAB_HEADROOM * TAB_LINE_SPACING;
+
+    // Draw a highlight circle on the string at the cursor position
+    rawCtx.setLineDash([]);
+    rawCtx.fillStyle = cursorColor;
+    rawCtx.globalAlpha = 0.3;
+    rawCtx.beginPath();
+    rawCtx.arc(cursorX, lineY, 7, 0, Math.PI * 2);
+    rawCtx.fill();
+    rawCtx.globalAlpha = 1.0;
+
+    // Draw the fret buffer text if any
+    const { tabFretBuffer } = useEditorStore.getState().inputState;
+    if (tabFretBuffer) {
+      rawCtx.fillStyle = cursorColor;
+      rawCtx.font = "bold 12px sans-serif";
+      rawCtx.textAlign = "center";
+      rawCtx.fillText(tabFretBuffer, cursorX, lineY + 4);
+      rawCtx.textAlign = "start";
+    }
+  }
 
   // Draw shadow notehead for pending pitch (pitch-before-duration mode)
   if (pendingPitch) {
