@@ -1,6 +1,6 @@
 # Nubium
 
-AI-native music notation editor. Tauri v2 + React + TypeScript + VexFlow 5.
+Music notation editor. Tauri v2 + React + TypeScript + VexFlow 5.
 
 ## Architecture
 
@@ -9,21 +9,21 @@ AI-native music notation editor. Tauri v2 + React + TypeScript + VexFlow 5.
 - **Renderer** (`src/renderer/`): VexFlow 5 behind adapter (`vexBridge.ts`). Canvas-based. SystemLayout for multi-part positioning. TabRenderer for guitar tab. Proportional spacing, automatic beaming, adaptive measure widths.
 - **Commands** (`src/commands/`): All mutations via Command pattern for undo/redo. InsertNote, DeleteNote, ChangePitch, ChangeDuration, InsertMeasure, DeleteMeasure, SetChordSymbol, SetLyric, SetTempo, SetRepeatBarline, SetVolta, SetNavigationMark, AddPart, RemovePart, OverwriteNote, SetDynamic, SetSlur, InsertGraceNote, TogglePickup, and more.
 - **State** (`src/state/`): Zustand stores. `useEditorStore` (score, input, rendering), `useChatStore` (AI chat), `useLayoutStore` (panels).
-- **Views** (`src/views/`): Full Score, Lead Sheet, Songwriter, Tab. Each filters/transforms rendering of the same data model.
+- **Views** (`src/views/`): Full Score, Tab. Each filters/transforms rendering of the same data model.
 - **AI** (`src/ai/`): Chat sidebar, Anthropic + OpenAI + Gemini providers, score context builder, diff/apply.
-- **Playback** (`src/playback/`): Web Audio oscillator synth, lookahead scheduler, transport, metronome, PlaybackOrder (follows repeats/D.S./D.C.).
-- **Plugins** (`src/plugins/`): Plugin API with sandboxed instances. Core features (ScoreEditor, PartManager, Transport) register via `registerCoreCommand`/`registerCorePanel` — always active, not in plugin panel. Real plugins (toggleable): Built-in Instruments, Views, PDF Export, Transpose, ChordAnalysis, Clipboard, AIChat, MidiInput. Command palette (Ctrl+Shift+P).
+- **Playback** (`src/playback/`): SoundFont-based instrument playback, lookahead scheduler, transport, metronome, swing/shuffle modes, PlaybackOrder (follows repeats/D.S./D.C.). WAV export via offline rendering.
+- **Plugins** (`src/plugins/`): Plugin API with sandboxed instances. Core features (ScoreEditor, PartManager, Transport) register via `registerCoreCommand`/`registerCorePanel` — always active, not in plugin panel. Real plugins (toggleable): Built-in Instruments, Views, Export, Transpose, ChordAnalysis, Clipboard, AIChat, MidiInput. Community plugin registry (`nubium-plugins` repo) with in-app browser/install. Command palette (Ctrl+Shift+P).
 - **MusicXML** (`src/musicxml/`): Full import/export for interop with MuseScore, Dorico, Sibelius, etc.
 - **Settings** (`src/settings/`): AppSettings + keybindings persisted to Tauri config file (`~/Library/Application Support/com.nubium.app/settings.json` on macOS) with localStorage fallback in browser. Display settings (show/hide lyrics, chord symbols, rehearsal marks, tempo marks, dynamics) are app-level, not per-score.
-- **File I/O** (`src/fileio/`): Tauri native dialogs with browser fallback. Import: .musicxml, .mxl, .xml. Export: .musicxml, .pdf.
-- **Tauri** (`src-tauri/`): Minimal Rust — file I/O commands.
+- **File I/O** (`src/fileio/`): Tauri native dialogs with browser fallback. Import: .musicxml, .mxl, .xml. Export: .musicxml, .pdf, .wav.
+- **Tauri** (`src-tauri/`): Minimal Rust — file I/O, native MIDI bridge (macOS WebKit).
 
 ## Commands
 
 ```bash
 npm run dev          # Vite dev server (for browser testing)
 npm run build        # Production build
-npm run test         # Vitest (370 tests)
+npm run test         # Vitest (530+ tests)
 npm run tauri dev    # Full Tauri desktop app
 
 VITE_CLEAN_SETTINGS=1 npm run dev        # Simulate fresh install (ignores saved settings)
@@ -32,20 +32,19 @@ VITE_CLEAN_SETTINGS=1 npm run tauri dev  # Same for desktop
 
 ## Keyboard Shortcuts
 
-A-G: insert note | R: rest | 1-7: duration (bulk-applies to selection) | .: dot | =/- : sharp/flat
-Arrow L/R: move cursor | Arrow U/D: navigate parts/staves | Backspace: delete
-Alt+Up/Down: pitch diatonic | Shift+Alt+Up/Down: pitch chromatic | Ctrl+Alt+Up/Down: octave
-Ctrl+Z / Ctrl+Shift+Z: undo/redo | Ctrl+S: save | Ctrl+O: open
-Ctrl+1-4: switch voice | Ctrl+M: insert measure
-Ctrl+Shift+1-4: switch view | Ctrl+Shift+A: AI chat
-Ctrl+Shift+P: command palette | Space: play/pause
-Shift+C: chord input | Shift+L: lyric input
-Shift+D: dynamics | Shift+G: grace note mode | Shift+S: slur (start/end)
-Shift+R: rehearsal mark | Shift+B: barline
-Ctrl+T: time signature | Ctrl+K: key signature | Ctrl+Shift+T: tempo
-I: insert mode (push subsequent notes forward)
-N: step entry mode
-Shift+X: toggle cross-staff
+**Note input:** A-G: insert note | R: rest | Backspace: delete | 1-7: duration | .: dot | =/- : sharp/flat
+**Modes:** N: step entry | I: insert mode | K: pitch-before-duration | Shift+G: grace note | Shift+S: slur | Shift+X: cross-staff
+**Navigation:** Arrow L/R: move cursor | Arrow U/D: navigate parts | Enter: go to beginning | Ctrl+G: go to measure
+**Pitch:** Alt+Up/Down: diatonic | Shift+Alt+Up/Down: chromatic | Ctrl+Alt+Up/Down: octave
+**Selection:** Shift+Arrow L/R: extend measure selection | Alt+Shift+Arrow L/R: extend note selection | Ctrl+A: select all | Ctrl+C/X/V: copy/cut/paste | Escape: clear
+**Editing:** Ctrl+Z / Ctrl+Shift+Z: undo/redo | Ctrl+M: insert measure | Ctrl+Backspace: delete measure
+**Voices:** Ctrl+1-4: switch voice
+**Annotations:** Shift+C: chord input | Shift+L: lyric input | Shift+D: dynamics | Shift+R: rehearsal mark | Shift+B: barline | Shift+N: navigation marks | Ctrl+T: time sig | Ctrl+K: key sig | Ctrl+Shift+T: tempo
+**Articulations:** Shift+>: accent | Shift+<: staccato | Shift+T: tenuto | Shift+U: fermata | Shift+^: marcato
+**Playback:** Space: play/pause | Ctrl+.: stop | Shift+M: metronome
+**File:** Ctrl+N: new | Ctrl+O: open | Ctrl+S: save | Ctrl+Shift+H: file history
+**UI:** Ctrl+,: settings | Ctrl+B: left sidebar | Ctrl+Shift+B: right sidebar | Ctrl+Shift+P: command palette | Ctrl+Shift+E: plugins | Ctrl+Shift+A: AI chat
+**Views:** Ctrl+Shift+1: Full Score | Ctrl+Shift+2: Tab
 
 ## Internal JSON Format
 
