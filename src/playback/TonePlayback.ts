@@ -65,6 +65,7 @@ let state: TransportState = "stopped";
 let onTickCallback: ((tick: number) => void) | null = null;
 let onStateChangeCallback: ((state: TransportState) => void) | null = null;
 let metronomeEnabled = false;
+let countInEnabled = false;
 let metronomeSynth: Tone.PolySynth | null = null;
 let customPlayer: NotePlayer | null = null;
 
@@ -626,16 +627,52 @@ export async function play(score: Score, startTick = 0, measureRange?: { start: 
     loopStartTick = null;
   }
 
-  // Start from resolved position
-  anchorTick = startTick;
-  anchorAudioTime = Tone.now();
-  currentBpm = getBpmAtTick(startTick);
-  resetCursorsToTick(startTick);
+  // Count-in: schedule one measure of metronome clicks before playback starts
+  if (countInEnabled) {
+    const firstMeasure = currentScore.parts[0]?.measures[0];
+    const ts = firstMeasure?.timeSignature ?? { numerator: 4, denominator: 4 };
+    const beats = ts.numerator;
+    const beatTicks = (TICKS_PER_QUARTER * 4) / ts.denominator;
+    const countInTicks = beats * beatTicks;
+    const countInBpm = getBpmAtTick(startTick);
+    const met = ensureMetronomeSynth();
+    const now = Tone.now();
 
-  schedulerInterval = setInterval(schedulerTick, SCHEDULER_INTERVAL_MS);
-  schedulerTick();
-  animationFrame = requestAnimationFrame(updateCursor);
-  setState("playing");
+    for (let b = 0; b < beats; b++) {
+      const beatTime = now + ticksToSec(b * beatTicks, countInBpm);
+      const note = b === 0 ? "G6" : "C6";
+      const vel = b === 0 ? 0.7 : 0.4;
+      met.triggerAttackRelease(note, 0.03, beatTime, vel);
+    }
+
+    // Delay actual playback start by the count-in duration
+    const countInSec = ticksToSec(countInTicks, countInBpm);
+    anchorTick = startTick;
+    anchorAudioTime = now + countInSec;
+    currentBpm = getBpmAtTick(startTick);
+    resetCursorsToTick(startTick);
+
+    // Start scheduler after count-in finishes
+    setTimeout(() => {
+      if (state !== "playing") return;
+      schedulerInterval = setInterval(schedulerTick, SCHEDULER_INTERVAL_MS);
+      schedulerTick();
+      animationFrame = requestAnimationFrame(updateCursor);
+    }, countInSec * 1000);
+
+    setState("playing");
+  } else {
+    // Start from resolved position
+    anchorTick = startTick;
+    anchorAudioTime = Tone.now();
+    currentBpm = getBpmAtTick(startTick);
+    resetCursorsToTick(startTick);
+
+    schedulerInterval = setInterval(schedulerTick, SCHEDULER_INTERVAL_MS);
+    schedulerTick();
+    animationFrame = requestAnimationFrame(updateCursor);
+    setState("playing");
+  }
 }
 
 export function pause(): void {
@@ -709,6 +746,14 @@ export function setMetronome(enabled: boolean): void {
 
 export function isMetronomeEnabled(): boolean {
   return metronomeEnabled;
+}
+
+export function setCountIn(enabled: boolean): void {
+  countInEnabled = enabled;
+}
+
+export function isCountInEnabled(): boolean {
+  return countInEnabled;
 }
 
 export function getTransportState(): TransportState {

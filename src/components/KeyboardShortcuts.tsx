@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useEditorStore } from "../state";
 import type { PitchClass, DurationType } from "../model";
-import type { ViewModeType } from "../views/ViewMode";
+import { getEffectiveInputMode } from "../views/ViewMode";
 import { getSettings, matchesBinding } from "../settings";
 import { getGlobalPluginManager } from "../plugins/PluginManager";
 
@@ -38,8 +38,9 @@ export function KeyboardShortcuts() {
   const pause = useEditorStore((s) => s.pause);
   const stopPlayback = useEditorStore((s) => s.stopPlayback);
   const toggleMetronome = useEditorStore((s) => s.toggleMetronome);
+  const toggleCountIn = useEditorStore((s) => s.toggleCountIn);
   const moveCursorPart = useEditorStore((s) => s.moveCursorPart);
-  const setViewMode = useEditorStore((s) => s.setViewMode);
+  const toggleNotation = useEditorStore((s) => s.toggleNotation);
   const toggleArticulation = useEditorStore((s) => s.toggleArticulation);
   const toggleStepEntry = useEditorStore((s) => s.toggleStepEntry);
   const toggleInsertMode = useEditorStore((s) => s.toggleInsertMode);
@@ -61,6 +62,8 @@ export function KeyboardShortcuts() {
   const pasteAtCursor = useEditorStore((s) => s.pasteAtCursor);
   const clipboardMeasures = useEditorStore((s) => s.clipboardMeasures);
   const clipboardEvents = useEditorStore((s) => s.clipboardEvents);
+  const viewConfig = useEditorStore((s) => s.viewConfig);
+  const insertTabNote = useEditorStore((s) => s.insertTabNote);
 
   useEffect(() => {
     // Action handlers — keyed by shortcut action id
@@ -147,9 +150,10 @@ export function KeyboardShortcuts() {
       "voice:3": () => setVoice(2),
       "voice:4": () => setVoice(3),
 
-      // Views
-      "view:full-score": () => setViewMode("full-score" as ViewModeType),
-      "view:tab": () => setViewMode("tab" as ViewModeType),
+      // Notation toggles
+      "toggle:standard": () => toggleNotation("standard"),
+      "toggle:tab": () => toggleNotation("tab"),
+      "toggle:slash": () => toggleNotation("slash"),
 
       // Annotation
       "chord-mode": () => enterChordMode(),
@@ -173,12 +177,97 @@ export function KeyboardShortcuts() {
       "play-pause": () => { if (isPlaying) pause(); else play(); },
       "stop-playback": () => stopPlayback(),
       "toggle-metronome": () => toggleMetronome(),
+      "toggle-count-in": () => toggleCountIn(),
     };
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (textInputMode) return;
 
+      // Tab input mode: intercept digit keys for fret entry and arrows for string nav
+      if (getEffectiveInputMode(viewConfig, useEditorStore.getState().inputState.cursor.partIndex) === "tab") {
+        const state = useEditorStore.getState();
+        const { tabFretBuffer, tabString } = state.inputState;
+
+        // Digit keys → fret entry (multi-digit buffering: "1" then "2" → fret 12)
+        if (e.key >= "0" && e.key <= "9" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          const newBuffer = tabFretBuffer + e.key;
+          const fretNum = parseInt(newBuffer, 10);
+
+          // If first digit is 0 or buffer makes a fret > 24, insert immediately
+          if (e.key === "0" && tabFretBuffer === "") {
+            // Fret 0 — insert immediately
+            insertTabNote(0, tabString);
+            return;
+          }
+
+          if (fretNum > 24) {
+            // Buffer overflow — insert previous buffer digit as fret, then start new buffer
+            if (tabFretBuffer !== "") {
+              insertTabNote(parseInt(tabFretBuffer, 10), tabString);
+            }
+            // Start new buffer with current digit
+            useEditorStore.setState((s) => ({
+              inputState: { ...s.inputState, tabFretBuffer: e.key },
+            }));
+            return;
+          }
+
+          if (newBuffer.length >= 2) {
+            // Two digits accumulated — insert the fret
+            insertTabNote(fretNum, tabString);
+            return;
+          }
+
+          // Single digit 1-9 — buffer it, wait for possible second digit
+          useEditorStore.setState((s) => ({
+            inputState: { ...s.inputState, tabFretBuffer: newBuffer },
+          }));
+
+          // Auto-insert after a short delay if no second digit comes
+          const currentBuffer = newBuffer;
+          setTimeout(() => {
+            const latest = useEditorStore.getState().inputState.tabFretBuffer;
+            if (latest === currentBuffer) {
+              insertTabNote(parseInt(currentBuffer, 10), useEditorStore.getState().inputState.tabString);
+            }
+          }, 500);
+          return;
+        }
+
+        // Up/Down arrows → navigate strings (without ctrl/alt modifiers)
+        if (e.key === "ArrowUp" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          e.preventDefault();
+          if (tabFretBuffer) {
+            insertTabNote(parseInt(tabFretBuffer, 10), tabString);
+          }
+          // Up = toward top of staff = string 1 (high E)
+          const newString = Math.max(tabString - 1, 1);
+          useEditorStore.setState((s) => ({
+            inputState: { ...s.inputState, tabString: newString },
+          }));
+          return;
+        }
+        if (e.key === "ArrowDown" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          e.preventDefault();
+          if (tabFretBuffer) {
+            insertTabNote(parseInt(tabFretBuffer, 10), tabString);
+          }
+          // Down = toward bottom of staff = string 6 (low E)
+          const newString = Math.min(tabString + 1, 6);
+          useEditorStore.setState((s) => ({
+            inputState: { ...s.inputState, tabString: newString },
+          }));
+          return;
+        }
+
+        // Left/Right arrows — flush fret buffer before cursor movement
+        if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && tabFretBuffer) {
+          insertTabNote(parseInt(tabFretBuffer, 10), tabString);
+          // Fall through to normal cursor handling
+        }
+      }
 
       const bindings = getSettings().keyBindings;
 
@@ -201,11 +290,11 @@ export function KeyboardShortcuts() {
     insertNote, insertRest, deleteNote, setDuration, toggleDot, setAccidental,
     moveCursor, changeOctave, nudgePitch, undo, redo, setVoice, insertMeasure, deleteMeasure,
     enterChordMode, enterLyricMode, textInputMode, isPlaying, play,
-    pause, stopPlayback, toggleMetronome, moveCursorPart, setViewMode, selection,
+    pause, stopPlayback, toggleMetronome, toggleCountIn, moveCursorPart, toggleNotation, selection,
     copySelection, pasteAtCursor, clipboardMeasures, clipboardEvents, deleteSelectedMeasures,
     toggleArticulation, toggleStepEntry, toggleInsertMode, togglePitchBeforeDuration, toggleGraceNoteMode, toggleSlur, toggleCrossStaff, popover, setPopover,
     setSelection, setNoteSelection, extendSelection, extendNoteSelection,
-    noteSelection, deleteNoteSelection,
+    noteSelection, deleteNoteSelection, viewConfig, insertTabNote,
   ]);
 
   return null;

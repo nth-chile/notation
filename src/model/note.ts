@@ -24,7 +24,15 @@ export type Articulation =
   | { kind: "pull-off" }
   | { kind: "vibrato" }
   | { kind: "palm-mute" }
-  | { kind: "harmonic" };
+  | { kind: "harmonic" }
+  | { kind: "dead-note" }
+  | { kind: "let-ring" }
+  | { kind: "down-stroke" }
+  | { kind: "up-stroke" }
+  | { kind: "fingerpick-p" }
+  | { kind: "fingerpick-i" }
+  | { kind: "fingerpick-m" }
+  | { kind: "fingerpick-a" };
 
 export type ArticulationKind = Articulation["kind"];
 

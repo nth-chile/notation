@@ -24,8 +24,10 @@ import { PanelLeft, PanelRight, Undo2, Redo2, Settings, Puzzle } from "lucide-re
 import { Button } from "./ui/button";
 import { ContextMenu, ContextMenuCheckbox, ContextMenuSeparator, ContextMenuItem, ContextMenuLabel } from "./ui/context-menu";
 import { cn } from "@/lib/utils";
-import type { PanelRegistration, ViewEntry } from "../plugins/PluginManager";
-import type { ViewModeType } from "../views/ViewMode";
+import type { PanelRegistration } from "../plugins/PluginManager";
+import { getPartDisplay } from "../views/ViewMode";
+import { getSettings, subscribeSettings } from "../settings";
+import { Music, Guitar, Slash } from "lucide-react";
 
 /** A toolbar group definition */
 export interface ToolbarGroup {
@@ -43,30 +45,38 @@ interface ToolbarProps {
   onOpen?: () => void;
   onSave?: () => void;
   toolbarPanels?: PanelRegistration[];
-  views?: ViewEntry[];
 }
 
-function ViewSwitcher({ views }: { views: ViewEntry[] }) {
-  const viewMode = useEditorStore((s) => s.viewMode);
-  const setViewMode = useEditorStore((s) => s.setViewMode);
+function NotationToggles() {
+  const viewConfig = useEditorStore((s) => s.viewConfig);
+  const toggleNotation = useEditorStore((s) => s.toggleNotation);
+  const partIndex = useEditorStore((s) => s.inputState.cursor.partIndex);
+  const display = getPartDisplay(viewConfig, partIndex);
+
+  const [displaySettings, setDisplaySettings] = useState(getSettings().display);
+  React.useEffect(() => subscribeSettings((s) => setDisplaySettings(s.display)), []);
+
+  const buttons = [
+    { key: "standard" as const, show: displaySettings.showStandardToggle, active: display.standard, icon: <Music className="h-3.5 w-3.5" />, title: "Standard notation" },
+    { key: "tab" as const, show: displaySettings.showTabToggle, active: display.tab, icon: <span className="text-xs font-bold leading-none">TAB</span>, title: "Tab notation" },
+    { key: "slash" as const, show: displaySettings.showSlashToggle, active: display.slash, icon: <Slash className="h-3.5 w-3.5" />, title: "Slash notation" },
+  ];
+  const visible = buttons.filter((b) => b.show);
+  if (visible.length <= 1) return null;
 
   return (
     <div className="flex items-center gap-0.5">
-      {views.map((view) => {
-        const config = view.config.getViewConfig();
-        return (
-          <Button
-            key={view.id}
-            variant={viewMode === config.type ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => setViewMode(config.type as ViewModeType)}
-            title={view.config.name}
-          >
-            <span className="text-sm">{view.config.icon}</span>
-            <span>{view.config.name}</span>
-          </Button>
-        );
-      })}
+      {visible.map((b) => (
+        <Button
+          key={b.key}
+          variant={b.active ? "secondary" : "ghost"}
+          size="sm"
+          onClick={() => toggleNotation(b.key)}
+          title={b.title}
+        >
+          {b.icon}
+        </Button>
+      ))}
     </div>
   );
 }
@@ -133,7 +143,7 @@ function useToolbarRow(
   }, [row, allGroups, toolbarOrder, toolbarHidden]);
 }
 
-export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSave, toolbarPanels = [], views = [] }: ToolbarProps) {
+export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSave, toolbarPanels = [] }: ToolbarProps) {
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
   const hotkey = useHotkey();
@@ -156,14 +166,12 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
 
   const allGroups: ToolbarGroup[] = useMemo(() => {
     const groups: ToolbarGroup[] = [];
-    if (views.length > 0) {
-      groups.push({
-        id: "view-switcher",
-        label: "Views",
-        defaultRow: "primary",
-        component: () => <ViewSwitcher views={views} />,
-      });
-    }
+    groups.push({
+      id: "notation-toggles",
+      label: "Notation",
+      defaultRow: "secondary",
+      component: () => <NotationToggles />,
+    });
     for (const panel of toolbarPanels) {
       groups.push({
         id: panel.id,
@@ -173,7 +181,7 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
       });
     }
     return groups;
-  }, [toolbarPanels, views]);
+  }, [toolbarPanels]);
 
   const primary = useToolbarRow("primary", allGroups);
   const secondary = useToolbarRow("secondary", allGroups);
@@ -293,63 +301,68 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
           <div
             ref={primaryRowRef}
             className={cn(
-              "flex items-center gap-1 px-2 py-1 border-b bg-card shrink-0",
+              "grid grid-cols-[1fr_auto_1fr] items-center gap-1 px-2 py-1 border-b bg-card shrink-0",
               activeId && hoverRow === "primary" && "bg-accent/30",
             )}
           >
+            {/* Left: file + undo/redo */}
             <div className="flex items-center gap-1">
-              {onNew && (
-                <TooltipButton variant="ghost" size="sm" onClick={onNew} tooltip={`New score (${hotkey("file:new")})`} actionId="file:new">
-                  New
+              <div className="flex items-center gap-1">
+                {onNew && (
+                  <TooltipButton variant="ghost" size="sm" onClick={onNew} tooltip={`New score (${hotkey("file:new")})`} actionId="file:new">
+                    New
+                  </TooltipButton>
+                )}
+                {onOpen && (
+                  <TooltipButton variant="ghost" size="sm" onClick={onOpen} tooltip={`Open file (${hotkey("file:open")})`} actionId="file:open">
+                    Open
+                  </TooltipButton>
+                )}
+                {onSave && (
+                  <TooltipButton variant="ghost" size="sm" onClick={onSave} tooltip={`Save file (${hotkey("file:save")})`} actionId="file:save">
+                    Save
+                  </TooltipButton>
+                )}
+              </div>
+
+              <Separator orientation="vertical" />
+
+              <div className="flex items-center gap-1">
+                <TooltipButton variant="ghost" size="icon" onClick={undo} tooltip={`Undo (${hotkey("undo")})`} actionId="undo">
+                  <Undo2 className="h-4 w-4" />
+                </TooltipButton>
+                <TooltipButton variant="ghost" size="icon" onClick={redo} tooltip={`Redo (${hotkey("redo")})`} actionId="redo">
+                  <Redo2 className="h-4 w-4" />
+                </TooltipButton>
+              </div>
+            </div>
+
+            {/* Center: draggable groups */}
+            <div className="flex items-center gap-1 justify-center">
+              <SortableContext items={primary.visible.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
+                {primary.visible.map((group, i) => (
+                  <React.Fragment key={group.id}>
+                    {i > 0 && <Separator orientation="vertical" />}
+                    <SortableToolbarGroup group={group} />
+                  </React.Fragment>
+                ))}
+              </SortableContext>
+            </div>
+
+            {/* Right: plugins + settings */}
+            <div className="flex items-center gap-1 justify-end">
+              {onTogglePlugins && (
+                <TooltipButton variant="ghost" size="icon" onClick={onTogglePlugins} tooltip={`Plugins (${hotkey("toggle-plugins")})`} actionId="toggle-plugins">
+                  <Puzzle className="h-4 w-4" />
                 </TooltipButton>
               )}
-              {onOpen && (
-                <TooltipButton variant="ghost" size="sm" onClick={onOpen} tooltip={`Open file (${hotkey("file:open")})`} actionId="file:open">
-                  Open
-                </TooltipButton>
-              )}
-              {onSave && (
-                <TooltipButton variant="ghost" size="sm" onClick={onSave} tooltip={`Save file (${hotkey("file:save")})`} actionId="file:save">
-                  Save
+
+              {onToggleSettings && (
+                <TooltipButton variant="ghost" size="icon" onClick={onToggleSettings} tooltip={`Settings (${hotkey("toggle-settings")})`} actionId="toggle-settings">
+                  <Settings className="h-4 w-4" />
                 </TooltipButton>
               )}
             </div>
-
-            <Separator orientation="vertical" />
-
-            <div className="flex items-center gap-1">
-              <TooltipButton variant="ghost" size="icon" onClick={undo} tooltip={`Undo (${hotkey("undo")})`} actionId="undo">
-                <Undo2 className="h-4 w-4" />
-              </TooltipButton>
-              <TooltipButton variant="ghost" size="icon" onClick={redo} tooltip={`Redo (${hotkey("redo")})`} actionId="redo">
-                <Redo2 className="h-4 w-4" />
-              </TooltipButton>
-            </div>
-
-            {primary.visible.length > 0 && <Separator orientation="vertical" />}
-
-            <SortableContext items={primary.visible.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
-              {primary.visible.map((group, i) => (
-                <React.Fragment key={group.id}>
-                  {i > 0 && <Separator orientation="vertical" />}
-                  <SortableToolbarGroup group={group} />
-                </React.Fragment>
-              ))}
-            </SortableContext>
-
-            <div className="flex-1" />
-
-            {onTogglePlugins && (
-              <TooltipButton variant="ghost" size="icon" onClick={onTogglePlugins} tooltip={`Plugins (${hotkey("toggle-plugins")})`} actionId="toggle-plugins">
-                <Puzzle className="h-4 w-4" />
-              </TooltipButton>
-            )}
-
-            {onToggleSettings && (
-              <TooltipButton variant="ghost" size="icon" onClick={onToggleSettings} tooltip={`Settings (${hotkey("toggle-settings")})`} actionId="toggle-settings">
-                <Settings className="h-4 w-4" />
-              </TooltipButton>
-            )}
           </div>
         }
       >
@@ -362,46 +375,51 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
           <div
             ref={secondaryRowRef}
             className={cn(
-              "flex items-center gap-1 px-2 py-1 border-b bg-card/50 shrink-0",
+              "grid grid-cols-[1fr_auto_1fr] items-center gap-1 px-2 py-1 border-b bg-card/50 shrink-0",
               activeId && hoverRow === "secondary" && "bg-accent/30",
             )}
           >
-            {hasLeftPanels && (
-              <TooltipButton
-                variant={sidebarOpen.left ? "secondary" : "ghost"}
-                size="icon"
-                onClick={() => toggleSidebar("left")}
-                tooltip={`${sidebarOpen.left ? "Hide left sidebar" : "Show left sidebar"} (${hotkey("toggle-left-sidebar")})`}
-                actionId="toggle-left-sidebar"
-              >
-                <PanelLeft className="h-4 w-4" />
-              </TooltipButton>
-            )}
+            {/* Left: sidebar toggle */}
+            <div className="flex items-center gap-1">
+              {hasLeftPanels && (
+                <TooltipButton
+                  variant={sidebarOpen.left ? "secondary" : "ghost"}
+                  size="icon"
+                  onClick={() => toggleSidebar("left")}
+                  tooltip={`${sidebarOpen.left ? "Hide left sidebar" : "Show left sidebar"} (${hotkey("toggle-left-sidebar")})`}
+                  actionId="toggle-left-sidebar"
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </TooltipButton>
+              )}
+            </div>
 
-            <div className="flex-1" />
+            {/* Center: draggable groups */}
+            <div className="flex items-center gap-1 justify-center">
+              <SortableContext items={secondary.visible.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
+                {secondary.visible.map((group, i) => (
+                  <React.Fragment key={group.id}>
+                    {i > 0 && <Separator orientation="vertical" />}
+                    <SortableToolbarGroup group={group} />
+                  </React.Fragment>
+                ))}
+              </SortableContext>
+            </div>
 
-            <SortableContext items={secondary.visible.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
-              {secondary.visible.map((group, i) => (
-                <React.Fragment key={group.id}>
-                  {i > 0 && <Separator orientation="vertical" />}
-                  <SortableToolbarGroup group={group} />
-                </React.Fragment>
-              ))}
-            </SortableContext>
-
-            <div className="flex-1" />
-
-            {hasRightPanels && (
-              <TooltipButton
-                variant={sidebarOpen.right ? "secondary" : "ghost"}
-                size="icon"
-                onClick={() => toggleSidebar("right")}
-                tooltip={`${sidebarOpen.right ? "Hide right sidebar" : "Show right sidebar"} (${hotkey("toggle-right-sidebar")})`}
-                actionId="toggle-right-sidebar"
-              >
-                <PanelRight className="h-4 w-4" />
-              </TooltipButton>
-            )}
+            {/* Right: sidebar toggle */}
+            <div className="flex items-center gap-1 justify-end">
+              {hasRightPanels && (
+                <TooltipButton
+                  variant={sidebarOpen.right ? "secondary" : "ghost"}
+                  size="icon"
+                  onClick={() => toggleSidebar("right")}
+                  tooltip={`${sidebarOpen.right ? "Hide right sidebar" : "Show right sidebar"} (${hotkey("toggle-right-sidebar")})`}
+                  actionId="toggle-right-sidebar"
+                >
+                  <PanelRight className="h-4 w-4" />
+                </TooltipButton>
+              )}
+            </div>
           </div>
         }
       >

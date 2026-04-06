@@ -3,6 +3,8 @@ import { getSettings, updateSettings, subscribeSettings, type AppSettings, type 
 import type { ClefType } from "../model";
 import { useEditorStore } from "../state";
 import { useLayoutStore } from "../state/LayoutState";
+import { getLicenseState, activateLicense, deactivateLicense } from "../licensing";
+import { openExternal } from "../utils/openExternal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -12,25 +14,50 @@ const TOOLBAR_GROUPS = [
   { id: "score-editor.duration", label: "Duration" },
   { id: "score-editor.accidentals", label: "Accidentals" },
   { id: "playback.transport", label: "Playback" },
-  { id: "view-switcher", label: "Views" },
+  { id: "notation-toggles", label: "Notation" },
+];
+
+const VIEW_BUTTON_SETTINGS: [keyof DisplaySettings, string][] = [
+  ["showStandardToggle", "Standard"],
+  ["showTabToggle", "Tab"],
+  ["showSlashToggle", "Slash"],
 ];
 
 function ToolbarSettings() {
   const toolbarHidden = useLayoutStore((s) => s.toolbarHidden);
   const toggleToolbarGroup = useLayoutStore((s) => s.toggleToolbarGroup);
+  const [settings, setSettings] = useState(getSettings());
+  useEffect(() => subscribeSettings(setSettings), []);
 
   return (
     <div className="space-y-2">
       {TOOLBAR_GROUPS.map(({ id, label }) => (
-        <label key={id} className="flex items-center gap-2 text-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={!toolbarHidden.includes(id)}
-            onChange={() => toggleToolbarGroup(id)}
-            className="rounded"
-          />
-          {label}
-        </label>
+        <div key={id}>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!toolbarHidden.includes(id)}
+              onChange={() => toggleToolbarGroup(id)}
+              className="accent-primary"
+            />
+            {label}
+          </label>
+          {id === "notation-toggles" && !toolbarHidden.includes(id) && (
+            <div className="ml-6 mt-1 space-y-1">
+              {VIEW_BUTTON_SETTINGS.map(([key, btnLabel]) => (
+                <label key={key} className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings.display[key]}
+                    onChange={(e) => updateSettings({ display: { ...settings.display, [key]: e.target.checked } })}
+                    className="accent-primary"
+                  />
+                  {btnLabel}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
       ))}
     </div>
   );
@@ -41,7 +68,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type SettingsTab = "settings" | "hotkeys" | "feedback";
+type SettingsTab = "settings" | "hotkeys" | "license" | "feedback";
 
 export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
   const [settings, setSettings] = useState<AppSettings>(getSettings());
@@ -85,6 +112,16 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
               Hotkeys
             </button>
             <button
+              onClick={() => setTab("license")}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                tab === "license"
+                  ? "bg-secondary text-secondary-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              License
+            </button>
+            <button
               onClick={() => { setTab("feedback"); setFeedbackSent(false); }}
               className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                 tab === "feedback"
@@ -99,6 +136,8 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
 
         {tab === "hotkeys" ? (
           <HotkeysTab settings={settings} />
+        ) : tab === "license" ? (
+          <LicenseTab />
         ) : tab === "feedback" ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
@@ -210,17 +249,16 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
                   <option value="tenor">Tenor</option>
                 </select>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm">Auto Beam</span>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="checkbox"
                   checked={settings.autoBeam}
                   onChange={(e) => update("autoBeam", e.target.checked)}
                   className="accent-primary"
                 />
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm">Pitch before duration</span>
+                Auto Beam
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="checkbox"
                   checked={settings.pitchBeforeDuration}
@@ -232,7 +270,8 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
                   }}
                   className="accent-primary"
                 />
-              </div>
+                Pitch before duration
+              </label>
             </div>
           </section>
 
@@ -246,15 +285,15 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
                 ["showTempoMarks", "Tempo Marks"],
                 ["showDynamics", "Dynamics"],
               ] as [keyof DisplaySettings, string][]).map(([key, label]) => (
-                <div key={key} className="flex justify-between items-center">
-                  <span className="text-sm">{label}</span>
+                <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
                     type="checkbox"
                     checked={settings.display[key]}
                     onChange={(e) => update("display", { ...settings.display, [key]: e.target.checked })}
                     className="accent-primary"
                   />
-                </div>
+                  {label}
+                </label>
               ))}
             </div>
           </section>
@@ -286,6 +325,81 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+const PURCHASE_URL = "https://shipyardnyc.lemonsqueezy.com/checkout/buy/9d811640-4a8e-492c-a61a-53e0093e4782?logo=0&discount=0";
+const RECOVER_URL = "https://app.lemonsqueezy.com/my-orders";
+
+function LicenseTab() {
+  const [licenseState, setLicenseState] = useState(getLicenseState());
+  const [keyInput, setKeyInput] = useState("");
+  const [error, setError] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+
+  async function handleActivate() {
+    setLoading(true);
+    const valid = await activateLicense(keyInput);
+    setLoading(false);
+    if (valid) {
+      setKeyInput("");
+      setError(false);
+      setLicenseState({ ...getLicenseState() });
+    } else {
+      setError(true);
+    }
+  }
+
+  function handleDeactivate() {
+    deactivateLicense();
+    setLicenseState({ ...getLicenseState() });
+  }
+
+  return (
+    <div className="space-y-4">
+      {licenseState.isValid ? (
+        <>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500" />
+            <span className="text-sm">Licensed</span>
+          </div>
+          <p className="text-xs text-muted-foreground font-mono">
+            {licenseState.licenseKey?.slice(0, 8)}...{licenseState.licenseKey?.slice(-8)}
+          </p>
+          <Button variant="outline" size="sm" onClick={handleDeactivate}>
+            Deactivate License
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">
+            Nubium is free to use. Purchasing a license supports continued development.
+          </p>
+          <Button onClick={() => openExternal(PURCHASE_URL)} className="w-full">
+            Purchase License
+          </Button>
+          <div className="space-y-2">
+            <Input
+              placeholder="Paste license key"
+              value={keyInput}
+              onChange={(e) => { setKeyInput(e.target.value); setError(false); }}
+              onKeyDown={(e) => e.key === "Enter" && handleActivate()}
+            />
+            {error && <p className="text-xs text-destructive">Invalid license key.</p>}
+            <Button variant="outline" onClick={handleActivate} disabled={!keyInput.trim() || loading} className="w-full">
+              Activate
+            </Button>
+          </div>
+          <button
+            onClick={() => openExternal(RECOVER_URL)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors block"
+          >
+            Lost your license key?
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 

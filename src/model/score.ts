@@ -4,6 +4,7 @@ import type { ScoreId, PartId, MeasureId, VoiceId } from "./ids";
 import type { Annotation } from "./annotations";
 import type { Stylesheet } from "./stylesheet";
 import type { NavigationMarks } from "./navigation";
+import type { Tuning } from "./guitar";
 
 export interface Score {
   id: ScoreId;
@@ -23,6 +24,8 @@ export interface Part {
   muted: boolean;
   solo: boolean;
   measures: Measure[];
+  tuning?: Tuning;
+  capo?: number;
 }
 
 export interface Measure {

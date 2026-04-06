@@ -16,5 +16,5 @@ export * as factory from "./factory";
 export { INSTRUMENTS, getInstrument } from "./instruments";
 export type { InstrumentDef } from "./instruments";
 export type { TabInfo, Tuning } from "./guitar";
-export { STANDARD_TUNING, DROP_D_TUNING, OPEN_G_TUNING, pitchToTab } from "./guitar";
+export { STANDARD_TUNING, DROP_D_TUNING, OPEN_G_TUNING, DADGAD_TUNING, OPEN_D_TUNING, HALF_STEP_DOWN_TUNING, ALL_TUNINGS, pitchToTab } from "./guitar";
 export type { Articulation } from "./note";

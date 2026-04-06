@@ -156,9 +156,12 @@ function addArticulations(sn: StaveNote, event: NoteEvent): void {
   }
 }
 
-export function initRenderer(canvas: HTMLCanvasElement): RenderContext {
+export function initRenderer(canvas: HTMLCanvasElement, width?: number, height?: number): RenderContext {
   const renderer = new Renderer(canvas, Renderer.Backends.CANVAS);
-  renderer.resize(canvas.width, canvas.height);
+  // VexFlow's resize() handles DPR internally: sets canvas.width = w * dpr,
+  // canvas.style.width = w + 'px', and applies scale(dpr, dpr).
+  // Pass logical dimensions — do NOT pre-multiply by DPR.
+  renderer.resize(width ?? canvas.width, height ?? canvas.height);
   const context = renderer.getContext();
   return { renderer, context };
 }

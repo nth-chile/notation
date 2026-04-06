@@ -9,10 +9,10 @@ Music notation editor. Tauri v2 + React + TypeScript + VexFlow 5.
 - **Renderer** (`src/renderer/`): VexFlow 5 behind adapter (`vexBridge.ts`). Canvas-based. SystemLayout for multi-part positioning. TabRenderer for guitar tab. Proportional spacing, automatic beaming, adaptive measure widths.
 - **Commands** (`src/commands/`): All mutations via Command pattern for undo/redo. InsertNote, DeleteNote, ChangePitch, ChangeDuration, InsertMeasure, DeleteMeasure, SetChordSymbol, SetLyric, SetTempo, SetRepeatBarline, SetVolta, SetNavigationMark, AddPart, RemovePart, OverwriteNote, SetDynamic, SetSlur, InsertGraceNote, TogglePickup, and more.
 - **State** (`src/state/`): Zustand stores. `useEditorStore` (score, input, rendering), `useChatStore` (AI chat), `useLayoutStore` (panels).
-- **Views** (`src/views/`): Full Score, Tab. Each filters/transforms rendering of the same data model.
+- **Views** (`src/views/`): Per-part notation display toggles (standard, tab, slash). ViewConfig controls which parts are shown, notation display per part, annotation filters, and layout.
 - **AI** (`src/ai/`): Chat sidebar, Anthropic + OpenAI + Gemini providers, score context builder, diff/apply.
 - **Playback** (`src/playback/`): SoundFont-based instrument playback, lookahead scheduler, transport, metronome, swing/shuffle modes, PlaybackOrder (follows repeats/D.S./D.C.). WAV export via offline rendering.
-- **Plugins** (`src/plugins/`): Plugin API with sandboxed instances. Core features (ScoreEditor, PartManager, Transport) register via `registerCoreCommand`/`registerCorePanel` — always active, not in plugin panel. Real plugins (toggleable): Built-in Instruments, Views, Export, Transpose, ChordAnalysis, Clipboard, AIChat, MidiInput. Community plugin registry (`nubium-plugins` repo) with in-app browser/install. Command palette (Ctrl+Shift+P).
+- **Plugins** (`src/plugins/`): Plugin API with sandboxed instances. Core features (ScoreEditor, PartManager, Transport) register via `registerCoreCommand`/`registerCorePanel` — always active, not in plugin panel. Real plugins (toggleable): Built-in Instruments, Export, Transpose, ChordAnalysis, Clipboard, AIChat, MidiInput. Community plugin registry (`nubium-plugins` repo) with in-app browser/install. Command palette (Ctrl+Shift+P).
 - **MusicXML** (`src/musicxml/`): Full import/export for interop with MuseScore, Dorico, Sibelius, etc.
 - **Settings** (`src/settings/`): AppSettings + keybindings persisted to Tauri config file (`~/Library/Application Support/com.nubium.app/settings.json` on macOS) with localStorage fallback in browser. Display settings (show/hide lyrics, chord symbols, rehearsal marks, tempo marks, dynamics) are app-level, not per-score.
 - **File I/O** (`src/fileio/`): Tauri native dialogs with browser fallback. Import: .musicxml, .mxl, .xml. Export: .musicxml, .pdf, .wav.
@@ -41,10 +41,10 @@ VITE_CLEAN_SETTINGS=1 npm run tauri dev  # Same for desktop
 **Voices:** Ctrl+1-4: switch voice
 **Annotations:** Shift+C: chord input | Shift+L: lyric input | Shift+D: dynamics | Shift+R: rehearsal mark | Shift+B: barline | Shift+N: navigation marks | Ctrl+T: time sig | Ctrl+K: key sig | Ctrl+Shift+T: tempo
 **Articulations:** Shift+>: accent | Shift+<: staccato | Shift+T: tenuto | Shift+U: fermata | Shift+^: marcato
-**Playback:** Space: play/pause | Ctrl+.: stop | Shift+M: metronome
+**Playback:** Space: play/pause | Ctrl+.: stop | Shift+M: metronome | Shift+I: count-in
 **File:** Ctrl+N: new | Ctrl+O: open | Ctrl+S: save | Ctrl+Shift+H: file history
 **UI:** Ctrl+,: settings | Ctrl+B: left sidebar | Ctrl+Shift+B: right sidebar | Ctrl+Shift+P: command palette | Ctrl+Shift+E: plugins | Ctrl+Shift+A: AI chat
-**Views:** Ctrl+Shift+1: Full Score | Ctrl+Shift+2: Tab
+**Views:** Ctrl+Shift+1: toggle standard | Ctrl+Shift+2: toggle tab | Ctrl+Shift+3: toggle slash
 
 ## Internal JSON Format
 
@@ -77,12 +77,12 @@ JSON representation used for AI context, undo history, and clipboard. Files are 
           "voices": [
             {
               "events": [
-                { "type": "note", "pitch": "C4", "duration": "quarter" },
-                { "type": "note", "pitch": "F4", "accidental": "sharp", "duration": "eighth" },
-                { "type": "chord", "pitches": ["C4", "E4", "G4"], "duration": "half" },
-                { "type": "rest", "duration": "quarter" },
-                { "type": "slash", "duration": "quarter" },
-                { "type": "grace", "pitch": "B3", "duration": "eighth", "slash": true }
+                { "id": "evt_1", "type": "note", "pitch": "C4", "duration": "quarter" },
+                { "id": "evt_2", "type": "note", "pitch": "F4#", "duration": "eighth" },
+                { "id": "evt_3", "type": "chord", "pitches": ["C4", "E4", "G4"], "duration": "half" },
+                { "id": "evt_4", "type": "rest", "duration": "quarter" },
+                { "id": "evt_5", "type": "slash", "duration": "quarter" },
+                { "id": "evt_6", "type": "grace", "pitch": "B3", "duration": "eighth", "slash": true }
               ]
             }
           ]
@@ -93,7 +93,7 @@ JSON representation used for AI context, undo history, and clipboard. Files are 
 }
 ```
 
-Pitches: Letter + octave (C4 = middle C). Accidentals: "sharp", "flat", "double-sharp", "double-flat".
+Pitches: Letter + octave + accidental suffix (C4 = middle C, F4# = F sharp 4, Bb3 = B flat 3, A5## = A double-sharp 5).
 Durations: "whole", "half", "quarter", "eighth", "16th", "32nd", "64th". Append "." for dotted.
 Key signatures (fifths): -7 to 7. Barlines: single, double, final, repeat-start, repeat-end, repeat-both.
 

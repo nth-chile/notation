@@ -3,6 +3,7 @@ import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
 import { getInstrument } from "../model/instruments";
 import { calculateMeasureWidth } from "./measureWidth";
+import { getPartDisplay, type ViewConfig } from "../views/ViewMode";
 
 export interface StaveLayout {
   partIndex: number;
@@ -47,6 +48,9 @@ export interface LayoutConfig {
   pageHeight: number;
 }
 
+/** VexFlow TabStave: 6 lines, 13px spacing, 4 spacings headroom → bottom line at y+117 */
+export const TAB_STAFF_HEIGHT = 117;
+
 export const DEFAULT_LAYOUT: LayoutConfig = {
   measureWidth: 250,
   measuresPerLine: 4,
@@ -65,9 +69,43 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
 };
 
 /**
- * Returns the number of staves a part occupies.
+ * Returns the number of standard (non-tab) staves for a part.
  */
-export function partStaveCount(score: Score, partIndex: number): number {
+export function partStandardStaveCount(score: Score, partIndex: number, viewConfig?: ViewConfig): number {
+  const display = viewConfig ? getPartDisplay(viewConfig, partIndex) : { standard: true, tab: false, slash: false };
+  if (!display.standard) return 0;
+  const part = score.parts[partIndex];
+  if (!part) return 1;
+  const instrument = getInstrument(part.instrumentId);
+  return instrument?.staves ?? 1;
+}
+
+/** Whether a part has a separate slash stave */
+export function partHasSlash(partIndex: number, viewConfig?: ViewConfig): boolean {
+  if (!viewConfig) return false;
+  return getPartDisplay(viewConfig, partIndex).slash;
+}
+
+/**
+ * Returns whether a part has a tab stave.
+ */
+export function partHasTab(partIndex: number, viewConfig?: ViewConfig): boolean {
+  if (!viewConfig) return false;
+  return getPartDisplay(viewConfig, partIndex).tab;
+}
+
+/**
+ * Returns the number of staves a part occupies (standard + tab combined).
+ * @deprecated Use partStandardStaveCount + partHasTab for clarity. Kept for layout compat.
+ */
+export function partStaveCount(score: Score, partIndex: number, tabParts?: Set<number>, viewConfig?: ViewConfig): number {
+  if (viewConfig) {
+    return partStandardStaveCount(score, partIndex, viewConfig)
+      + (partHasSlash(partIndex, viewConfig) ? 1 : 0)
+      + (partHasTab(partIndex, viewConfig) ? 1 : 0);
+  }
+  // Legacy path: tabParts means tab-only
+  if (tabParts?.has(partIndex)) return 1;
   const part = score.parts[partIndex];
   if (!part) return 1;
   const instrument = getInstrument(part.instrumentId);
@@ -77,14 +115,33 @@ export function partStaveCount(score: Score, partIndex: number): number {
 /**
  * Calculate the vertical height needed for one system line (all parts).
  */
-export function systemHeight(score: Score, config: LayoutConfig): number {
+export function systemHeight(score: Score, config: LayoutConfig, tabParts?: Set<number>, viewConfig?: ViewConfig): number {
   let h = 0;
   for (let pi = 0; pi < score.parts.length; pi++) {
-    const staves = partStaveCount(score, pi);
-    h += config.staffHeight * staves;
-    if (staves === 2) {
+    const standardStaves = viewConfig ? partStandardStaveCount(score, pi, viewConfig) : (tabParts?.has(pi) ? 0 : (() => { const p = score.parts[pi]; const inst = p ? getInstrument(p.instrumentId) : undefined; return inst?.staves ?? 1; })());
+    const hasSlash = viewConfig ? partHasSlash(pi, viewConfig) : false;
+    const hasTab = viewConfig ? partHasTab(pi, viewConfig) : (tabParts?.has(pi) ?? false);
+    let prevStaves = standardStaves;
+
+    // Standard staves
+    h += config.staffHeight * standardStaves;
+    if (standardStaves === 2) {
       h += config.grandStaffSpacing;
     }
+
+    // Slash stave (always single standard-height staff)
+    if (hasSlash) {
+      if (prevStaves > 0) h += config.grandStaffSpacing;
+      h += config.staffHeight;
+      prevStaves++;
+    }
+
+    // Tab stave
+    if (hasTab) {
+      if (prevStaves > 0) h += config.grandStaffSpacing;
+      h += TAB_STAFF_HEIGHT;
+    }
+
     if (pi < score.parts.length - 1) {
       h += config.staffSpacing;
     }
@@ -161,12 +218,14 @@ function distributeLineSpace(widths: number[], availableWidth: number): number[]
  */
 export function computeLayout(
   score: Score,
-  config: LayoutConfig = DEFAULT_LAYOUT
+  config: LayoutConfig = DEFAULT_LAYOUT,
+  tabParts?: Set<number>,
+  viewConfig?: ViewConfig
 ): SystemLine[] {
   if (score.parts.length === 0) return [];
 
   const measureCount = score.parts[0].measures.length;
-  const sysHeight = systemHeight(score, config);
+  const sysHeight = systemHeight(score, config, tabParts, viewConfig);
 
   // Determine line breaks
   const useAdaptive = config.adaptiveWidths && score.parts.length > 0;
@@ -230,26 +289,47 @@ export function computeLayout(
     let yOffset = lineY;
 
     for (let pi = 0; pi < score.parts.length; pi++) {
-      const staveCount = partStaveCount(score, pi);
+      const standardStaves = viewConfig ? partStandardStaveCount(score, pi, viewConfig) : (tabParts?.has(pi) ? 0 : (() => { const p = score.parts[pi]; const inst = p ? getInstrument(p.instrumentId) : undefined; return inst?.staves ?? 1; })());
+      const hasSlash = viewConfig ? partHasSlash(pi, viewConfig) : false;
+      const hasTab = viewConfig ? partHasTab(pi, viewConfig) : (tabParts?.has(pi) ?? false);
+      let nextSi = 0;
 
-      for (let si = 0; si < staveCount; si++) {
+      // Standard staves
+      for (let si = 0; si < standardStaves; si++) {
         let xCursor = config.leftMargin + labelOffset;
         for (let idx = 0; idx < finalWidths.length; idx++) {
-          const w = finalWidths[idx];
-          staves.push({
-            partIndex: pi,
-            staveIndex: si,
-            x: xCursor,
-            y: yOffset,
-            width: w,
-          });
-          xCursor += w;
+          staves.push({ partIndex: pi, staveIndex: nextSi, x: xCursor, y: yOffset, width: finalWidths[idx] });
+          xCursor += finalWidths[idx];
         }
-
+        nextSi++;
         yOffset += config.staffHeight;
-        if (si === 0 && staveCount === 2) {
+        if (si === 0 && standardStaves === 2) {
           yOffset += config.grandStaffSpacing;
         }
+      }
+
+      // Slash stave (separate staff, standard height)
+      if (hasSlash) {
+        if (nextSi > 0) yOffset += config.grandStaffSpacing;
+        let xCursor = config.leftMargin + labelOffset;
+        for (let idx = 0; idx < finalWidths.length; idx++) {
+          staves.push({ partIndex: pi, staveIndex: nextSi, x: xCursor, y: yOffset, width: finalWidths[idx] });
+          xCursor += finalWidths[idx];
+        }
+        nextSi++;
+        yOffset += config.staffHeight;
+      }
+
+      // Tab stave
+      if (hasTab) {
+        if (nextSi > 0) yOffset += config.grandStaffSpacing;
+        let xCursor = config.leftMargin + labelOffset;
+        for (let idx = 0; idx < finalWidths.length; idx++) {
+          staves.push({ partIndex: pi, staveIndex: nextSi, x: xCursor, y: yOffset, width: finalWidths[idx] });
+          xCursor += finalWidths[idx];
+        }
+        nextSi++;
+        yOffset += TAB_STAFF_HEIGHT;
       }
 
       if (pi < score.parts.length - 1) {
@@ -304,11 +384,13 @@ export function computeLayout(
  */
 export function totalContentHeight(
   score: Score,
-  config: LayoutConfig = DEFAULT_LAYOUT
+  config: LayoutConfig = DEFAULT_LAYOUT,
+  tabParts?: Set<number>,
+  viewConfig?: ViewConfig
 ): number {
   if (score.parts.length === 0) return config.topMargin + config.bottomMargin;
 
-  const systems = computeLayout(score, config);
+  const systems = computeLayout(score, config, tabParts, viewConfig);
 
   if (config.pageBreaks && systems.length > 0) {
     const totalPages = systems[systems.length - 1].page + 1;
@@ -327,10 +409,12 @@ export function totalContentHeight(
  */
 export function totalPageCount(
   score: Score,
-  config: LayoutConfig = DEFAULT_LAYOUT
+  config: LayoutConfig = DEFAULT_LAYOUT,
+  tabParts?: Set<number>,
+  viewConfig?: ViewConfig
 ): number {
   if (!config.pageBreaks) return 1;
-  const systems = computeLayout(score, config);
+  const systems = computeLayout(score, config, tabParts, viewConfig);
   if (systems.length === 0) return 1;
   return systems[systems.length - 1].page + 1;
 }

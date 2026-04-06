@@ -24,6 +24,10 @@ export interface InputState {
   lyricVerse: number;
   pitchBeforeDuration: boolean;
   pendingPitch: { pitchClass: PitchClass; octave: Octave; accidental: Accidental } | null;
+  /** Current string for tab input mode (1 = high E, 6 = low E). */
+  tabString: number;
+  /** Buffer for multi-digit fret entry (e.g., "1" then "2" → fret 12). */
+  tabFretBuffer: string;
 }
 
 export function defaultInputState(): InputState {
@@ -48,5 +52,7 @@ export function defaultInputState(): InputState {
     lyricVerse: 1,
     pitchBeforeDuration: getSettings().pitchBeforeDuration,
     pendingPitch: null,
+    tabString: 1,
+    tabFretBuffer: "",
   };
 }

@@ -3,6 +3,7 @@ import { useEditorStore } from "../../state";
 import { useHotkey } from "../../hooks/useHotkey";
 import { exportToMusicXML } from "../../musicxml/export";
 import type { DurationType, Accidental } from "../../model";
+import { ALL_TUNINGS } from "../../model/guitar";
 import { Separator } from "@/components/ui/separator";
 import { TooltipButton } from "@/components/ui/tooltip-button";
 
@@ -196,6 +197,9 @@ export function registerCoreEditor(pm: PluginManager): void {
   const articulations = [
     "staccato", "accent", "tenuto", "fermata", "marcato",
     "trill", "mordent", "turn", "up-bow", "down-bow",
+    "palm-mute", "harmonic", "dead-note", "let-ring",
+    "down-stroke", "up-stroke",
+    "fingerpick-p", "fingerpick-i", "fingerpick-m", "fingerpick-a",
   ] as const;
   for (const art of articulations) {
     pm.registerCoreCommand(`notation.articulation-${art}`, `Toggle ${art}`, () => {
@@ -211,12 +215,15 @@ export function registerCoreEditor(pm: PluginManager): void {
     });
   }
 
-  // Views
-  pm.registerCoreCommand("nubium.view-full-score", "View: Full Score", () => {
-    useEditorStore.getState().setViewMode("full-score");
+  // Notation display toggles
+  pm.registerCoreCommand("nubium.toggle-standard", "Toggle standard notation", () => {
+    useEditorStore.getState().toggleNotation("standard");
   });
-  pm.registerCoreCommand("nubium.view-tab", "View: Tab", () => {
-    useEditorStore.getState().setViewMode("tab");
+  pm.registerCoreCommand("nubium.toggle-tab", "Toggle tab notation", () => {
+    useEditorStore.getState().toggleNotation("tab");
+  });
+  pm.registerCoreCommand("nubium.toggle-slash", "Toggle slash notation", () => {
+    useEditorStore.getState().toggleNotation("slash");
   });
 
   // Pickup measure
@@ -319,6 +326,23 @@ export function registerCoreEditor(pm: PluginManager): void {
   pm.registerCoreCommand("nubium.swing-shuffle", "Swing: Shuffle", () => {
     useEditorStore.getState().setSwing({ style: "shuffle", ratio: 3, backbeatAccent: 25 });
   });
+
+  // Guitar tuning commands
+  for (const tuning of ALL_TUNINGS) {
+    pm.registerCoreCommand(`nubium.tuning-${tuning.name.toLowerCase().replace(/\s+/g, "-")}`, `Tuning: ${tuning.name}`, () => {
+      const cursor = useEditorStore.getState().inputState.cursor;
+      useEditorStore.getState().setPartTuning(cursor.partIndex, tuning);
+    });
+  }
+
+  // Capo commands
+  for (let capo = 0; capo <= 12; capo++) {
+    const label = capo === 0 ? "Capo: Remove" : `Capo: Fret ${capo}`;
+    pm.registerCoreCommand(`nubium.capo-${capo}`, label, () => {
+      const cursor = useEditorStore.getState().inputState.cursor;
+      useEditorStore.getState().setPartCapo(cursor.partIndex, capo);
+    });
+  }
 
   pm.registerCoreCommand("nubium.export-musicxml", "Export as MusicXML", () => {
     const score = useEditorStore.getState().score;

@@ -1,11 +1,24 @@
-export type ViewModeType = "full-score" | "tab";
-
 export type AnnotationFilter = "chord-symbol" | "lyric" | "rehearsal-mark" | "tempo-mark" | "dynamic" | "hairpin" | "slur";
 
+export type InputMode = "standard" | "tab";
+
+/** Per-part notation display toggles (Guitar Pro style) */
+export interface NotationDisplay {
+  standard: boolean;
+  tab: boolean;
+  slash: boolean;
+}
+
+export const DEFAULT_NOTATION_DISPLAY: NotationDisplay = {
+  standard: true,
+  tab: false,
+  slash: false,
+};
+
 export interface ViewConfig {
-  type: ViewModeType;
   partsToShow: number[] | "all";
-  staffType: Record<number, "standard" | "tab">; // per part index
+  /** Per-part notation display — missing entries default to standard only */
+  notationDisplay: Record<number, NotationDisplay>;
   showAnnotations: AnnotationFilter[];
   layoutConfig: ViewLayoutConfig;
 }
@@ -28,12 +41,11 @@ export interface ViewLayoutConfig {
   leftMargin?: number;
 }
 
-/** Full Score: all parts, full detail (default) */
-export function fullScoreConfig(): ViewConfig {
+/** Default view config — standard notation for all parts */
+export function defaultViewConfig(): ViewConfig {
   return {
-    type: "full-score",
     partsToShow: "all",
-    staffType: {},
+    notationDisplay: {},
     showAnnotations: ["chord-symbol", "lyric", "rehearsal-mark", "tempo-mark", "dynamic", "hairpin", "slur"],
     layoutConfig: {
       compact: false,
@@ -42,30 +54,15 @@ export function fullScoreConfig(): ViewConfig {
   };
 }
 
-/** Tab: tab staff for guitar parts, standard for others */
-export function tabConfig(guitarPartIndices: number[] = [0]): ViewConfig {
-  const staffType: Record<number, "standard" | "tab"> = {};
-  for (const idx of guitarPartIndices) {
-    staffType[idx] = "tab";
-  }
-  return {
-    type: "tab",
-    partsToShow: "all",
-    staffType,
-    showAnnotations: ["chord-symbol", "lyric", "rehearsal-mark", "tempo-mark", "dynamic", "hairpin", "slur"],
-    layoutConfig: {
-      compact: false,
-      showPartNames: true,
-    },
-  };
+/** Get the notation display for a specific part, with fallback to default */
+export function getPartDisplay(viewConfig: ViewConfig, partIndex: number): NotationDisplay {
+  return viewConfig.notationDisplay[partIndex] ?? DEFAULT_NOTATION_DISPLAY;
 }
 
-/** Get the default ViewConfig for a given view mode type */
-export function getDefaultViewConfig(type: ViewModeType): ViewConfig {
-  switch (type) {
-    case "full-score":
-      return fullScoreConfig();
-    case "tab":
-      return tabConfig();
-  }
+/** Derive input mode from notation display for the cursor's current part */
+export function getEffectiveInputMode(viewConfig: ViewConfig, partIndex: number): InputMode {
+  const display = getPartDisplay(viewConfig, partIndex);
+  // Tab-only → tab input mode; otherwise standard
+  if (display.tab && !display.standard && !display.slash) return "tab";
+  return "standard";
 }

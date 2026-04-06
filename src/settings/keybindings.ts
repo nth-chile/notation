@@ -85,9 +85,10 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "voice:3", label: "Voice 3", category: "Voices", defaultBinding: { key: "3", ctrl: true } },
   { id: "voice:4", label: "Voice 4", category: "Voices", defaultBinding: { key: "4", ctrl: true } },
 
-  // Views
-  { id: "view:full-score", label: "Full Score view", category: "Views", defaultBinding: { key: "1", ctrl: true, shift: true } },
-  { id: "view:tab", label: "Tab view", category: "Views", defaultBinding: { key: "2", ctrl: true, shift: true } },
+  // Notation toggles
+  { id: "toggle:standard", label: "Toggle standard notation", category: "Views", defaultBinding: { key: "1", ctrl: true, shift: true } },
+  { id: "toggle:tab", label: "Toggle tab notation", category: "Views", defaultBinding: { key: "2", ctrl: true, shift: true } },
+  { id: "toggle:slash", label: "Toggle slash notation", category: "Views", defaultBinding: { key: "3", ctrl: true, shift: true } },
 
   // Annotation
   { id: "chord-mode", label: "Chord input", category: "Annotation", defaultBinding: { key: "c", shift: true } },
@@ -112,6 +113,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "play-pause", label: "Play / Pause", category: "Playback", defaultBinding: { key: " " } },
   { id: "stop-playback", label: "Stop playback", category: "Playback", defaultBinding: { key: ".", ctrl: true } },
   { id: "toggle-metronome", label: "Toggle metronome", category: "Playback", defaultBinding: { key: "m", shift: true } },
+  { id: "toggle-count-in", label: "Toggle count-in", category: "Playback", defaultBinding: { key: "i", shift: true } },
 
   // File
   { id: "file:new", label: "New score", category: "File", defaultBinding: { key: "n", ctrl: true } },
@@ -184,6 +186,12 @@ export function getBindingParts(binding: KeyBinding): string[] {
   return parts;
 }
 
+/** Map e.code → unshifted key name so Shift+2 still matches binding key "2" */
+const CODE_TO_KEY: Record<string, string> = {
+  Digit0: "0", Digit1: "1", Digit2: "2", Digit3: "3", Digit4: "4",
+  Digit5: "5", Digit6: "6", Digit7: "7", Digit8: "8", Digit9: "9",
+};
+
 /** Check if a keyboard event matches a binding. ctrl maps to metaKey on Mac. */
 export function matchesBinding(e: KeyboardEvent, binding: KeyBinding): boolean {
   const key = e.key.toLowerCase();
@@ -191,7 +199,9 @@ export function matchesBinding(e: KeyboardEvent, binding: KeyBinding): boolean {
   if (binding.key === ">" || binding.key === "<" || binding.key === "^") {
     if (e.key !== binding.key) return false;
   } else if (key !== binding.key) {
-    return false;
+    // Shift changes e.key for digits (e.g., Shift+2 → "@"), so fall back to e.code
+    const codeKey = CODE_TO_KEY[e.code];
+    if (!codeKey || codeKey !== binding.key) return false;
   }
 
   const wantCtrl = binding.ctrl ?? false;

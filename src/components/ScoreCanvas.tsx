@@ -91,32 +91,23 @@ export function ScoreCanvas() {
     const container = containerRef.current;
     if (!canvas || !container) return;
 
-    const dpr = window.devicePixelRatio || 1;
     const width = containerWidth;
     const effectiveViewConfig = applyDisplaySettings(viewConfig, displaySettings);
     const contentHeight = calculateContentHeight(score, effectiveViewConfig, width);
     const height = Math.max(contentHeight, container.clientHeight);
 
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-
-    const ctx = initRenderer(canvas);
-
-    // VexFlow's resize overwrites style dimensions — fix them after init
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    // VexFlow's resize() handles DPR internally: sets canvas.width = w * dpr,
+    // canvas.style.width = w + 'px', and applies scale(dpr, dpr) to the context.
+    // Pass logical dimensions only — do NOT pre-multiply by DPR.
+    const ctx = initRenderer(canvas, width, height);
     setCanvasHeight(height);
 
+    // Fill canvas with warm off-white background (DPR scale already on context)
     const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
-    if (rawCtx.scale) rawCtx.scale(dpr, dpr);
-
-    // Fill canvas with warm off-white background
-    const raw = canvas.getContext("2d")!;
-    raw.save();
-    raw.scale(dpr, dpr);
-    raw.fillStyle = "#f0e9de";
-    raw.fillRect(0, 0, width, height);
-    raw.restore();
+    rawCtx.save();
+    rawCtx.fillStyle = "#f0e9de";
+    rawCtx.fillRect(0, 0, width, height);
+    rawCtx.restore();
 
     const result = renderScore(ctx, canvas, score, inputState.cursor, playbackTick, effectiveViewConfig, width, noteSelection ? null : selection, inputState.pendingPitch);
 
@@ -157,7 +148,7 @@ export function ScoreCanvas() {
     setNoteBoxes(result.noteBoxes);
     setAnnotationBoxes(result.annotationBoxes);
     setMeasurePositions(result.measurePositions);
-  }, [score, inputState.cursor, inputState.pendingPitch, playbackTick, viewConfig, containerWidth, selection, noteSelection, editingTitle, editingComposer, hiddenParts, displaySettings, setNoteBoxes, setAnnotationBoxes, setMeasurePositions]);
+  }, [score, inputState.cursor, inputState.pendingPitch, inputState.tabString, inputState.tabFretBuffer, playbackTick, viewConfig, containerWidth, selection, noteSelection, editingTitle, editingComposer, hiddenParts, displaySettings, setNoteBoxes, setAnnotationBoxes, setMeasurePositions]);
 
   return (
     <div

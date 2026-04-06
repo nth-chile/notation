@@ -1,15 +1,27 @@
-import { TabStave, TabNote, GhostNote, Formatter, Voice, Bend, Vibrato, TabSlide, TabTie } from "vexflow";
+import { TabStave, TabNote, GhostNote, Formatter, Voice, Bend, Vibrato, TabSlide, TabTie, Annotation as VFAnnotation } from "vexflow";
 import type { Measure, NoteEvent, NoteEventId } from "../model";
 import type { Articulation } from "../model/note";
 import { pitchToTab, STANDARD_TUNING, type Tuning } from "../model/guitar";
 import { durationToTicks as durationToTicksFn } from "../model/duration";
 import type { RenderContext, NoteBox } from "./vexBridge";
 
+// Monkey-patch TabNote.tabToElement to use sans-serif for fret numbers
+const origTabToElement = TabNote.tabToElement.bind(TabNote);
+TabNote.tabToElement = (fret: string) => {
+  const el = origTabToElement(fret);
+  // Override serif font for numeric frets (not "X" dead notes which use a glyph)
+  if (fret.toUpperCase() !== "X") {
+    el.setFont("Arial, sans-serif", el.fontInfo?.size, el.fontInfo?.weight);
+  }
+  return el;
+};
+
 export interface TabMeasureRenderResult {
   noteBoxes: NoteBox[];
   staveY: number;
   staveX: number;
   width: number;
+  vexStave?: import("vexflow").Stave;
 }
 
 const DUR_VEX: Record<string, string> = {
@@ -24,17 +36,20 @@ const DUR_VEX: Record<string, string> = {
 
 function getTabPositions(
   event: NoteEvent,
-  tuning: Tuning
+  tuning: Tuning,
+  capo: number
 ): { str: number; fret: number }[] {
   switch (event.kind) {
     case "note": {
       const tab = event.tabInfo ?? event.head.tabInfo ?? pitchToTab(event.head.pitch, tuning);
-      return [{ str: tab.string, fret: tab.fret }];
+      const fret = Math.max(0, tab.fret - capo);
+      return [{ str: tab.string, fret }];
     }
     case "chord": {
       return event.heads.map((h) => {
         const tab = h.tabInfo ?? pitchToTab(h.pitch, tuning);
-        return { str: tab.string, fret: tab.fret };
+        const fret = Math.max(0, tab.fret - capo);
+        return { str: tab.string, fret };
       });
     }
     case "rest":
@@ -44,26 +59,34 @@ function getTabPositions(
   }
 }
 
+/** Check if an event has a specific articulation */
+function hasArticulation(event: NoteEvent, kind: Articulation["kind"]): boolean {
+  if (event.kind !== "note" && event.kind !== "chord") return false;
+  return event.articulations?.some((a) => a.kind === kind) ?? false;
+}
+
 function eventToTabNote(
   event: NoteEvent,
-  tuning: Tuning
+  tuning: Tuning,
+  capo: number
 ): TabNote | GhostNote | null {
   const dur = DUR_VEX[event.duration.type];
   if (!dur) return null;
 
   if (event.kind === "rest") {
-    // GhostNote takes up rhythmic space but renders nothing — correct for tab rests
     return new GhostNote({ duration: dur });
   }
 
-  const positions = getTabPositions(event, tuning);
+  const positions = getTabPositions(event, tuning, capo);
   if (positions.length === 0) return null;
 
+  // Dead notes: render "X" on each string position
+  const isDead = hasArticulation(event, "dead-note");
+
   const tn = new TabNote({
-    positions,
+    positions: isDead ? positions.map((p) => ({ str: p.str, fret: "X" as unknown as number })) : positions,
     duration: dur,
   });
-
   // Add articulations as modifiers
   if (event.kind === "note" || event.kind === "chord") {
     const articulations = event.articulations ?? [];
@@ -79,7 +102,6 @@ function addArticulationModifier(tn: TabNote, art: Articulation): void {
   switch (art.kind) {
     case "bend": {
       const bendText = art.semitones === 2 ? "Full" : art.semitones === 1 ? "1/2" : `${art.semitones / 2}`;
-      // VexFlow 5 Bend takes BendPhrase[] array
       const bend = new Bend([{ type: Bend.UP, text: bendText }]);
       tn.addModifier(bend);
       break;
@@ -89,8 +111,47 @@ function addArticulationModifier(tn: TabNote, art: Articulation): void {
       tn.addModifier(vib);
       break;
     }
+    case "palm-mute": {
+      const pm = new VFAnnotation("P.M.")
+        .setVerticalJustification(VFAnnotation.VerticalJustify.TOP);
+      tn.addModifier(pm);
+      break;
+    }
+    case "harmonic": {
+      const harm = new VFAnnotation("Harm.")
+        .setVerticalJustification(VFAnnotation.VerticalJustify.TOP);
+      tn.addModifier(harm);
+      break;
+    }
+    case "let-ring": {
+      const lr = new VFAnnotation("let ring")
+        .setVerticalJustification(VFAnnotation.VerticalJustify.TOP);
+      tn.addModifier(lr);
+      break;
+    }
+    case "down-stroke": {
+      const ds = new VFAnnotation("↓")
+        .setVerticalJustification(VFAnnotation.VerticalJustify.BOTTOM);
+      tn.addModifier(ds);
+      break;
+    }
+    case "up-stroke": {
+      const us = new VFAnnotation("↑")
+        .setVerticalJustification(VFAnnotation.VerticalJustify.BOTTOM);
+      tn.addModifier(us);
+      break;
+    }
+    case "fingerpick-p":
+    case "fingerpick-i":
+    case "fingerpick-m":
+    case "fingerpick-a": {
+      const letter = art.kind.split("-")[1]; // p, i, m, a
+      const fp = new VFAnnotation(letter)
+        .setVerticalJustification(VFAnnotation.VerticalJustify.BOTTOM);
+      tn.addModifier(fp);
+      break;
+    }
     // slide-up, slide-down, hammer-on, pull-off are handled as ties between notes
-    // They are rendered as TabSlide/TabTie in the post-processing step
     default:
       break;
   }
@@ -108,13 +169,26 @@ export function renderTabMeasure(
   showClef: boolean,
   tuning: Tuning = STANDARD_TUNING,
   partIndex = 0,
-  measureIndex = 0
+  measureIndex = 0,
+  capo = 0
 ): TabMeasureRenderResult {
   const stave = new TabStave(x, y, width);
   if (showClef) {
     stave.addClef("tab");
   }
-  stave.setContext(ctx.context).draw();
+  // Show capo indicator on first measure
+  if (capo > 0 && showClef) {
+    stave.setContext(ctx.context);
+    stave.draw();
+    // Draw capo text above the stave
+    const rawCtx = ctx.context as unknown as { fillText(text: string, x: number, y: number): void; font: string };
+    const prevFont = rawCtx.font;
+    rawCtx.font = "italic 11px serif";
+    rawCtx.fillText(`Capo ${capo}`, x + 6, y - 5);
+    rawCtx.font = prevFont;
+  } else {
+    stave.setContext(ctx.context).draw();
+  }
 
   const noteBoxes: NoteBox[] = [];
   const allTabNotes: (TabNote | GhostNote)[] = [];
@@ -123,11 +197,11 @@ export function renderTabMeasure(
   // Process first voice only for tab (tab is typically single-voice)
   const modelVoice = m.voices[0];
   if (!modelVoice || modelVoice.events.length === 0) {
-    return { noteBoxes, staveY: y, staveX: x, width };
+    return { noteBoxes, staveY: y, staveX: x, width, vexStave: stave };
   }
 
   for (const event of modelVoice.events) {
-    const tn = eventToTabNote(event, tuning);
+    const tn = eventToTabNote(event, tuning, capo);
     if (tn) {
       allTabNotes.push(tn);
       eventIds.push(event.id);
@@ -160,13 +234,15 @@ export function renderTabMeasure(
       if (tn instanceof GhostNote) return;
       const bb = tn.getBoundingBox();
       if (bb) {
+        // VexFlow TabNote.getBoundingBox() returns relative X — use getAbsoluteX() for absolute position
+        const absX = (tn as any).getAbsoluteX?.() ?? (stave.getNoteStartX() + bb.getX());
         noteBoxes.push({
           id: eventIds[idx],
-          x: bb.getX(),
+          x: absX,
           y: bb.getY(),
           width: bb.getW(),
           height: bb.getH(),
-          headX: bb.getX(),
+          headX: absX,
           headY: bb.getY(),
           headWidth: bb.getW(),
           headHeight: bb.getH(),
@@ -179,7 +255,7 @@ export function renderTabMeasure(
     });
   }
 
-  return { noteBoxes, staveY: y, staveX: x, width };
+  return { noteBoxes, staveY: y, staveX: x, width, vexStave: stave };
 }
 
 /**
