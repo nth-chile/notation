@@ -8,14 +8,14 @@ import { ChevronDown, GripVertical, MoreVertical } from "lucide-react";
 
 import type { PanelMenuItem } from "../plugins/PluginAPI";
 
-function PortalMenu({ menuRef, items, onClose }: { menuRef: React.RefObject<HTMLDivElement | null>; items: PanelMenuItem[]; onClose: () => void }) {
+function PortalMenu({ menuRef, items, onClose, onRefresh }: { menuRef: React.RefObject<HTMLDivElement | null>; items: PanelMenuItem[]; onClose: () => void; onRefresh: () => void }) {
   const [pos, setPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     const el = menuRef.current;
     if (el) {
       const rect = el.getBoundingClientRect();
-      setPos({ top: rect.bottom + 4, left: rect.right - 120 });
+      setPos({ top: rect.bottom + 4, left: rect.right - 140 });
     }
   }, [menuRef]);
 
@@ -29,18 +29,28 @@ function PortalMenu({ menuRef, items, onClose }: { menuRef: React.RefObject<HTML
 
   return (
     <div
-      className="fixed bg-popover border rounded-md shadow-md z-[9999] py-1 min-w-[120px]"
+      className="fixed bg-popover border rounded-md shadow-md z-[9999] py-1 min-w-[140px]"
       style={{ top: pos.top, left: pos.left }}
     >
-      {items.map((item) => (
-        <button
-          key={item.label}
-          onClick={() => { item.onClick(); onClose(); }}
-          className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent cursor-pointer"
-        >
-          {item.label}
-        </button>
-      ))}
+      {items.map((item) => {
+        const isToggle = item.checked !== undefined;
+        return (
+          <button
+            key={item.label}
+            onClick={() => {
+              item.onClick();
+              if (isToggle) onRefresh();
+              else onClose();
+            }}
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent cursor-pointer flex items-center gap-2"
+          >
+            {isToggle && (
+              <span className="w-3 text-[10px]">{item.checked ? "✓" : ""}</span>
+            )}
+            <span>{item.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -50,7 +60,7 @@ interface DraggablePanelProps {
   title: string;
   children: React.ReactNode;
   isOverlay?: boolean;
-  menuItems?: PanelMenuItem[];
+  menuItems?: PanelMenuItem[] | (() => PanelMenuItem[]);
   fill?: boolean;
 }
 
@@ -58,7 +68,10 @@ export function DraggablePanel({ id, title, children, isOverlay, menuItems, fill
   const collapsed = useLayoutStore((s) => s.panelCollapsed[id] ?? false);
   const toggleCollapsed = useLayoutStore((s) => s.togglePanelCollapsed);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuVersion, setMenuVersion] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
+  const resolvedMenuItems = typeof menuItems === "function" ? menuItems() : menuItems;
+  void menuVersion; // used to trigger re-resolve of function menuItems
 
   const {
     attributes,
@@ -111,7 +124,7 @@ export function DraggablePanel({ id, title, children, isOverlay, menuItems, fill
           />
         </button>
 
-        {menuItems && menuItems.length > 0 && (
+        {resolvedMenuItems && resolvedMenuItems.length > 0 && (
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
@@ -121,7 +134,12 @@ export function DraggablePanel({ id, title, children, isOverlay, menuItems, fill
               <MoreVertical className="h-3 w-3 text-muted-foreground" />
             </button>
             {menuOpen && createPortal(
-              <PortalMenu menuRef={menuRef} items={menuItems} onClose={() => setMenuOpen(false)} />,
+              <PortalMenu
+                menuRef={menuRef}
+                items={resolvedMenuItems}
+                onClose={() => setMenuOpen(false)}
+                onRefresh={() => setMenuVersion((v) => v + 1)}
+              />,
               document.body,
             )}
           </div>

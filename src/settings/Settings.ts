@@ -16,7 +16,7 @@ export interface AppSettings {
   defaultTempo: number;
   defaultTimeSignature: { numerator: number; denominator: number };
   defaultClef: ClefType;
-  autoBeam: boolean;
+
   metronomeEnabled: boolean;
   countInEnabled: boolean;
   historyMaxSnapshots: number;
@@ -51,7 +51,7 @@ function defaultSettings(): AppSettings {
     defaultTempo: 120,
     defaultTimeSignature: { numerator: 4, denominator: 4 },
     defaultClef: "treble",
-    autoBeam: true,
+
     metronomeEnabled: false,
     countInEnabled: false,
     historyMaxSnapshots: 50,

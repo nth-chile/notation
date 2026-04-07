@@ -7,6 +7,7 @@ import { importFromMusicXML } from "../../musicxml/import";
 import { exportToMusicXML } from "../../musicxml/export";
 import { factory } from "../../model";
 import { newId } from "../../model/ids";
+import { midiToPitch } from "../../model/pitch";
 
 // --- ABC Notation ---
 
@@ -489,19 +490,238 @@ function parseLilyToScore(lily: string): Score {
   return score;
 }
 
+// --- ASCII Tab Parsing ---
+
+const TAB_STRING_NAMES = ["e", "B", "G", "D", "A", "E"]; // high to low (string 1-6)
+const TAB_LINE_RE = /^([A-Ga-g]#?b?)\|([0-9hpbsxX/\\~\-|]+)\|?\s*$/;
+
+function isAsciiTab(text: string): boolean {
+  const lines = text.trim().split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  // ASCII tab has 6 consecutive lines matching the pattern
+  let consecutive = 0;
+  for (const line of lines) {
+    if (TAB_LINE_RE.test(line) || /^[A-Ga-g]#?b?\|/.test(line)) {
+      consecutive++;
+      if (consecutive >= 4) return true; // at least 4 strings = probably tab
+    } else {
+      consecutive = 0;
+    }
+  }
+  return false;
+}
+
+function parseAsciiTab(text: string): Score {
+  const lines = text.trim().split("\n").map((l) => l.trim());
+
+  // Group lines into stave systems (groups of 6 consecutive tab lines)
+  const systems: string[][] = [];
+  let current: string[] = [];
+  for (const line of lines) {
+    if (/^[A-Ga-g]#?b?\|/.test(line)) {
+      current.push(line);
+    } else {
+      if (current.length >= 4) systems.push(current);
+      current = [];
+    }
+  }
+  if (current.length >= 4) systems.push(current);
+
+  if (systems.length === 0) {
+    return factory.emptyScore();
+  }
+
+  const numStrings = systems[0].length;
+  const allEvents: NoteEvent[][] = []; // one array per measure
+
+  for (const system of systems) {
+    // Strip string name prefix and leading/trailing pipes
+    const stripped = system.map((line) => {
+      const m = line.match(/^[A-Ga-g]#?b?\|(.*?)(?:\|?\s*)$/);
+      return m ? m[1] : line;
+    });
+
+    // Split by | to get measures within this system
+    // Find pipe positions (they should align across strings)
+    const firstLine = stripped[0];
+    const pipePositions: number[] = [];
+    for (let i = 0; i < firstLine.length; i++) {
+      if (firstLine[i] === "|") pipePositions.push(i);
+    }
+
+    // Extract measure segments
+    const measureSegments: string[][] = [];
+    let start = 0;
+    for (const pos of pipePositions) {
+      const seg = stripped.map((line) => line.slice(start, pos));
+      if (seg.some((s) => s.replace(/-/g, "").length > 0)) {
+        measureSegments.push(seg);
+      }
+      start = pos + 1;
+    }
+    // Last segment after final pipe
+    const lastSeg = stripped.map((line) => line.slice(start));
+    if (lastSeg.some((s) => s.replace(/-/g, "").length > 0)) {
+      measureSegments.push(lastSeg);
+    }
+
+    for (const seg of measureSegments) {
+      const events = parseTabSegment(seg, numStrings);
+      allEvents.push(events);
+    }
+  }
+
+  // Build score
+  const measures: Measure[] = allEvents.map((events, idx) => ({
+    id: newId<import("../../model/ids").MeasureId>("m"),
+    clef: { type: "treble" as const },
+    timeSignature: { numerator: 4, denominator: 4 },
+    keySignature: { fifths: 0 },
+    barlineEnd: (idx === allEvents.length - 1 ? "final" : "single") as import("../../model/time").BarlineType,
+    annotations: [],
+    voices: [{
+      id: newId<import("../../model/ids").VoiceId>("v"),
+      events: events.length > 0 ? events : [{
+        kind: "rest" as const,
+        id: newId<import("../../model/ids").NoteEventId>("evt"),
+        duration: { type: "whole" as const, dots: 0 as const },
+      }],
+    }],
+  }));
+
+  return {
+    id: newId<import("../../model/ids").ScoreId>("s"),
+    title: "Imported Tab",
+    composer: "",
+    formatVersion: 1,
+    tempo: 120,
+    parts: [{
+      id: newId<import("../../model/ids").PartId>("p"),
+      name: "Guitar",
+      abbreviation: "Gtr.",
+      instrumentId: "guitar",
+      muted: false,
+      solo: false,
+      measures,
+    }],
+  };
+}
+
+function parseTabSegment(strings: string[], numStrings: number): NoteEvent[] {
+  // Each string[i] is the content for string (i+1) where string 1 = high E
+  // Scan left to right, finding columns with fret numbers
+  const maxLen = Math.max(...strings.map((s) => s.length));
+  const events: NoteEvent[] = [];
+
+  let col = 0;
+  while (col < maxLen) {
+    // Collect fret numbers at this column across all strings
+    const notes: { string: number; fret: number }[] = [];
+    let maxFretWidth = 1;
+
+    for (let s = 0; s < numStrings; s++) {
+      const line = strings[s] || "";
+      const ch = line[col];
+      if (ch && ch >= "0" && ch <= "9") {
+        // Could be multi-digit fret
+        let fretStr = ch;
+        if (col + 1 < line.length && line[col + 1] >= "0" && line[col + 1] <= "9") {
+          fretStr += line[col + 1];
+          maxFretWidth = 2;
+        }
+        notes.push({ string: s + 1, fret: parseInt(fretStr) });
+      } else if (ch === "x" || ch === "X") {
+        notes.push({ string: s + 1, fret: -1 }); // dead note marker
+      }
+    }
+
+    if (notes.length > 0) {
+      // Check for technique markers on adjacent columns
+      const arts: import("../../model/note").Articulation[] = [];
+      // Look ahead for h, p, b, s, ~, / , \
+      for (let s = 0; s < numStrings; s++) {
+        const line = strings[s] || "";
+        const after = line[col + maxFretWidth];
+        if (after === "h") arts.push({ kind: "hammer-on" });
+        else if (after === "p") arts.push({ kind: "pull-off" });
+        else if (after === "b") arts.push({ kind: "bend", semitones: 2 });
+        else if (after === "~") arts.push({ kind: "vibrato" });
+        else if (after === "/") arts.push({ kind: "slide-up" });
+        else if (after === "\\") arts.push({ kind: "slide-down" });
+      }
+      // Deduplicate articulations
+      const uniqueArts = arts.filter((a, i) => arts.findIndex((b) => b.kind === a.kind) === i);
+
+      const liveNotes = notes.filter((n) => n.fret >= 0);
+      const deadNotes = notes.filter((n) => n.fret < 0);
+
+      if (liveNotes.length === 1 && deadNotes.length === 0) {
+        const n = liveNotes[0];
+        // Convert string/fret to pitch using standard tuning
+        const STANDARD_MIDI = [64, 59, 55, 50, 45, 40]; // E4 B3 G3 D3 A2 E2
+        const openMidi = STANDARD_MIDI[n.string - 1] ?? 64;
+        const midi = openMidi + n.fret;
+        const pitch = midiToPitch(midi);
+        events.push({
+          kind: "note" as const,
+          id: newId<import("../../model/ids").NoteEventId>("evt"),
+          duration: { type: "eighth" as const, dots: 0 as const },
+          head: { pitch, tabInfo: { string: n.string, fret: n.fret } },
+          tabInfo: { string: n.string, fret: n.fret },
+          articulations: uniqueArts.length > 0 ? uniqueArts : undefined,
+        });
+      } else if (liveNotes.length > 1) {
+        const STANDARD_MIDI = [64, 59, 55, 50, 45, 40];
+        const heads = liveNotes.map((n) => {
+          const openMidi = STANDARD_MIDI[n.string - 1] ?? 64;
+          const midi = openMidi + n.fret;
+          return { pitch: midiToPitch(midi), tabInfo: { string: n.string, fret: n.fret } };
+        });
+        events.push({
+          kind: "chord" as const,
+          id: newId<import("../../model/ids").NoteEventId>("evt"),
+          duration: { type: "eighth" as const, dots: 0 as const },
+          heads,
+          articulations: uniqueArts.length > 0 ? uniqueArts : undefined,
+        });
+      } else if (deadNotes.length > 0) {
+        // Dead note(s)
+        const STANDARD_MIDI = [64, 59, 55, 50, 45, 40];
+        const n = deadNotes[0];
+        const openMidi = STANDARD_MIDI[n.string - 1] ?? 64;
+        const pitch = midiToPitch(openMidi);
+        events.push({
+          kind: "note" as const,
+          id: newId<import("../../model/ids").NoteEventId>("evt"),
+          duration: { type: "eighth" as const, dots: 0 as const },
+          head: { pitch, tabInfo: { string: n.string, fret: 0 } },
+          tabInfo: { string: n.string, fret: 0 },
+          articulations: [{ kind: "dead-note" }],
+        });
+      }
+
+      col += maxFretWidth;
+    } else {
+      col++;
+    }
+  }
+
+  return events;
+}
+
 // --- Format Detection ---
 
-function detectFormat(text: string): "abc" | "lilypond" | "musicxml" | null {
+function detectFormat(text: string): "abc" | "lilypond" | "musicxml" | "tab" | null {
   const trimmed = text.trim();
   if (trimmed.startsWith("<?xml") || trimmed.startsWith("<score-partwise")) return "musicxml";
   if (trimmed.startsWith("X:") || trimmed.match(/^[A-Z]:\s*/m)) return "abc";
   if (trimmed.includes("\\version") || trimmed.includes("\\new Staff") || trimmed.includes("\\relative")) return "lilypond";
+  if (isAsciiTab(trimmed)) return "tab";
   return null;
 }
 
 // --- Exports for testing ---
 
-export { scoreToAbc, scoreToLily, parseAbcToScore, parseLilyToScore, detectFormat, pitchToAbc, pitchToLily, eventToAbc, eventToLily };
+export { scoreToAbc, scoreToLily, parseAbcToScore, parseLilyToScore, parseAsciiTab, detectFormat, pitchToAbc, pitchToLily, eventToAbc, eventToLily };
 
 // --- Plugin ---
 
@@ -555,6 +775,8 @@ export const ClipboardPlugin: NubiumPlugin = {
         score = parseAbcToScore(text);
       } else if (format === "lilypond") {
         score = parseLilyToScore(text);
+      } else if (format === "tab") {
+        score = parseAsciiTab(text);
       }
 
       if (score) {

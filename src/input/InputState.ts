@@ -12,6 +12,8 @@ export interface CursorPosition {
 export interface InputState {
   duration: Duration;
   accidental: Accidental;
+  /** True when user explicitly chose an accidental (vs. key signature default). */
+  accidentalExplicit: boolean;
   voice: number;
   cursor: CursorPosition;
   octave: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
@@ -36,6 +38,7 @@ export function defaultInputState(): InputState {
   return {
     duration: { type: "quarter", dots: 0 },
     accidental: "natural",
+    accidentalExplicit: false,
     voice: 0,
     cursor: {
       partIndex: 0,

@@ -93,6 +93,8 @@ function detectRestRuns(
 
 export interface ScoreRenderResult {
   noteBoxes: Map<NoteEventId, NoteBox>;
+  /** All note boxes including duplicates across staves (standard + tab + slash) — used for click hit-testing */
+  hitBoxes: NoteBox[];
   annotationBoxes: AnnotationBox[];
   measurePositions: { partIndex: number; measureIndex: number; staveIndex: number; x: number; y: number; width: number; height: number; noteStartX: number; isTab?: boolean }[];
   contentHeight: number;
@@ -212,6 +214,7 @@ export function renderScore(
   const systems = computeLayout(filteredScore, config, tabParts, viewConfig);
 
   const allNoteBoxes = new Map<NoteEventId, NoteBox>();
+  const allHitBoxes: NoteBox[] = []; // all note boxes for hit testing (includes duplicates across staves)
   const allStaveNotes = new Map<NoteEventId, StaveNote>();
   const allAnnotationBoxes: AnnotationBox[] = [];
   const measurePositions: ScoreRenderResult["measurePositions"] = [];
@@ -378,6 +381,20 @@ export function renderScore(
             };
           }
 
+          // When slash stave is separate, filter slash events out of standard stave
+          // (they'll be rendered on the slash stave instead)
+          if (hasSlash && si < slashStaveIdx) {
+            measureToRender = {
+              ...measureToRender,
+              voices: measureToRender.voices.map((v) => ({
+                ...v,
+                events: v.events.map((e) =>
+                  e.kind === "slash" ? { ...e, kind: "rest" as const } : e
+                ),
+              })),
+            };
+          }
+
           // For grand staff, determine the clef for this stave (not tab stave)
           if (standardStaves === 2 && si === 1 && !isTabStave) {
             measureToRender = { ...measureToRender, clef: { type: "bass" as const } };
@@ -455,7 +472,12 @@ export function renderScore(
           });
 
           for (const nb of result.noteBoxes) {
-            allNoteBoxes.set(nb.id, nb);
+            // Map stores first (standard) stave's boxes for cursor/slur positioning
+            if (!allNoteBoxes.has(nb.id)) {
+              allNoteBoxes.set(nb.id, nb);
+            }
+            // Array stores ALL boxes for click hit-testing across staves
+            allHitBoxes.push(nb);
           }
           if ('staveNoteMap' in result) {
             for (const [id, sn] of (result as { staveNoteMap: Map<NoteEventId, StaveNote> }).staveNoteMap) {
@@ -575,7 +597,7 @@ export function renderScore(
 
   const contentHeight = totalContentHeight(score, config, tabParts, viewConfig);
 
-  return { noteBoxes: allNoteBoxes, annotationBoxes: allAnnotationBoxes, measurePositions, contentHeight };
+  return { noteBoxes: allNoteBoxes, hitBoxes: allHitBoxes, annotationBoxes: allAnnotationBoxes, measurePositions, contentHeight };
 }
 
 const VOICE_COLORS = ["#3b82f6", "#22c55e", "#f97316", "#ef4444"];

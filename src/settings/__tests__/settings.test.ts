@@ -17,9 +17,6 @@ describe("defaultSettings", () => {
     expect(defaultSettings().defaultClef).toBe("treble");
   });
 
-  it("has autoBeam enabled", () => {
-    expect(defaultSettings().autoBeam).toBe(true);
-  });
 
   it("has metronome disabled by default", () => {
     expect(defaultSettings().metronomeEnabled).toBe(false);

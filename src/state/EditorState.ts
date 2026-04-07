@@ -60,7 +60,7 @@ import type { NavigationMarkType } from "../commands/SetNavigationMark";
 import type { BarlineType, Volta } from "../model";
 import type { NoteBox, AnnotationBox } from "../renderer/vexBridge";
 import { newId, type VoiceId, type MeasureId } from "../model/ids";
-import { pitchToMidi, midiToPitch, stepUp, stepDown } from "../model/pitch";
+import { pitchToMidi, midiToPitch, stepUp, stepDown, keyAccidental } from "../model/pitch";
 import { getGlobalPluginManager } from "../plugins/PluginManager";
 
 const history = new CommandHistory();
@@ -81,6 +81,7 @@ interface EditorStore {
 
   // Rendering
   noteBoxes: Map<NoteEventId, NoteBox>;
+  hitBoxes: NoteBox[];
   annotationBoxes: AnnotationBox[];
   measurePositions: { partIndex: number; measureIndex: number; staveIndex: number; x: number; y: number; width: number; height: number; noteStartX: number; isTab?: boolean }[];
   titlePositions: { title?: { x: number; y: number; width: number; height: number }; composer?: { x: number; y: number; width: number; height: number } };
@@ -113,7 +114,7 @@ interface EditorStore {
   setFilePath(path: string | null): void;
   setAutoSaveStatus(status: string | null): void;
   markClean(): void;
-  setNoteBoxes(boxes: Map<NoteEventId, NoteBox>): void;
+  setNoteBoxes(boxes: Map<NoteEventId, NoteBox>, hitBoxes?: NoteBox[]): void;
   setAnnotationBoxes(boxes: AnnotationBox[]): void;
   setMeasurePositions(positions: EditorStore["measurePositions"]): void;
   setTitlePositions(positions: EditorStore["titlePositions"]): void;
@@ -127,7 +128,7 @@ interface EditorStore {
   extendSelection(direction: "left" | "right"): void;
   deleteSelectedMeasures(): void;
   copySelection(): void;
-  pasteAtCursor(): void;
+  pasteAtCursor(): Promise<void>;
   setCursorDirect(cursor: CursorPosition, tabInputActive?: boolean): void;
   setTitle(title: string): void;
   setComposer(composer: string): void;
@@ -140,7 +141,6 @@ interface EditorStore {
 
   // Phase 2 actions
   changePitch(pitchClass: PitchClass): void;
-  changeDuration(type: DurationType): void;
   setVoice(n: number): void;
   insertMeasure(): void;
   deleteMeasure(): void;
@@ -325,6 +325,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   cleanScoreJson: serializeScore(initialScore),
   inputState: defaultInputState(),
   noteBoxes: new Map(),
+  hitBoxes: [],
   annotationBoxes: [],
   measurePositions: [],
   titlePositions: {},
@@ -413,12 +414,19 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const { cursor } = state.inputState;
     const octave = smartOctave(state.score, cursor, pitchClass);
 
+    // Resolve accidental: if user hasn't explicitly set one, use key signature default
+    const measure = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
+    const fifths = measure?.keySignature?.fifths ?? 0;
+    const acc = state.inputState.accidentalExplicit
+      ? state.inputState.accidental
+      : keyAccidental(pitchClass, fifths);
+
     // Pitch-before-duration: set pending pitch, don't insert yet
     if (state.inputState.pitchBeforeDuration) {
       set({
         inputState: {
           ...state.inputState,
-          pendingPitch: { pitchClass, octave, accidental: state.inputState.accidental },
+          pendingPitch: { pitchClass, octave, accidental: acc },
         },
       });
       return;
@@ -429,7 +437,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const cmd = new InsertGraceNote(
         pitchClass,
         octave,
-        state.inputState.accidental,
+        acc,
       );
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
       set({ score: result.score, inputState: result.inputState, lastEnteredPosition: { ...cursor } });
@@ -441,7 +449,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const cmd = new InsertModeNote(
         pitchClass,
         octave,
-        state.inputState.accidental,
+        acc,
         { ...state.inputState.duration },
       );
       const result = history.execute(cmd, {
@@ -457,7 +465,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const cmd = new OverwriteNote(
         pitchClass,
         octave,
-        state.inputState.accidental,
+        acc,
         { ...state.inputState.duration },
       );
       const result = history.execute(cmd, {
@@ -477,7 +485,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const cmd = new ChangePitch(
         pitchClass,
         octave,
-        state.inputState.accidental
+        acc
       );
       const result = history.execute(cmd, {
         score: state.score,
@@ -494,7 +502,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const cmd = new InsertNote(
       pitchClass,
       octave,
-      state.inputState.accidental,
+      acc,
       { ...state.inputState.duration }
     );
     const result = history.execute(cmd, {
@@ -524,6 +532,30 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const state = get();
     if (state.inputState.insertMode) {
       const cmd = new InsertModeNote("C", 4, "natural", { ...state.inputState.duration }, true);
+      const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+      set({ score: result.score, inputState: result.inputState, lastEnteredPosition: null });
+      return;
+    }
+    // Overwrite existing event with a rest (matching note overwrite/change behavior)
+    const { cursor } = state.inputState;
+    if (cursorOnExistingEvent(state.score, cursor)) {
+      const cmd: import("../commands/Command").Command = {
+        description: "Overwrite with rest",
+        execute(s) {
+          const sc = structuredClone(s.score);
+          const inp = structuredClone(s.inputState);
+          const v = sc.parts[inp.cursor.partIndex]?.measures[inp.cursor.measureIndex]?.voices[inp.cursor.voiceIndex];
+          if (!v) return s;
+          v.events[inp.cursor.eventIndex] = {
+            kind: "rest",
+            id: newId<import("../model/ids").NoteEventId>("evt"),
+            duration: { ...inp.duration },
+          };
+          inp.cursor.eventIndex += 1;
+          return { score: sc, inputState: inp };
+        },
+        undo(s) { return s; },
+      };
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
       set({ score: result.score, inputState: result.inputState, lastEnteredPosition: null });
       return;
@@ -598,6 +630,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     // Note-level selection: change duration of selected events
     if (state.noteSelection) {
       const ns = state.noteSelection;
+      history.pushSnapshot({ score: state.score, inputState: state.inputState });
       const score = structuredClone(state.score);
       for (let mi = ns.startMeasure; mi <= ns.endMeasure; mi++) {
         const voice = score.parts[ns.partIndex]?.measures[mi]?.voices[ns.voiceIndex];
@@ -611,6 +644,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set({ score });
     } else if (state.selection && !state.inputState.stepEntry) {
       const { partIndex, measureStart, measureEnd } = state.selection;
+      history.pushSnapshot({ score: state.score, inputState: state.inputState });
       const score = structuredClone(state.score);
       const part = score.parts[partIndex];
       if (!part) return;
@@ -626,14 +660,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       }
       set({ score });
     } else if (cursorOnExistingEvent(state.score, state.inputState.cursor)) {
-      // Single note at cursor: change its duration
-      const { cursor } = state.inputState;
-      const score = structuredClone(state.score);
-      const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
-      if (voice && cursor.eventIndex < voice.events.length) {
-        voice.events[cursor.eventIndex] = { ...voice.events[cursor.eventIndex], duration: { type, dots: 0 } };
-        set({ score });
-      }
+      // Single note at cursor: change its duration via command
+      const cmd = new ChangeDuration({ type, dots: 0 });
+      const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+      set({ score: result.score, inputState: result.inputState });
     }
     set((s) => ({
       inputState: {
@@ -651,6 +681,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     // Note-level selection: toggle dot on selected events
     if (state.noteSelection) {
       const ns = state.noteSelection;
+      history.pushSnapshot({ score: state.score, inputState: state.inputState });
       const score = structuredClone(state.score);
       for (let mi = ns.startMeasure; mi <= ns.endMeasure; mi++) {
         const voice = score.parts[ns.partIndex]?.measures[mi]?.voices[ns.voiceIndex];
@@ -667,6 +698,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     } else if (state.selection && !state.inputState.stepEntry) {
       // Bar-level selection: toggle dot on all events in selected measures
       const { partIndex, measureStart, measureEnd } = state.selection;
+      history.pushSnapshot({ score: state.score, inputState: state.inputState });
       const score = structuredClone(state.score);
       const part = score.parts[partIndex];
       if (part) {
@@ -727,7 +759,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           voice.events[i] = applyAccToEvent(voice.events[i], acc);
         }
       }
-      set({ score, inputState: { ...state.inputState, accidental: acc } });
+      set({ score, inputState: { ...state.inputState, accidental: acc, accidentalExplicit: true } });
       return;
     }
 
@@ -744,7 +776,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             voice.events = voice.events.map((ev) => applyAccToEvent(ev, acc));
           }
         }
-        set({ score, inputState: { ...state.inputState, accidental: acc } });
+        set({ score, inputState: { ...state.inputState, accidental: acc, accidentalExplicit: true } });
       }
       return;
     }
@@ -767,7 +799,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       });
       set({
         score: result.score,
-        inputState: { ...result.inputState, accidental: newAcc },
+        inputState: { ...result.inputState, accidental: newAcc, accidentalExplicit: true },
       });
       return;
     }
@@ -778,6 +810,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       inputState: {
         ...s.inputState,
         accidental: newAcc,
+        accidentalExplicit: newAcc !== "natural",
       },
     }));
   },
@@ -885,14 +918,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const voice = part?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
       // Allow navigation even when voice doesn't exist in current measure
       const eventCount = voice?.events.length ?? 0;
-      // In step entry mode, allow the append position (past last note) for inserting.
-      // In navigation mode, skip the append position — jump to next measure instead.
-      const allowAppend = s.inputState.stepEntry;
-
+      // Allow the append position (past last note) for inserting new notes.
       if (direction === "right") {
-        if (allowAppend && cursor.eventIndex < eventCount) {
-          cursor.eventIndex++;
-        } else if (!allowAppend && cursor.eventIndex < eventCount - 1) {
+        if (cursor.eventIndex < eventCount) {
           cursor.eventIndex++;
         } else {
           // Move to next measure
@@ -908,8 +936,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           cursor.measureIndex--;
           const prevVoice = part?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
           const prevCount = prevVoice?.events.length ?? 0;
-          // In navigation mode, land on the last note; in step entry, land on append position
-          cursor.eventIndex = allowAppend ? prevCount : Math.max(0, prevCount - 1);
+          cursor.eventIndex = Math.max(0, prevCount - 1);
         }
       }
 
@@ -1030,8 +1057,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({ isDirty: false, cleanScoreJson: serializeScore(get().score) });
   },
 
-  setNoteBoxes(boxes: Map<NoteEventId, NoteBox>) {
-    set({ noteBoxes: boxes });
+  setNoteBoxes(boxes: Map<NoteEventId, NoteBox>, hitBoxes?: NoteBox[]) {
+    set({ noteBoxes: boxes, hitBoxes: hitBoxes ?? [...boxes.values()] });
   },
 
   setAnnotationBoxes(boxes: AnnotationBox[]) {
@@ -1218,7 +1245,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const part = state.score.parts[partIndex];
       if (!part) return;
       const measures = part.measures.slice(measureStart, measureEnd + 1);
-      set({ clipboardMeasures: structuredClone(measures), clipboardEvents: null });
+      const cloned = structuredClone(measures);
+      set({ clipboardMeasures: cloned, clipboardEvents: null });
+      // Write to system clipboard for cross-tab support
+      const payload = JSON.stringify({ nubium: "measures", data: cloned });
+      navigator.clipboard.writeText(payload).catch(() => {});
     } else if (state.noteSelection) {
       const ns = state.noteSelection;
       const part = state.score.parts[ns.partIndex];
@@ -1232,16 +1263,42 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         const endIdx = m === ns.endMeasure ? ns.endEvent : voice.events.length - 1;
         events.push(...voice.events.slice(startIdx, endIdx + 1));
       }
-      set({ clipboardEvents: structuredClone({ voiceIndex: ns.voiceIndex, events }), clipboardMeasures: null });
+      const cloned = structuredClone({ voiceIndex: ns.voiceIndex, events });
+      set({ clipboardEvents: cloned, clipboardMeasures: null });
+      // Write to system clipboard for cross-tab support
+      const payload = JSON.stringify({ nubium: "events", data: cloned });
+      navigator.clipboard.writeText(payload).catch(() => {});
     }
   },
 
-  pasteAtCursor() {
+  async pasteAtCursor() {
+    // Try reading from system clipboard for cross-tab support
+    let systemClipboard: { nubium: string; data: any } | null = null;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        const parsed = JSON.parse(text);
+        if (parsed?.nubium === "measures" || parsed?.nubium === "events") {
+          systemClipboard = parsed;
+        }
+      }
+    } catch {
+      // System clipboard not available or doesn't contain our data
+    }
+
     const state = get();
     const { cursor } = state.inputState;
 
+    // Prefer system clipboard data over in-memory (enables cross-tab paste)
+    const clipboardEvents = systemClipboard?.nubium === "events"
+      ? systemClipboard.data as { voiceIndex: number; events: import("../model/note").NoteEvent[] }
+      : state.clipboardEvents;
+    const clipboardMeasures = systemClipboard?.nubium === "measures"
+      ? systemClipboard.data as Measure[]
+      : state.clipboardMeasures;
+
     // Note-level paste: overwrite events at cursor position
-    if (state.clipboardEvents && state.clipboardEvents.events.length > 0) {
+    if (clipboardEvents && clipboardEvents.events.length > 0) {
       const score = structuredClone(state.score);
       const part = score.parts[cursor.partIndex];
       if (!part) return;
@@ -1250,7 +1307,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const voice = measure.voices[cursor.voiceIndex];
       if (!voice) return;
 
-      const newEvents = structuredClone(state.clipboardEvents.events).map((e: any) => {
+      const newEvents = structuredClone(clipboardEvents.events).map((e: any) => {
         e.id = newId<NoteEventId>("evt");
         return e;
       });
@@ -1270,7 +1327,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
 
     // Measure-level paste
-    if (!state.clipboardMeasures || state.clipboardMeasures.length === 0) return;
+    if (!clipboardMeasures || clipboardMeasures.length === 0) return;
     const score = structuredClone(state.score);
     const part = score.parts[cursor.partIndex];
     if (!part) return;
@@ -1281,7 +1338,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const targetInstrument = getInstrument(part.instrumentId);
     const targetStaves = targetInstrument?.staves ?? 1;
 
-    const measuresToInsert: Measure[] = structuredClone(state.clipboardMeasures).map((m) => {
+    const measuresToInsert: Measure[] = structuredClone(clipboardMeasures).map((m) => {
       m.id = newId<MeasureId>("msr");
 
       if (refMeasure) {
@@ -1330,9 +1387,36 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
 
     const startIndex = cursor.measureIndex;
+    // Ensure enough measures exist to paste into
+    while (part.measures.length < startIndex + measuresToInsert.length) {
+      const refM = part.measures[part.measures.length - 1] ?? refMeasure;
+      const newMeasure = factory.measure(
+        Array.from({ length: refM?.voices.length ?? 1 }, () => factory.voice([factory.rest({ type: "whole", dots: 0 })]))
+      );
+      if (refM) {
+        newMeasure.clef = { ...refM.clef };
+        newMeasure.keySignature = { ...refM.keySignature };
+        newMeasure.timeSignature = { ...refM.timeSignature };
+      }
+      part.measures.push(newMeasure);
+      // Add matching measures to other parts
+      for (let pi = 0; pi < score.parts.length; pi++) {
+        if (pi === cursor.partIndex) continue;
+        const otherPart = score.parts[pi];
+        const otherRef = otherPart.measures[otherPart.measures.length - 1];
+        const otherMeasure = factory.measure(
+          Array.from({ length: otherRef?.voices.length ?? 1 }, () => factory.voice([factory.rest({ type: "whole", dots: 0 })]))
+        );
+        if (otherRef) {
+          otherMeasure.clef = { ...otherRef.clef };
+          otherMeasure.keySignature = { ...otherRef.keySignature };
+          otherMeasure.timeSignature = { ...otherRef.timeSignature };
+        }
+        otherPart.measures.push(otherMeasure);
+      }
+    }
     for (let i = 0; i < measuresToInsert.length; i++) {
       const targetIdx = startIndex + i;
-      if (targetIdx >= part.measures.length) break;
       part.measures[targetIdx].voices = measuresToInsert[i].voices;
       const pastedAnnotations = measuresToInsert[i].annotations;
       if (pastedAnnotations.length > 0) {
@@ -1411,8 +1495,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (ev.kind === "rest" || ev.kind === "slash") return ev;
       const arts = ev.articulations ?? [];
       const has = arts.some((a) => a.kind === kind);
-      const newArt: import("../model/note").Articulation = kind === "bend"
-        ? { kind: "bend", semitones: 2 }
+      const SEMITONE_ARTS = new Set(["bend", "pre-bend", "bend-release"]);
+      const newArt: import("../model/note").Articulation = SEMITONE_ARTS.has(kind)
+        ? { kind, semitones: 2 } as import("../model/note").Articulation
         : { kind } as import("../model/note").Articulation;
       const newArts = has ? arts.filter((a) => a.kind !== kind) : [...arts, newArt];
       return { ...ev, articulations: newArts.length > 0 ? newArts : undefined };
@@ -1532,10 +1617,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   changePitch(pitchClass: PitchClass) {
     const state = get();
+    const { cursor } = state.inputState;
+    const measure = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
+    const fifths = measure?.keySignature?.fifths ?? 0;
+    const acc = state.inputState.accidentalExplicit
+      ? state.inputState.accidental
+      : keyAccidental(pitchClass, fifths);
     const cmd = new ChangePitch(
       pitchClass,
       state.inputState.octave as Octave,
-      state.inputState.accidental
+      acc
     );
     const result = history.execute(cmd, {
       score: state.score,
@@ -1547,18 +1638,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
-  changeDuration(type: DurationType) {
-    const state = get();
-    const cmd = new ChangeDuration({ type, dots: state.inputState.duration.dots });
-    const result = history.execute(cmd, {
-      score: state.score,
-      inputState: state.inputState,
-    });
-    set({
-      score: result.score,
-      inputState: result.inputState,
-    });
-  },
 
   setVoice(n: number) {
     set((s) => {

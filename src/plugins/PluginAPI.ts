@@ -27,6 +27,8 @@ export interface NoteSelection {
 export interface PanelMenuItem {
   label: string;
   onClick: () => void;
+  /** When defined, item renders as a toggle with a checkmark */
+  checked?: boolean;
 }
 
 export interface PanelConfig {
@@ -34,7 +36,7 @@ export interface PanelConfig {
   location: "sidebar-left" | "sidebar-right" | "toolbar" | "bottom";
   component: () => React.ReactNode;
   defaultEnabled?: boolean;
-  menuItems?: PanelMenuItem[];
+  menuItems?: PanelMenuItem[] | (() => PanelMenuItem[]);
   /** When true, the panel fills remaining sidebar height instead of sizing to content */
   fill?: boolean;
 }
@@ -123,8 +125,9 @@ export interface PluginAPI {
   // Score mutation (goes through command system)
   applyScore(newScore: Score): void;
 
-  // Command registration
+  // Command registration & execution
   registerCommand(id: string, label: string, handler: () => void): void;
+  executeCommand(id: string): boolean;
 
   // Keyboard shortcut registration
   registerShortcut(keys: string, commandId: string): void;

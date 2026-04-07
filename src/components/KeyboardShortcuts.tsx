@@ -60,8 +60,7 @@ export function KeyboardShortcuts() {
   const deleteSelectedMeasures = useEditorStore((s) => s.deleteSelectedMeasures);
   const copySelection = useEditorStore((s) => s.copySelection);
   const pasteAtCursor = useEditorStore((s) => s.pasteAtCursor);
-  const clipboardMeasures = useEditorStore((s) => s.clipboardMeasures);
-  const clipboardEvents = useEditorStore((s) => s.clipboardEvents);
+
   const viewConfig = useEditorStore((s) => s.viewConfig);
   const insertTabNote = useEditorStore((s) => s.insertTabNote);
 
@@ -135,7 +134,7 @@ export function KeyboardShortcuts() {
       },
       "escape": () => { setSelection(null); setNoteSelection(null); useEditorStore.setState((s) => ({ inputState: { ...s.inputState, pendingPitch: null } })); },
       "copy": () => { if (selection || noteSelection) copySelection(); },
-      "paste": () => { if (clipboardMeasures || clipboardEvents) pasteAtCursor(); },
+      "paste": () => { pasteAtCursor(); },
       "cut": () => { if (selection) { copySelection(); deleteSelectedMeasures(); } else if (noteSelection) { copySelection(); deleteNoteSelection(); } },
 
       // Editing
@@ -316,7 +315,7 @@ export function KeyboardShortcuts() {
     moveCursor, changeOctave, nudgePitch, undo, redo, setVoice, insertMeasure, deleteMeasure,
     enterChordMode, enterLyricMode, textInputMode, isPlaying, play,
     pause, stopPlayback, toggleMetronome, toggleCountIn, moveCursorPart, toggleNotation, selection,
-    copySelection, pasteAtCursor, clipboardMeasures, clipboardEvents, deleteSelectedMeasures,
+    copySelection, pasteAtCursor, deleteSelectedMeasures,
     toggleArticulation, toggleStepEntry, toggleInsertMode, togglePitchBeforeDuration, toggleGraceNoteMode, toggleSlur, toggleCrossStaff, popover, setPopover,
     setSelection, setNoteSelection, extendSelection, extendNoteSelection,
     noteSelection, deleteNoteSelection, viewConfig, insertTabNote,

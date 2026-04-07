@@ -1,14 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import type { NubiumPlugin, PluginAPI } from "../PluginAPI";
 import { ALL_TUNINGS, STANDARD_TUNING, type Tuning } from "../../model/guitar";
 import type { Score } from "../../model";
 
-const NOTE_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
-const midiToNote = (midi: number) => `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
+const FRETTED_INSTRUMENTS = new Set(["guitar", "bass"]);
 
-const GUITAR_INSTRUMENTS = new Set(["guitar", "bass"]);
-
-function GuitarPanel({ api }: { api: PluginAPI }) {
+function FretboardPanel({ api }: { api: PluginAPI }) {
   const [score, setScore] = useState<Score>(api.getScore);
   const [partIndex, setPartIndex] = useState(() => api.getCursorPosition().partIndex);
 
@@ -24,19 +21,16 @@ function GuitarPanel({ api }: { api: PluginAPI }) {
   }, [api]);
 
   const part = score.parts[partIndex];
-  if (!part) return null;
-
-  if (!GUITAR_INSTRUMENTS.has(part.instrumentId)) {
+  if (!part || !FRETTED_INSTRUMENTS.has(part.instrumentId)) {
     return (
       <div className="p-3 text-xs text-muted-foreground">
-        Select a guitar or bass part to configure tuning and capo.
+        Select a fretted instrument part.
       </div>
     );
   }
 
   const currentTuning = part.tuning ?? STANDARD_TUNING;
   const capo = part.capo ?? 0;
-  const tuningDisplay = currentTuning.strings.map(midiToNote).reverse().join(" ");
   const matchedPreset = ALL_TUNINGS.find((t) =>
     t.strings.length === currentTuning.strings.length &&
     t.strings.every((s, i) => s === currentTuning.strings[i])
@@ -59,20 +53,16 @@ function GuitarPanel({ api }: { api: PluginAPI }) {
   };
 
   return (
-    <div className="p-3 space-y-4">
-      <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-        {part.name}
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-medium">Tuning</label>
+    <div className="p-2.5 space-y-3">
+      <div className="space-y-1">
+        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Tuning</label>
         <select
           value={matchedPreset?.name ?? "__custom"}
           onChange={(e) => {
             const preset = ALL_TUNINGS.find((t) => t.name === e.target.value);
             applyTuning(preset ?? undefined);
           }}
-          className="w-full h-7 text-[11px] rounded border border-input bg-background px-2"
+          className="w-full h-6 text-[11px] rounded border border-input bg-background px-1.5"
         >
           {ALL_TUNINGS.map((t) => (
             <option key={t.name} value={t.name}>{t.name}</option>
@@ -80,22 +70,18 @@ function GuitarPanel({ api }: { api: PluginAPI }) {
           {!matchedPreset && <option value="__custom">Custom</option>}
         </select>
       </div>
-
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-medium">Capo</label>
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Fret</span>
-          <input
-            type="text"
-            value={capo}
-            onChange={(e) => {
-              const v = parseInt(e.target.value);
-              if (!isNaN(v) && v >= 0 && v <= 12) applyCapo(v);
-              else if (e.target.value === "") applyCapo(0);
-            }}
-            className="w-10 h-7 text-center text-sm font-semibold rounded border border-input bg-background"
-          />
-        </div>
+      <div className="flex items-center gap-1.5">
+        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Capo</label>
+        <input
+          type="text"
+          value={capo}
+          onChange={(e) => {
+            const v = parseInt(e.target.value);
+            if (!isNaN(v) && v >= 0 && v <= 12) applyCapo(v);
+            else if (e.target.value === "") applyCapo(0);
+          }}
+          className="w-8 h-6 text-center text-[11px] font-semibold rounded border border-input bg-background"
+        />
       </div>
     </div>
   );
@@ -104,17 +90,17 @@ function GuitarPanel({ api }: { api: PluginAPI }) {
 let sharedApi: PluginAPI | null = null;
 
 export const GuitarPlugin: NubiumPlugin = {
-  id: "nubium.guitar",
-  name: "Guitar",
+  id: "nubium.fretboard",
+  name: "Fretboard",
   version: "1.0.0",
-  description: "Guitar tuning, capo, and string configuration",
+  description: "Tuning and capo settings for fretted instruments",
 
   activate(api: PluginAPI) {
     sharedApi = api;
-    api.registerPanel("guitar.panel", {
-      title: "Guitar",
+    api.registerPanel("fretboard.panel", {
+      title: "Fretboard",
       location: "sidebar-left",
-      component: () => sharedApi ? <GuitarPanel api={sharedApi} /> : null,
+      component: () => sharedApi ? <FretboardPanel api={sharedApi} /> : null,
       defaultEnabled: true,
     });
   },

@@ -3,10 +3,13 @@ import type { Duration } from "../model";
 
 export class ChangeDuration implements Command {
   description = "Change duration";
+  private previousSnapshot: EditorSnapshot | null = null;
 
   constructor(private duration: Duration) {}
 
   execute(state: EditorSnapshot): EditorSnapshot {
+    this.previousSnapshot = { score: structuredClone(state.score), inputState: structuredClone(state.inputState) };
+
     const score = structuredClone(state.score);
     const input = structuredClone(state.inputState);
     const { partIndex, measureIndex, voiceIndex, eventIndex } = input.cursor;
@@ -22,7 +25,8 @@ export class ChangeDuration implements Command {
     return { score, inputState: input };
   }
 
-  undo(state: EditorSnapshot): EditorSnapshot {
-    return state;
+  undo(_state: EditorSnapshot): EditorSnapshot {
+    if (!this.previousSnapshot) return _state;
+    return this.previousSnapshot;
   }
 }

@@ -117,6 +117,37 @@ function addArticulationModifier(tn: TabNote, art: Articulation): void {
       tn.addModifier(bend);
       break;
     }
+    case "pre-bend": {
+      const pbText = art.semitones === 2 ? "Full" : art.semitones === 1 ? "1/2" : `${art.semitones / 2}`;
+      const pb = new Bend([{ type: Bend.UP, text: pbText }]);
+      tn.addModifier(pb);
+      break;
+    }
+    case "bend-release": {
+      const brText = art.semitones === 2 ? "Full" : art.semitones === 1 ? "1/2" : `${art.semitones / 2}`;
+      const br = new Bend([
+        { type: Bend.UP, text: brText },
+        { type: Bend.DOWN, text: "" },
+      ]);
+      tn.addModifier(br);
+      break;
+    }
+    case "slide-in-below": {
+      tn.addModifier(new VFAnnotation("/").setVerticalJustification(VFAnnotation.VerticalJustify.BOTTOM));
+      break;
+    }
+    case "slide-in-above": {
+      tn.addModifier(new VFAnnotation("\\").setVerticalJustification(VFAnnotation.VerticalJustify.BOTTOM));
+      break;
+    }
+    case "slide-out-below": {
+      tn.addModifier(new VFAnnotation("\\").setVerticalJustification(VFAnnotation.VerticalJustify.BOTTOM));
+      break;
+    }
+    case "slide-out-above": {
+      tn.addModifier(new VFAnnotation("/").setVerticalJustification(VFAnnotation.VerticalJustify.BOTTOM));
+      break;
+    }
     case "vibrato": {
       const vib = new Vibrato();
       tn.addModifier(vib);

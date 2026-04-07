@@ -32,6 +32,8 @@ export { registerCoreEditor } from "./builtins/ScoreEditor";
 export { ClipboardPlugin } from "./builtins/Clipboard";
 export { MidiInputPlugin } from "./builtins/MidiInput";
 export { GuitarPlugin } from "./builtins/Guitar";
+export { TechniquesPlugin } from "./builtins/Techniques";
+export { GuitarProImportPlugin } from "./builtins/GuitarProImport";
 
 // Community plugin registry
 export {
