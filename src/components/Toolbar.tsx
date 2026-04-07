@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState, useRef } from "react";
+import React, { useMemo, useCallback, useState, useRef, useEffect } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -41,6 +41,47 @@ interface ToolbarProps {
   onOpen?: () => void;
   onSave?: () => void;
   toolbarPanels?: PanelRegistration[];
+}
+
+/** Scrollable container with fade edges when content overflows */
+function ScrollFade({ children, className }: { children: React.ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState<"none" | "left" | "right" | "both">("none");
+
+  const update = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    const canLeft = scrollLeft > 1;
+    const canRight = scrollLeft < scrollWidth - clientWidth - 1;
+    setFade(canLeft && canRight ? "both" : canLeft ? "left" : canRight ? "right" : "none");
+  }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", update); ro.disconnect(); };
+  }, [update]);
+
+  const maskImage =
+    fade === "both" ? "linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent)" :
+    fade === "left" ? "linear-gradient(to right, transparent, black 24px)" :
+    fade === "right" ? "linear-gradient(to right, black calc(100% - 24px), transparent)" :
+    undefined;
+
+  return (
+    <div
+      ref={ref}
+      className={cn("overflow-x-auto scrollbar-none min-w-0", className)}
+      style={{ maskImage, WebkitMaskImage: maskImage }}
+    >
+      {children}
+    </div>
+  );
 }
 
 /** A single sortable group in a toolbar row */
@@ -257,7 +298,7 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
           <div
             ref={primaryRowRef}
             className={cn(
-              "grid grid-cols-[1fr_auto_1fr] items-center gap-1 px-2 py-1 border-b bg-card shrink-0",
+              "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 px-2 py-1 border-b bg-card shrink-0",
               activeId && hoverRow === "primary" && "bg-accent/30",
             )}
           >
@@ -293,8 +334,8 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
               </div>
             </div>
 
-            {/* Center: draggable groups */}
-            <div className="flex items-center gap-1 justify-center">
+            {/* Center: draggable groups (scrolls horizontally with fade edges) */}
+            <ScrollFade className="flex items-center gap-1 justify-center">
               <SortableContext items={primary.visible.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
                 {primary.visible.map((group, i) => (
                   <React.Fragment key={group.id}>
@@ -303,7 +344,7 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
                   </React.Fragment>
                 ))}
               </SortableContext>
-            </div>
+            </ScrollFade>
 
             {/* Right: plugins + settings */}
             <div className="flex items-center gap-1 justify-end">
@@ -331,7 +372,7 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
           <div
             ref={secondaryRowRef}
             className={cn(
-              "grid grid-cols-[1fr_auto_1fr] items-center gap-1 px-2 py-1 border-b bg-card/50 shrink-0",
+              "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 px-2 py-1 border-b bg-card/50 shrink-0",
               activeId && hoverRow === "secondary" && "bg-accent/30",
             )}
           >
@@ -350,8 +391,8 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
               )}
             </div>
 
-            {/* Center: draggable groups */}
-            <div className="flex items-center gap-1 justify-center">
+            {/* Center: draggable groups (scrolls horizontally with fade edges) */}
+            <ScrollFade className="flex items-center gap-1 justify-center">
               <SortableContext items={secondary.visible.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
                 {secondary.visible.map((group, i) => (
                   <React.Fragment key={group.id}>
@@ -360,7 +401,7 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
                   </React.Fragment>
                 ))}
               </SortableContext>
-            </div>
+            </ScrollFade>
 
             {/* Right: sidebar toggle */}
             <div className="flex items-center gap-1 justify-end">

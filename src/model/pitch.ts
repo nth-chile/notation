@@ -71,6 +71,22 @@ export function midiToPitch(midi: number): Pitch {
   return { pitchClass: "C", accidental: "natural", octave: octave as Octave };
 }
 
+// Key signature: fifths value → set of pitch classes that are sharp/flat
+const SHARP_ORDER: PitchClass[] = ["F", "C", "G", "D", "A", "E", "B"];
+const FLAT_ORDER: PitchClass[] = ["B", "E", "A", "D", "G", "C", "F"];
+
+/** Get the default accidental for a pitch class in a given key signature (fifths). */
+export function keyAccidental(pitchClass: PitchClass, fifths: number): Accidental {
+  if (fifths > 0) {
+    const sharps = SHARP_ORDER.slice(0, fifths);
+    return sharps.includes(pitchClass) ? "sharp" : "natural";
+  } else if (fifths < 0) {
+    const flats = FLAT_ORDER.slice(0, -fifths);
+    return flats.includes(pitchClass) ? "flat" : "natural";
+  }
+  return "natural";
+}
+
 const PITCH_ORDER: PitchClass[] = ["C", "D", "E", "F", "G", "A", "B"];
 
 export function stepUp(p: Pitch): Pitch {

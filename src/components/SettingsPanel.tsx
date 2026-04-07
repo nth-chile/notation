@@ -249,15 +249,7 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
                   <option value="tenor">Tenor</option>
                 </select>
               </div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.autoBeam}
-                  onChange={(e) => update("autoBeam", e.target.checked)}
-                  className="accent-primary"
-                />
-                Auto Beam
-              </label>
+
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="checkbox"

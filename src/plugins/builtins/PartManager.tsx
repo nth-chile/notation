@@ -6,13 +6,24 @@ import { getPartDisplay } from "../../views/ViewMode";
 import { getSettings, subscribeSettings } from "../../settings";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { GripVertical, Music, Trash2 } from "lucide-react";
+import { GripVertical, Trash2 } from "lucide-react";
 
-/** Slash notehead icon — tilted diamond like a real slash notehead */
+/** Quarter note icon — filled oval notehead + stem */
+function QuarterNoteIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className}>
+      <ellipse cx="6.5" cy="11" rx="3.5" ry="2.5" fill="currentColor" transform="rotate(-20 6.5 11)" />
+      <rect x="8.3" y="2" width="1.6" height="8" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Slash quarter note icon — diagonal slash notehead + stem */
 function SlashNoteIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 16 16" fill="currentColor" className={className}>
-      <polygon points="8,1 14,6 8,15 2,10" />
+    <svg viewBox="0 0 16 16" className={className}>
+      <line x1="3" y1="14" x2="9" y2="7" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="7.7" y="2" width="1.6" height="6" fill="currentColor" />
     </svg>
   );
 }
@@ -129,9 +140,9 @@ function PartsPanel() {
                 {(() => {
                   const display = getPartDisplay(viewConfig, index);
                   const toggles = [
-                    { key: "standard" as const, show: displaySettings.showStandardToggle, active: display.standard, icon: <Music className="h-3 w-3" strokeWidth={2.5} />, title: "Standard" },
+                    { key: "standard" as const, show: displaySettings.showStandardToggle, active: display.standard, icon: <QuarterNoteIcon className="h-3.5 w-3.5" />, title: "Standard" },
                     { key: "tab" as const, show: displaySettings.showTabToggle, active: display.tab, icon: <span className="text-[8px] font-bold leading-none">TAB</span>, title: "Tab" },
-                    { key: "slash" as const, show: displaySettings.showSlashToggle, active: display.slash, icon: <SlashNoteIcon className="h-3 w-3" />, title: "Slash" },
+                    { key: "slash" as const, show: displaySettings.showSlashToggle, active: display.slash, icon: <SlashNoteIcon className="h-3.5 w-3.5" />, title: "Slash" },
                   ];
                   const visible = toggles.filter((t) => t.show);
                   if (visible.length <= 1) return null;

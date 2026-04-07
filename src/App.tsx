@@ -33,6 +33,8 @@ import {
   ClipboardPlugin,
   MidiInputPlugin,
   GuitarPlugin,
+  TechniquesPlugin,
+  GuitarProImportPlugin,
 } from "./plugins";
 import { setGlobalPluginManager } from "./plugins/PluginManager";
 import { isCommunityPluginsEnabled, loadAllInstalled } from "./plugins/CommunityRegistry";
@@ -101,6 +103,9 @@ export function App() {
     pm.registerAndActivate(ClipboardPlugin, false);
     pm.registerAndActivate(MidiInputPlugin, false);
     pm.registerAndActivate(GuitarPlugin, true);
+    pm.registerAndActivate(TechniquesPlugin, true);
+    // GuitarProImportPlugin disabled — needs real-world testing with .gp files before enabling
+    // pm.registerAndActivate(GuitarProImportPlugin, true);
 
     // Load installed community plugins
     if (isCommunityPluginsEnabled()) {

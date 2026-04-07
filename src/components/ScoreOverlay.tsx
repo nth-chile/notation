@@ -14,6 +14,7 @@ interface Props {
 export function ScoreOverlay({ width, height }: Props) {
   const score = useEditorStore((s) => s.score);
   const noteBoxes = useEditorStore((s) => s.noteBoxes);
+  const hitBoxes = useEditorStore((s) => s.hitBoxes);
   const annotationBoxes = useEditorStore((s) => s.annotationBoxes);
   const measurePositions = useEditorStore((s) => s.measurePositions);
   const titlePositions = useEditorStore((s) => s.titlePositions);
@@ -59,21 +60,21 @@ export function ScoreOverlay({ width, height }: Props) {
 
   const DRAG_THRESHOLD = 5; // pixels before a mousedown becomes a drag
 
-  /** Find the note box at (x, y), or null. */
+  /** Find the note box at (x, y), or null. Uses hitBoxes which includes all staves. */
   const hitTestNote = useCallback((x: number, y: number) => {
-    for (const [, nb] of noteBoxes) {
+    for (const nb of hitBoxes) {
       if (x >= nb.x && x <= nb.x + nb.width && y >= nb.y && y <= nb.y + nb.height) {
         return nb;
       }
     }
     return null;
-  }, [noteBoxes]);
+  }, [hitBoxes]);
 
   /** Find the nearest note to (x, y) within the same part/voice as the anchor. */
   const findNearestNote = useCallback((x: number, y: number, anchor: { partIndex: number; voiceIndex: number }) => {
     let best: NoteBox | null = null;
     let bestDist = Infinity;
-    for (const [, nb] of noteBoxes) {
+    for (const nb of hitBoxes) {
       if (nb.partIndex !== anchor.partIndex || nb.voiceIndex !== anchor.voiceIndex) continue;
       const cx = nb.headX + nb.headWidth / 2;
       const cy = nb.y + nb.height / 2;
@@ -81,7 +82,7 @@ export function ScoreOverlay({ width, height }: Props) {
       if (dist < bestDist) { bestDist = dist; best = nb; }
     }
     return best;
-  }, [noteBoxes]);
+  }, [hitBoxes]);
 
   const toCanvasCoords = useCallback((e: React.MouseEvent | MouseEvent) => {
     const el = overlayRef.current;

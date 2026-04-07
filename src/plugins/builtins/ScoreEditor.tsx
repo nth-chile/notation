@@ -150,6 +150,15 @@ function DurationPanel() {
       >
         {"\u2022"}{inputState.duration.dots > 0 ? inputState.duration.dots : ""}
       </TooltipButton>
+      <TooltipButton
+        variant="ghost"
+        size="icon"
+        onClick={() => useEditorStore.getState().insertRest()}
+        tooltip={`Rest (${hotkey("insert-rest")})`}
+        actionId="insert-rest"
+      >
+        <span style={{ fontFamily: "Bravura", fontSize: 18, lineHeight: 1 }}>{"\uE4E5"}</span>
+      </TooltipButton>
     </div>
   );
 }
@@ -200,6 +209,9 @@ export function registerCoreEditor(pm: PluginManager): void {
     "palm-mute", "harmonic", "dead-note", "let-ring",
     "down-stroke", "up-stroke",
     "fingerpick-p", "fingerpick-i", "fingerpick-m", "fingerpick-a",
+    "bend", "pre-bend", "bend-release",
+    "slide-up", "slide-down", "slide-in-below", "slide-in-above", "slide-out-below", "slide-out-above",
+    "hammer-on", "pull-off", "vibrato", "ghost-note", "tapping", "tremolo-picking",
   ] as const;
   for (const art of articulations) {
     pm.registerCoreCommand(`notation.articulation-${art}`, `Toggle ${art}`, () => {

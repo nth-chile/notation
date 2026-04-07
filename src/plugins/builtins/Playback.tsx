@@ -59,9 +59,15 @@ class SmplrPlayer implements NotePlayer {
   private instruments = new Map<string, Soundfont>();
   private ctx: AudioContext;
   private loading = new Map<string, Promise<Soundfont>>();
+  private masterGain: GainNode;
 
   constructor() {
     this.ctx = Tone.getContext().rawContext as AudioContext;
+    this.masterGain = this.ctx.createGain();
+    // MusyngKite SoundFont samples peak at ~-31dB. smplr's extraGain adds +14dB.
+    // We add another +16dB (6x) to bring output close to 0dB full scale.
+    this.masterGain.gain.value = 6.0;
+    this.masterGain.connect(this.ctx.destination);
   }
 
   async loadInstrument(name: string): Promise<Soundfont> {
@@ -72,7 +78,7 @@ class SmplrPlayer implements NotePlayer {
     const pending = this.loading.get(gmName);
     if (pending) return pending;
 
-    const sf = new Soundfont(this.ctx, { instrument: gmName as any });
+    const sf = new Soundfont(this.ctx, { instrument: gmName as any, destination: this.masterGain });
     this.instruments.set(gmName, sf);
     const loadPromise = sf.load.then(() => sf);
     this.loading.set(gmName, loadPromise);

@@ -7,6 +7,7 @@ import { isCrossStaff, type ArticulationKind } from "../model/note";
 import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
 import { durationToTicks as durationToTicksFn, measureCapacity as measureCapacityFn, voiceTicksUsed as voiceTicksUsedFn } from "../model/duration";
+import { keyAccidental } from "../model/pitch";
 import { getBeamGroups } from "./beaming";
 import { useEditorStore } from "../state/EditorState";
 
@@ -57,27 +58,13 @@ export interface MeasureRenderResult {
 }
 
 const ACC_VEX: Record<string, string> = {
+  natural: "n",
   sharp: "#",
   flat: "b",
   "double-sharp": "##",
   "double-flat": "bb",
 };
 
-// Key signature: fifths value → set of pitch classes that are sharp/flat
-const SHARP_ORDER = ["F", "C", "G", "D", "A", "E", "B"];
-const FLAT_ORDER = ["B", "E", "A", "D", "G", "C", "F"];
-
-/** Get the default accidental for a pitch class in a given key signature */
-function keyAccidental(pitchClass: string, fifths: number): import("../model/pitch").Accidental {
-  if (fifths > 0) {
-    const sharps = SHARP_ORDER.slice(0, fifths);
-    return sharps.includes(pitchClass) ? "sharp" : "natural";
-  } else if (fifths < 0) {
-    const flats = FLAT_ORDER.slice(0, -fifths);
-    return flats.includes(pitchClass) ? "flat" : "natural";
-  }
-  return "natural";
-}
 
 /**
  * Collect accidentals that were applied in a measure (non-key-signature accidentals).
@@ -107,7 +94,7 @@ function collectPrevMeasureAccidentals(measure: Measure): Set<string> {
   const altered = new Set<string>();
   for (const [key, acc] of lastSeen) {
     const pc = key.slice(0, -1);
-    if (acc !== keyAccidental(pc, fifths)) {
+    if (acc !== keyAccidental(pc as import("../model/pitch").PitchClass, fifths)) {
       altered.add(key);
     }
   }
@@ -177,6 +164,7 @@ function eventToStaveNote(
   prevAltered?: Set<string>,
   courtesyShown?: Set<string>,
   measureAltered?: Set<string>,
+  fifths: number = 0,
 ): StaveNote | null {
   switch (event.kind) {
     case "note": {
@@ -193,16 +181,18 @@ function eventToStaveNote(
       const acc = event.head.pitch.accidental;
       const { pitchClass: pc, octave: oct } = event.head.pitch;
       const pitchKey = `${pc}${oct}`;
-      if (acc !== "natural" && ACC_VEX[acc]) {
+      const keyDefault = keyAccidental(pc as import("../model/pitch").PitchClass, fifths);
+      if (acc !== keyDefault) {
+        // Accidental differs from key signature — show it
         sn.addModifier(new Accidental(ACC_VEX[acc]));
         measureAltered?.add(pitchKey);
-      } else if (acc === "natural" && measureAltered?.has(pitchKey)) {
-        // Same-measure cancellation: show ♮ on first occurrence only, then clear
-        sn.addModifier(new Accidental("n"));
+      } else if (acc === keyDefault && measureAltered?.has(pitchKey)) {
+        // Same-measure cancellation: show accidental to cancel a prior alteration
+        sn.addModifier(new Accidental(ACC_VEX[acc]));
         measureAltered?.delete(pitchKey);
-      } else if (acc === "natural" && prevAltered?.has(pitchKey) && !courtesyShown?.has(pitchKey)) {
-        // Cross-barline courtesy (♮) — only if pitch was still altered at end of prev measure
-        const ca = new Accidental("n");
+      } else if (acc === keyDefault && prevAltered?.has(pitchKey) && !courtesyShown?.has(pitchKey)) {
+        // Cross-barline courtesy — cancel prev measure's alteration
+        const ca = new Accidental(ACC_VEX[acc]);
         ca.setAsCautionary();
         sn.addModifier(ca);
         courtesyShown?.add(pitchKey);
@@ -228,14 +218,15 @@ function eventToStaveNote(
         const acc = h.pitch.accidental;
         const { pitchClass: pc, octave: oct } = h.pitch;
         const pitchKey = `${pc}${oct}`;
-        if (acc !== "natural" && ACC_VEX[acc]) {
+        const keyDefault = keyAccidental(pc as import("../model/pitch").PitchClass, fifths);
+        if (acc !== keyDefault) {
           sn.addModifier(new Accidental(ACC_VEX[acc]), idx);
           measureAltered?.add(pitchKey);
-        } else if (acc === "natural" && measureAltered?.has(pitchKey)) {
-          sn.addModifier(new Accidental("n"), idx);
+        } else if (acc === keyDefault && measureAltered?.has(pitchKey)) {
+          sn.addModifier(new Accidental(ACC_VEX[acc]), idx);
           measureAltered?.delete(pitchKey);
-        } else if (acc === "natural" && prevAltered?.has(pitchKey) && !courtesyShown?.has(pitchKey)) {
-          const ca = new Accidental("n");
+        } else if (acc === keyDefault && prevAltered?.has(pitchKey) && !courtesyShown?.has(pitchKey)) {
+          const ca = new Accidental(ACC_VEX[acc]);
           ca.setAsCautionary();
           sn.addModifier(ca, idx);
           courtesyShown?.add(pitchKey);
@@ -561,7 +552,7 @@ export function renderMeasure(
       const useClef = (crossStaffClef && isCrossStaff(event, staveIndex))
         ? crossStaffClef
         : CLEF_VEX[m.clef.type];
-      const sn = eventToStaveNote(event, stemDir, useClef, prevAltered, courtesyShown, measureAltered);
+      const sn = eventToStaveNote(event, stemDir, useClef, prevAltered, courtesyShown, measureAltered, m.keySignature.fifths);
       if (sn) {
         if (pendingGraceNotes.length > 0) {
           const graceGroup = new GraceNoteGroup(pendingGraceNotes, true);

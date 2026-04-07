@@ -86,6 +86,7 @@ export function LicenseNag({ open, onClose }: LicenseNagProps) {
             >
               Purchase License
             </Button>
+            <p className="text-xs text-muted-foreground text-center">One-time payment, lifetime license.</p>
             <div className="flex gap-2">
               <Button
                 variant="outline"

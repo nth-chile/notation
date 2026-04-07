@@ -18,8 +18,14 @@ export type Articulation =
   | { kind: "mordent" }
   | { kind: "turn" }
   | { kind: "bend"; semitones: number }
+  | { kind: "pre-bend"; semitones: number }
+  | { kind: "bend-release"; semitones: number }
   | { kind: "slide-up" }
   | { kind: "slide-down" }
+  | { kind: "slide-in-below" }
+  | { kind: "slide-in-above" }
+  | { kind: "slide-out-below" }
+  | { kind: "slide-out-above" }
   | { kind: "hammer-on" }
   | { kind: "pull-off" }
   | { kind: "vibrato" }

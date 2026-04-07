@@ -40,7 +40,9 @@ function noteHeadToJson(h: NoteHead): Record<string, unknown> {
 }
 
 function articulationToJson(art: Articulation): string {
-  if (art.kind === "bend") return `bend:${art.semitones}`;
+  if (art.kind === "bend" || art.kind === "pre-bend" || art.kind === "bend-release") {
+    return `${art.kind}:${art.semitones}`;
+  }
   return art.kind;
 }
 
@@ -230,8 +232,13 @@ function parseDurationStr(s: string): Duration {
 
 function parseArticulations(arr: string[]): Articulation[] {
   return arr.map((s) => {
-    if (s.startsWith("bend:")) {
-      return { kind: "bend" as const, semitones: parseInt(s.split(":")[1]) };
+    const colonIdx = s.indexOf(":");
+    if (colonIdx !== -1) {
+      const kind = s.slice(0, colonIdx);
+      const semitones = parseInt(s.slice(colonIdx + 1));
+      if (kind === "bend" || kind === "pre-bend" || kind === "bend-release") {
+        return { kind, semitones } as Articulation;
+      }
     }
     return { kind: s } as Articulation;
   });

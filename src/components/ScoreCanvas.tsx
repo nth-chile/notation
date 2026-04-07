@@ -145,7 +145,7 @@ export function ScoreCanvas() {
       rawCtx.restore();
     }
 
-    setNoteBoxes(result.noteBoxes);
+    setNoteBoxes(result.noteBoxes, result.hitBoxes);
     setAnnotationBoxes(result.annotationBoxes);
     setMeasurePositions(result.measurePositions);
   }, [score, inputState.cursor, inputState.pendingPitch, inputState.tabString, inputState.tabFretBuffer, playbackTick, viewConfig, containerWidth, selection, noteSelection, editingTitle, editingComposer, hiddenParts, displaySettings, setNoteBoxes, setAnnotationBoxes, setMeasurePositions]);

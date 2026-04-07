@@ -240,6 +240,7 @@ export class PluginManager {
           entry.commands.push(cmd);
         }
       },
+      executeCommand: (id: string) => this.executeCommand(id),
       registerShortcut: (keys: string, commandId: string) => {
         this.shortcutRegistry.set(keys, commandId);
         if (entry) {
