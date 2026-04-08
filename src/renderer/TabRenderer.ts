@@ -1,4 +1,4 @@
-import { TabStave, TabNote, GhostNote, Formatter, Voice, Bend, Vibrato, TabSlide, TabTie, Annotation as VFAnnotation } from "vexflow";
+import { TabStave, TabNote, GhostNote, Formatter, Voice, Bend, Vibrato, TabSlide, TabTie, Annotation as VFAnnotation, Element } from "vexflow";
 import type { Measure, NoteEvent, NoteEventId } from "../model";
 import type { Articulation } from "../model/note";
 import { pitchToTab, STANDARD_TUNING, type Tuning } from "../model/guitar";
@@ -6,15 +6,14 @@ import { durationToTicks as durationToTicksFn } from "../model/duration";
 import type { RenderContext, NoteBox } from "./vexBridge";
 import { TAB_STAFF_HEIGHT } from "./SystemLayout";
 
-// Monkey-patch TabNote.tabToElement to use sans-serif for fret numbers
-const origTabToElement = TabNote.tabToElement.bind(TabNote);
+// Monkey-patch TabNote.tabToElement to use sans-serif for all frets.
+// VexFlow renders "X" as a double-sharp glyph (accidentalDoubleSharp) which looks wrong.
+// Override to render "X" as plain text in the same font as fret numbers.
 TabNote.tabToElement = (fret: string) => {
-  const el = origTabToElement(fret);
-  // Override serif font for numeric frets
-  // "X" dead notes use a music glyph — setting Arial breaks it, so skip
-  if (fret.toUpperCase() !== "X") {
-    el.setFont("Arial, sans-serif", el.fontInfo?.size, el.fontInfo?.weight);
-  }
+  const el = new Element("TabNote.text");
+  el.setText(fret.toUpperCase() === "X" ? "X" : fret);
+  el.setFont("Arial, sans-serif", el.fontInfo?.size, el.fontInfo?.weight);
+  el.setYShift(el.getHeight() / 2);
   return el;
 };
 
