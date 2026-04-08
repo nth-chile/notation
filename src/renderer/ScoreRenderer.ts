@@ -117,12 +117,6 @@ function getTabParts(viewConfig?: ViewConfig): Set<number> | undefined {
   return tabParts.size > 0 ? tabParts : undefined;
 }
 
-/** Check if a part shows standard notation (standard or slash) */
-function showsStandard(viewConfig: ViewConfig | undefined, partIndex: number): boolean {
-  if (!viewConfig) return true;
-  const display = getPartDisplay(viewConfig, partIndex);
-  return display.standard || display.slash;
-}
 
 function titleHeight(score: Score): number {
   const state = useEditorStore.getState();
@@ -569,7 +563,9 @@ export function renderScore(
         const needsBarline = filteredScore.parts.length > 1 || lastStaveIdx > 0;
         const lastIsTab = viewConfig ? partHasTab(lastPartIndex, viewConfig) && lastStaveIdx === partStandardStaveCount(filteredScore, lastPartIndex, viewConfig) : false;
         if (needsBarline && firstPartStaves.length > 0 && lastPartStaves.length > 0) {
-          const topY = firstPartStaves[0].y;
+          // VexFlow stave headroom: 4 line-spacings (40px) above the top staff line
+          const STAVE_HEADROOM = 40;
+          const topY = firstPartStaves[0].y + STAVE_HEADROOM;
           const bottomY = lastPartStaves[0].y + (lastIsTab ? TAB_STAFF_HEIGHT : config.staffHeight);
           const barlineX = firstPartStaves[0].x;
 
@@ -670,10 +666,16 @@ function drawCursor(
     }
   }
 
-  // Tab staves have VexFlow headroom (4 line-spacings = 52px) above the first line
-  const tabOffset = mp.isTab ? 4 * 13 : 0;
-  const staffTop = mp.y + tabOffset;
-  const staffBottom = staffTop + config.staffHeight;
+  // VexFlow staves have headroom above the top staff line
+  // Standard: 4 * 10px = 40px, Tab: 4 * 13px = 52px
+  // Staff lines: standard = 4 gaps * 10px = 40px, tab = 5 gaps * 13px = 65px
+  const STAVE_HEADROOM = 40;
+  const TAB_HEADROOM = 52;
+  const headroom = mp.isTab ? TAB_HEADROOM : STAVE_HEADROOM;
+  const lineSpan = mp.isTab ? 65 : 40; // distance from top line to bottom line
+  const CURSOR_OVERSHOOT = 20;
+  const staffTop = mp.y + headroom - CURSOR_OVERSHOOT;
+  const staffBottom = mp.y + headroom + lineSpan;
 
   rawCtx.save();
 
@@ -858,10 +860,17 @@ function drawPlaybackCursor(
 
   const { measureIndex: targetMeasureIndex, tickInMeasure } = getMeasureIndexForTick(playbackTick);
 
+  // Find the first visible stave for part 0 at this measure (could be standard, slash, or tab)
   const mp = measurePositions.find(
-    (p) => p.partIndex === 0 && p.measureIndex === targetMeasureIndex && p.staveIndex === 0
+    (p) => p.partIndex === 0 && p.measureIndex === targetMeasureIndex
   );
   if (!mp) return;
+
+  // Find the last stave for this part/measure to span the full height
+  const partStaves = measurePositions.filter(
+    (p) => p.partIndex === 0 && p.measureIndex === targetMeasureIndex
+  );
+  const lastStave = partStaves[partStaves.length - 1];
 
   // Smoothly interpolate between note positions
   const measureNotes = Array.from(noteBoxes.values())
@@ -919,9 +928,15 @@ function drawPlaybackCursor(
     rawCtx.lineWidth = 3;
     rawCtx.setLineDash([]);
     rawCtx.globalAlpha = 0.7;
+    // VexFlow stave headroom: 4 line-spacings (40px) above the top staff line
+    const STAVE_HEADROOM = 40;
+    const cursorTop = mp.y + STAVE_HEADROOM;
+    const cursorBottom = lastStave
+      ? lastStave.y + lastStave.height
+      : mp.y + mp.height;
     rawCtx.beginPath();
-    rawCtx.moveTo(cursorX, mp.y);
-    rawCtx.lineTo(cursorX, mp.y + config.staffHeight);
+    rawCtx.moveTo(cursorX, cursorTop);
+    rawCtx.lineTo(cursorX, cursorBottom);
     rawCtx.stroke();
     rawCtx.restore();
   }
