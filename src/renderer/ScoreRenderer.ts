@@ -585,7 +585,7 @@ export function renderScore(
 
   // Draw cursor
   if (cursor) {
-    drawCursor(ctx, canvas, score, cursor, measurePositions, config, allNoteBoxes, pendingPitch, viewConfig);
+    drawCursor(ctx, canvas, score, cursor, measurePositions, config, allNoteBoxes, allHitBoxes, pendingPitch, viewConfig);
   }
 
   // Draw playback cursor
@@ -608,6 +608,7 @@ function drawCursor(
   measurePositions: ScoreRenderResult["measurePositions"],
   config: LayoutConfig,
   noteBoxes?: Map<NoteEventId, NoteBox>,
+  hitBoxes?: NoteBox[],
   pendingPitch?: { pitchClass: import("../model").PitchClass; octave: import("../model").Octave; accidental: import("../model").Accidental } | null,
   viewConfig?: ViewConfig,
 ): void {
@@ -636,13 +637,21 @@ function drawCursor(
   }
   const cursorColor = VOICE_COLORS[localVoiceIdx] ?? VOICE_COLORS[0];
 
-  // Try to find the actual noteBox at the cursor position
+  // Try to find the actual noteBox at the cursor position, preferring the stave the cursor is on
   let targetBox: NoteBox | undefined;
-  if (noteBoxes) {
+  {
     const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
     if (voice && cursor.eventIndex < voice.events.length) {
       const eventId = voice.events[cursor.eventIndex].id;
-      targetBox = noteBoxes.get(eventId);
+      const staveIdx = cursor.staveIndex ?? 0;
+      // First try hitBoxes for a stave-specific match
+      if (hitBoxes) {
+        targetBox = hitBoxes.find((nb) => nb.id === eventId && nb.staveIndex === staveIdx);
+      }
+      // Fall back to the noteBoxes map (first stave)
+      if (!targetBox && noteBoxes) {
+        targetBox = noteBoxes.get(eventId);
+      }
     }
   }
 
@@ -655,9 +664,11 @@ function drawCursor(
     const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
     const eventCount = voice?.events.length ?? 0;
     cursorX = mp.noteStartX + 10;
-    if (noteBoxes && voice) {
+    if (voice) {
+      const staveIdx = cursor.staveIndex ?? 0;
       for (let i = eventCount - 1; i >= 0; i--) {
-        const nb = noteBoxes.get(voice.events[i].id);
+        const eid = voice.events[i].id;
+        const nb = hitBoxes?.find((b) => b.id === eid && b.staveIndex === staveIdx) ?? noteBoxes?.get(eid);
         if (nb) {
           cursorX = nb.x + nb.width + 10;
           break;
