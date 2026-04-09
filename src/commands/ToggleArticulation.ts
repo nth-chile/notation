@@ -97,19 +97,17 @@ export class ToggleArticulation implements Command {
       const prevEvent = eventIndex > 0 ? voice.events[eventIndex - 1] : undefined;
       const nextEvent = eventIndex < voice.events.length - 1 ? voice.events[eventIndex + 1] : undefined;
 
-      const stripArts = (ev: typeof event, kinds: Set<string>) => {
-        if (!ev || ev.kind === "rest" || ev.kind === "slash" || !ev.articulations) return;
+      const stripArts = (ev: NoteEvent | undefined, kinds: Set<string>) => {
+        if (!ev || !("articulations" in ev) || !ev.articulations) return;
         ev.articulations = ev.articulations.filter((a) => !kinds.has(a.kind));
         if (ev.articulations.length === 0) ev.articulations = undefined;
       };
 
       if (SLIDE_CONNECTIONS.has(this.kind)) {
-        // Adding slide-up/down: clear slide-in from next, slide-out from prev
         stripArts(nextEvent, SLIDE_INS);
         stripArts(prevEvent, SLIDE_OUTS);
       }
       if (SLIDE_INS.has(this.kind)) {
-        // Adding slide-in: clear slide-up/down from previous note
         stripArts(prevEvent, SLIDE_CONNECTIONS);
       }
       // Hammer-on/pull-off: block if next note is on a different string

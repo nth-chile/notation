@@ -4,6 +4,7 @@ import type { Articulation } from "../model/note";
 import { pitchToTab, STANDARD_TUNING, type Tuning } from "../model/guitar";
 import { durationToTicks as durationToTicksFn } from "../model/duration";
 import type { RenderContext, NoteBox } from "./vexBridge";
+import { applyBarline, applyStaveDecorations, drawStaveAnnotations } from "./vexBridge";
 import { TAB_STAFF_HEIGHT } from "./SystemLayout";
 
 // Monkey-patch TabNote.tabToElement to use sans-serif for all frets.
@@ -23,6 +24,7 @@ export interface TabMeasureRenderResult {
   staveX: number;
   width: number;
   vexStave?: import("vexflow").Stave;
+  tabNoteMap?: Map<import("../model").NoteEventId, TabNote>;
 }
 
 const DUR_VEX: Record<string, string> = {
@@ -293,17 +295,22 @@ export function renderTabMeasure(
   tuning: Tuning = STANDARD_TUNING,
   partIndex = 0,
   measureIndex = 0,
-  capo = 0
+  capo = 0,
+  isTopStave = false
 ): TabMeasureRenderResult {
   const stave = new TabStave(x, y, width);
   if (showClef) {
     stave.addClef("tab");
   }
+
+  // Barlines always show (structural); volta/segno only on topmost stave
+  applyBarline(stave, m.barlineEnd);
+  if (isTopStave) applyStaveDecorations(stave, m);
+
   // Show capo indicator on first measure
   if (capo > 0 && showClef) {
     stave.setContext(ctx.context);
     stave.draw();
-    // Draw capo text above the stave
     const rawCtx = ctx.context as unknown as { fillText(text: string, x: number, y: number): void; font: string };
     const prevFont = rawCtx.font;
     rawCtx.font = "italic 11px serif";
@@ -312,6 +319,9 @@ export function renderTabMeasure(
   } else {
     stave.setContext(ctx.context).draw();
   }
+
+  // Draw coda, navigation text, tempo, rehearsal marks above stave
+  if (isTopStave) drawStaveAnnotations(ctx, stave, m, x, y, width);
 
   const noteBoxes: NoteBox[] = [];
   const allTabNotes: (TabNote | GhostNote)[] = [];
@@ -357,6 +367,31 @@ export function renderTabMeasure(
     // Draw above-staff text annotations and slide-in/out lines
     drawTabAnnotations(ctx, matchedEvents, allTabNotes, stave);
 
+    // Render tied notes on tab staff
+    for (let i = 0; i < matchedEvents.length - 1; i++) {
+      const ev = matchedEvents[i];
+      if (ev.kind === "note" && ev.head.tied) {
+        const tn1 = allTabNotes[i];
+        const tn2 = allTabNotes[i + 1];
+        if (tn1 instanceof TabNote && tn2 instanceof TabNote) {
+          try {
+            new TabTie({ firstNote: tn1, lastNote: tn2 }).setContext(ctx.context).draw();
+          } catch { /* skip if VexFlow rejects */ }
+        }
+      } else if (ev.kind === "chord") {
+        const tiedIndices = ev.heads.map((h, idx) => h.tied ? idx : -1).filter(idx => idx >= 0);
+        if (tiedIndices.length > 0) {
+          const tn1 = allTabNotes[i];
+          const tn2 = allTabNotes[i + 1];
+          if (tn1 instanceof TabNote && tn2 instanceof TabNote) {
+            try {
+              new TabTie({ firstNote: tn1, lastNote: tn2 }).setContext(ctx.context).draw();
+            } catch { /* skip if VexFlow rejects */ }
+          }
+        }
+      }
+    }
+
     // Collect bounding boxes (skip GhostNotes — they have no visual)
     // VexFlow TabNote.getBoundingBox() returns y=0/h=0, so use stave position instead
     allTabNotes.forEach((tn, idx) => {
@@ -379,9 +414,36 @@ export function renderTabMeasure(
         eventIndex: idx,
       });
     });
+
+    // Render chord symbols above tab stave when it's the topmost stave
+    if (isTopStave) {
+      const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+      const chordAnns = m.annotations.filter((a): a is import("../model/annotations").ChordSymbol => a.kind === "chord-symbol");
+      if (chordAnns.length > 0 && rawCtx.save) {
+        rawCtx.save();
+        rawCtx.font = "bold 14px sans-serif";
+        rawCtx.fillStyle = "#000";
+        const chordY = y - 4;
+        const renderedIds = new Set<string>();
+        for (const ann of chordAnns) {
+          if (ann.noteEventId && renderedIds.has(ann.noteEventId)) continue;
+          const box = ann.noteEventId ? noteBoxes.find((nb) => nb.id === ann.noteEventId) : undefined;
+          const chordX = box ? box.x : x + 4;
+          rawCtx.fillText(ann.text, chordX, chordY);
+          if (ann.noteEventId) renderedIds.add(ann.noteEventId);
+        }
+        rawCtx.restore();
+      }
+    }
   }
 
-  return { noteBoxes, staveY: y, staveX: x, width, vexStave: stave };
+  // Build tab note map for cross-measure tie rendering
+  const tabNoteMap = new Map<NoteEventId, TabNote>();
+  allTabNotes.forEach((tn, idx) => {
+    if (tn instanceof TabNote) tabNoteMap.set(eventIds[idx], tn);
+  });
+
+  return { noteBoxes, staveY: y, staveX: x, width, vexStave: stave, tabNoteMap };
 }
 
 /**

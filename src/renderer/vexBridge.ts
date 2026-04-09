@@ -319,7 +319,111 @@ function voiceStemDirection(voiceIndex: number, multiVoice: boolean): "up" | "do
   return voiceIndex % 2 === 0 ? "up" : "down";
 }
 
-function applyBarline(stave: Stave, barlineType: BarlineType): void {
+/**
+ * Apply barline, volta, segno, coda, navigation text, tempo, and rehearsal marks to a stave.
+ * Call applyStaveDecorations() BEFORE stave.draw() for volta/segno modifiers,
+ * then drawStaveAnnotations() AFTER stave.draw() for text rendering.
+ */
+export function applyStaveDecorations(stave: Stave, m: Measure): void {
+  if (m.navigation?.volta) {
+    const volta = m.navigation.volta;
+    const label = volta.label ?? volta.endings.join(", ") + ".";
+    try { stave.setVoltaType(VexVolta.type.BEGIN, label, 25); } catch { /* skip */ }
+  }
+
+  if (m.navigation?.segno) {
+    try { stave.addModifier(new Repetition(Repetition.type.SEGNO_LEFT, stave.getX() - 15, 0)); } catch { /* skip */ }
+  }
+}
+
+/**
+ * Draw above-stave annotations: coda, navigation text, tempo, rehearsal marks.
+ * Call AFTER stave.draw().
+ */
+export function drawStaveAnnotations(
+  ctx: RenderContext,
+  stave: Stave,
+  m: Measure,
+  x: number,
+  y: number,
+  width: number
+): void {
+  const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+  if (!rawCtx.save) return;
+
+  // Coda symbol
+  if (m.navigation?.coda) {
+    rawCtx.save();
+    rawCtx.font = "28px Bravura, Petaluma, serif";
+    rawCtx.fillStyle = "#000";
+    rawCtx.fillText("\uE048", x - 10, y - 28);
+    rawCtx.restore();
+  }
+
+  let aboveY = y - 6;
+
+  if (m.navigation?.volta) aboveY -= 22;
+  if (m.navigation?.segno || m.navigation?.coda) aboveY -= 35;
+
+  // Navigation text (Fine, D.S., D.C., To Coda)
+  if (m.navigation) {
+    const nav = m.navigation;
+    const textItems: string[] = [];
+    if (nav.fine) textItems.push("Fine");
+    if (nav.toCoda) textItems.push("To Coda");
+    if (nav.dsText) textItems.push(nav.dsText);
+    if (nav.dcText) textItems.push(nav.dcText);
+    if (textItems.length > 0) {
+      rawCtx.save();
+      rawCtx.font = "italic bold 11px serif";
+      rawCtx.fillStyle = "#000";
+      let navY = aboveY;
+      for (const text of textItems) {
+        navY -= 14;
+        const tw = rawCtx.measureText(text).width;
+        rawCtx.fillText(text, x + width - tw - 8, navY + 12);
+      }
+      rawCtx.restore();
+      if (navY < aboveY) aboveY = navY;
+    }
+  }
+
+  // Tempo mark
+  const tempoAnn = m.annotations.find((a) => a.kind === "tempo-mark") as import("../model/annotations").TempoMark | undefined;
+  if (tempoAnn) {
+    rawCtx.save();
+    rawCtx.font = "bold 12px serif";
+    rawCtx.fillStyle = "#000";
+    const tempoText = tempoAnn.text
+      ? `${tempoAnn.text} (\u2669 = ${tempoAnn.bpm})`
+      : `\u2669 = ${tempoAnn.bpm}`;
+    aboveY -= 22;
+    rawCtx.fillText(tempoText, stave.getNoteStartX() + 10, aboveY + 14);
+    rawCtx.restore();
+  }
+
+  // Rehearsal marks — boxed text
+  for (const ann of m.annotations) {
+    if (ann.kind !== "rehearsal-mark") continue;
+    rawCtx.save();
+    rawCtx.font = "bold 20px sans-serif";
+    const tw = rawCtx.measureText(ann.text).width;
+    const pad = 6;
+    const boxSize = Math.max(tw + pad * 2, 20 + pad * 2);
+    aboveY -= boxSize + 2;
+    rawCtx.strokeStyle = "#000";
+    rawCtx.lineWidth = 2;
+    rawCtx.beginPath();
+    const rehX = stave.getNoteStartX() + 10;
+    rawCtx.rect(rehX - pad, aboveY, boxSize, boxSize);
+    rawCtx.stroke();
+    rawCtx.fillStyle = "#000";
+    rawCtx.fillText(ann.text, rehX + (boxSize - pad * 2 - tw) / 2, aboveY + boxSize / 2 + 7);
+    rawCtx.restore();
+  }
+}
+
+export function applyBarline(stave: Stave, barlineType: BarlineType): void {
   switch (barlineType) {
     case "double":
       stave.setEndBarType(Barline.type.DOUBLE);
