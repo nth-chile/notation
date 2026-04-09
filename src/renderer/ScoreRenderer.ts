@@ -1,6 +1,6 @@
 import type { Score, NoteEventId } from "../model";
 import { TICKS_PER_QUARTER, durationToTicks } from "../model/duration";
-import { StaveTie, type StaveNote } from "vexflow";
+import { StaveTie, TabTie, type StaveNote } from "vexflow";
 import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, renderBrace, clearCanvas, createVexStave, type RenderContext, type NoteBox, type AnnotationBox, type MeasureRenderResult } from "./vexBridge";
 import { getMeasureIndexForTick } from "../playback/TonePlayback";
 import { renderTabMeasure, type TabMeasureRenderResult } from "./TabRenderer";
@@ -210,6 +210,7 @@ export function renderScore(
   const allNoteBoxes = new Map<NoteEventId, NoteBox>();
   const allHitBoxes: NoteBox[] = []; // all note boxes for hit testing (includes duplicates across staves)
   const allStaveNotes = new Map<NoteEventId, StaveNote>();
+  const allTabNotes = new Map<NoteEventId, import("vexflow").TabNote>();
   const allAnnotationBoxes: AnnotationBox[] = [];
   const measurePositions: ScoreRenderResult["measurePositions"] = [];
 
@@ -407,7 +408,8 @@ export function renderScore(
               part.tuning,
               originalPi,
               mi,
-              part.capo ?? 0
+              part.capo ?? 0,
+              standardStaves === 0 && slashStaveIdx === -1
             );
           } else if (si === slashStaveIdx) {
             // Slash stave: render rhythm slashes on a standard staff
@@ -416,7 +418,7 @@ export function renderScore(
             result = renderSlashMeasure(
               ctx, measureToRender, layout.x, layout.y, layout.width,
               isFirstInLine, timeSigChanged, keySigChanged,
-              { partIndex: originalPi, measureIndex: mi, prevMeasure },
+              { partIndex: originalPi, measureIndex: mi, prevMeasure, isTopStave: standardStaves === 0 },
             );
           } else {
             const prevMeasure = mi > 0 ? part.measures[mi - 1] : undefined;
@@ -478,6 +480,11 @@ export function renderScore(
           if ('staveNoteMap' in result) {
             for (const [id, sn] of (result as { staveNoteMap: Map<NoteEventId, StaveNote> }).staveNoteMap) {
               allStaveNotes.set(id, sn);
+            }
+          }
+          if ('tabNoteMap' in result && result.tabNoteMap) {
+            for (const [id, tn] of result.tabNoteMap) {
+              allTabNotes.set(id, tn);
             }
           }
           if ('annotationBoxes' in result) {
@@ -577,6 +584,9 @@ export function renderScore(
 
   // Draw cross-measure slurs and ties using VexFlow's partial StaveTie
   drawCrossSystemSlursAndTies(ctx, filteredScore, allNoteBoxes, allStaveNotes, measurePositions, systems);
+
+  // Draw cross-measure ties on tab staves
+  drawCrossMeasureTabTies(ctx, filteredScore, allTabNotes, systems);
 
   // Draw selection highlight
   if (selection) {
@@ -1053,6 +1063,66 @@ function filterAnnotations(
   allowedKinds: AnnotationFilter[]
 ): Annotation[] {
   return annotations.filter((a) => allowedKinds.includes(a.kind as AnnotationFilter));
+}
+
+/**
+ * Draw cross-measure ties on tab staves as manual arcs using noteBox positions.
+ * VexFlow TabTie can't handle cross-system ties, so we draw bezier curves manually.
+ */
+function drawCrossMeasureTabTies(
+  ctx: RenderContext,
+  score: Score,
+  tabNotes: Map<NoteEventId, import("vexflow").TabNote>,
+  systems: SystemLine[],
+): void {
+
+  function systemForMeasure(mi: number): SystemLine | undefined {
+    return systems.find((s) => mi >= s.startMeasure && mi < s.endMeasure);
+  }
+
+  function drawTabTie(firstNote: import("vexflow").TabNote | null, lastNote: import("vexflow").TabNote | null) {
+    try {
+      new TabTie({
+        firstNote: firstNote ?? undefined,
+        lastNote: lastNote ?? undefined,
+      }).setContext(ctx.context).draw();
+    } catch { /* skip */ }
+  }
+
+  for (const part of score.parts) {
+    for (let mi = 0; mi < part.measures.length - 1; mi++) {
+      const measure = part.measures[mi];
+      const nextMeasure = part.measures[mi + 1];
+      for (let vi = 0; vi < measure.voices.length; vi++) {
+        const voice = measure.voices[vi];
+        const lastEvent = voice.events[voice.events.length - 1];
+        if (!lastEvent) continue;
+        const nextVoice = nextMeasure.voices[vi];
+        if (!nextVoice || nextVoice.events.length === 0) continue;
+        const nextEvent = nextVoice.events[0];
+
+        const hasTie = (lastEvent.kind === "note" && lastEvent.head.tied) ||
+          (lastEvent.kind === "chord" && lastEvent.heads.some((h) => h.tied));
+        if (!hasTie) continue;
+
+        const tn1 = tabNotes.get(lastEvent.id) ?? null;
+        const tn2 = tabNotes.get(nextEvent.id) ?? null;
+        if (!tn1 && !tn2) continue;
+
+        const startSys = systemForMeasure(mi);
+        const endSys = systemForMeasure(mi + 1);
+        if (!startSys || !endSys) continue;
+
+        if (startSys.lineIndex === endSys.lineIndex) {
+          drawTabTie(tn1, tn2);
+        } else {
+          // Cross-system: two partial ties
+          if (tn1) drawTabTie(tn1, null);
+          if (tn2) drawTabTie(null, tn2);
+        }
+      }
+    }
+  }
 }
 
 /**

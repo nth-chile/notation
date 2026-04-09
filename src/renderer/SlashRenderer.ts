@@ -3,6 +3,7 @@ import type { Measure, NoteEvent, NoteEventId } from "../model";
 import { durationToTicks as durationToTicksFn, measureCapacity as measureCapacityFn } from "../model/duration";
 import { getBeamGroups } from "./beaming";
 import type { RenderContext, NoteBox, MeasureRenderResult, AnnotationBox } from "./vexBridge";
+import { applyBarline, applyStaveDecorations, drawStaveAnnotations } from "./vexBridge";
 
 const DUR_VEX: Record<string, string> = {
   whole: "w",
@@ -32,6 +33,7 @@ export function renderSlashMeasure(
     partIndex?: number;
     measureIndex?: number;
     prevMeasure?: Measure;
+    isTopStave?: boolean;
   } = {}
 ): MeasureRenderResult {
   const partIndex = options.partIndex ?? 0;
@@ -50,7 +52,15 @@ export function renderSlashMeasure(
     const keySig = keyMap[m.keySignature.fifths];
     if (keySig) stave.addKeySignature(keySig);
   }
+
+  // Barlines always; volta/segno/coda only when topmost stave
+  applyBarline(stave, m.barlineEnd);
+  if (options.isTopStave) applyStaveDecorations(stave, m);
+
   stave.setContext(ctx.context).draw();
+
+  // Draw coda, navigation text, tempo, rehearsal marks
+  if (options.isTopStave) drawStaveAnnotations(ctx, stave, m, x, y, width);
 
   const noteBoxes: NoteBox[] = [];
   const annotationBoxes: AnnotationBox[] = [];
@@ -179,6 +189,27 @@ export function renderSlashMeasure(
       });
     }
   });
+
+  // Render chord symbols above slash stave when it's the topmost stave
+  if (options.isTopStave) {
+    const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+    const chordAnns = m.annotations.filter((a): a is import("../model/annotations").ChordSymbol => a.kind === "chord-symbol");
+    if (chordAnns.length > 0 && rawCtx.save) {
+      rawCtx.save();
+      rawCtx.font = "bold 14px sans-serif";
+      rawCtx.fillStyle = "#000";
+      const chordY = y - 4;
+      const renderedIds = new Set<string>();
+      for (const ann of chordAnns) {
+        if (ann.noteEventId && renderedIds.has(ann.noteEventId)) continue;
+        const box = ann.noteEventId ? noteBoxes.find((nb) => nb.id === ann.noteEventId) : undefined;
+        const chordX = box ? box.x : x + 4;
+        rawCtx.fillText(ann.text, chordX, chordY);
+        if (ann.noteEventId) renderedIds.add(ann.noteEventId);
+      }
+      rawCtx.restore();
+    }
+  }
 
   return { noteBoxes, annotationBoxes, staveY: y, staveX: x, width, staveNoteMap, vexStave: stave };
 }

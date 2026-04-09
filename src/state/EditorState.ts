@@ -57,6 +57,11 @@ import { InsertGraceNote } from "../commands/InsertGraceNote";
 import { OverwriteNote } from "../commands/OverwriteNote";
 import { ToggleDot } from "../commands/ToggleDot";
 import { SetAccidental as SetAccidentalCmd } from "../commands/SetAccidental";
+import { ToggleTie } from "../commands/ToggleTie";
+import { SetHairpin } from "../commands/SetHairpin";
+import { SetStemDirection } from "../commands/SetStemDirection";
+import { SetScoreMeta } from "../commands/SetScoreMeta";
+import { SetPartProperty } from "../commands/SetPartProperty";
 import type { NavigationMarkType } from "../commands/SetNavigationMark";
 import type { BarlineType, Volta } from "../model";
 import type { NoteBox, AnnotationBox } from "../renderer/vexBridge";
@@ -143,6 +148,12 @@ interface EditorStore {
   // Articulations
   toggleArticulation(kind: import("../model/note").ArticulationKind): void;
   toggleCrossStaff(): void;
+  toggleTie(): void;
+  setStemDirection(direction: "up" | "down" | null): void;
+
+  // Hairpin
+  hairpinStartEventId: NoteEventId | null;
+  setHairpin(type: "crescendo" | "diminuendo"): void;
 
   // Phase 2 actions
   changePitch(pitchClass: PitchClass): void;
@@ -414,6 +425,38 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
       set({ score: result.score, inputState: result.inputState, slurStartEventId: null });
     }
+  },
+
+  toggleTie() {
+    const state = get();
+    const cmd = new ToggleTie();
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState });
+  },
+
+  hairpinStartEventId: null,
+
+  setHairpin(type: "crescendo" | "diminuendo") {
+    const state = get();
+    const { cursor } = state.inputState;
+    const voice = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+    const evt = voice?.events[cursor.eventIndex];
+    if (!evt || evt.kind === "rest") return;
+
+    if (!state.hairpinStartEventId) {
+      set({ hairpinStartEventId: evt.id });
+    } else {
+      const cmd = new SetHairpin(type, state.hairpinStartEventId, evt.id);
+      const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+      set({ score: result.score, inputState: result.inputState, hairpinStartEventId: null });
+    }
+  },
+
+  setStemDirection(direction: "up" | "down" | null) {
+    const state = get();
+    const cmd = new SetStemDirection(direction);
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState });
   },
 
   insertNote(pitchClass: PitchClass) {
@@ -1477,11 +1520,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
 
   setTitle(title) {
-    set((s) => ({ score: { ...s.score, title } }));
+    const state = get();
+    const cmd = new SetScoreMeta("title", title);
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState });
   },
 
   setComposer(composer) {
-    set((s) => ({ score: { ...s.score, composer } }));
+    const state = get();
+    const cmd = new SetScoreMeta("composer", composer);
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState });
   },
 
   undo() {
@@ -2210,47 +2259,39 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   toggleSolo(partIndex: number) {
-    set((s) => {
-      const score = structuredClone(s.score);
-      const part = score.parts[partIndex];
-      if (!part) return s;
-      part.solo = !part.solo;
-      // Update playback reference so solo takes effect during playback
-      getGlobalPluginManager()?.getPlaybackService()?.updateScore(score);
-      return { score };
-    });
+    const state = get();
+    const part = state.score.parts[partIndex];
+    if (!part) return;
+    const cmd = new SetPartProperty(partIndex, { field: "solo", value: !part.solo });
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    // Update playback reference so solo takes effect during playback
+    getGlobalPluginManager()?.getPlaybackService()?.updateScore(result.score);
+    set({ score: result.score, inputState: result.inputState });
   },
 
   toggleMute(partIndex: number) {
-    set((s) => {
-      const score = structuredClone(s.score);
-      const part = score.parts[partIndex];
-      if (!part) return s;
-      part.muted = !part.muted;
-      // Update playback reference so mute takes effect during playback
-      getGlobalPluginManager()?.getPlaybackService()?.updateScore(score);
-      return { score };
-    });
+    const state = get();
+    const part = state.score.parts[partIndex];
+    if (!part) return;
+    const cmd = new SetPartProperty(partIndex, { field: "muted", value: !part.muted });
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    // Update playback reference so mute takes effect during playback
+    getGlobalPluginManager()?.getPlaybackService()?.updateScore(result.score);
+    set({ score: result.score, inputState: result.inputState });
   },
 
   setPartTuning(partIndex: number, tuning: import("../model/guitar").Tuning | undefined) {
-    set((s) => {
-      const score = structuredClone(s.score);
-      const part = score.parts[partIndex];
-      if (!part) return s;
-      part.tuning = tuning;
-      return { score };
-    });
+    const state = get();
+    const cmd = new SetPartProperty(partIndex, { field: "tuning", value: tuning });
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState });
   },
 
   setPartCapo(partIndex: number, capo: number) {
-    set((s) => {
-      const score = structuredClone(s.score);
-      const part = score.parts[partIndex];
-      if (!part) return s;
-      part.capo = capo > 0 ? capo : undefined;
-      return { score };
-    });
+    const state = get();
+    const cmd = new SetPartProperty(partIndex, { field: "capo", value: capo });
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    set({ score: result.score, inputState: result.inputState });
   },
 
   togglePartVisibility(partIndex: number) {
