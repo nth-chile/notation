@@ -315,7 +315,7 @@ function parseMeasure(
   const ARTICULATION_MAP: Record<string, ArticulationKind> = {
     staccato: "staccato", staccatissimo: "staccatissimo",
     accent: "accent", tenuto: "tenuto", "strong-accent": "marcato",
-    fermata: "fermata", "up-bow": "up-bow", "down-bow": "down-bow",
+    fermata: "fermata", "up-bow": "up-stroke", "down-bow": "down-stroke",
     "open-string": "open-string", stopped: "stopped",
   };
   const ORNAMENT_MAP: Record<string, ArticulationKind> = {
@@ -326,6 +326,8 @@ function parseMeasure(
     harmonic: "harmonic", "palm-mute": "palm-mute",
     "dead-note": "dead-note", vibrato: "vibrato",
     tap: "tapping", "let-ring": "let-ring",
+    // down-bow/up-bow in <technical> context = guitar pick direction (not bowed instrument)
+    "down-bow": "down-stroke", "up-bow": "up-stroke",
   };
 
   function flushPendingChord() {
@@ -896,6 +898,8 @@ export interface MusicXMLImportResult {
   score: Score;
   /** Per-part display hints detected from MusicXML (slash regions, tab staff-type) */
   displayHints: Record<number, { slash?: boolean; tab?: boolean }>;
+  /** Full viewConfig stored by Nubium in <miscellaneous-field> (if present) */
+  viewConfig?: import("../views/ViewMode").ViewConfig;
 }
 
 export function importFromMusicXML(xml: string): Score;
@@ -912,14 +916,25 @@ export function importFromMusicXML(xml: string, withHints?: true): Score | Music
   // Parse title
   const title = getTextContent(scoreEl, "work-title") ?? "Untitled";
 
-  // Parse composer
+  // Parse composer and Nubium metadata from <identification>
   const identEl = scoreEl.getElementsByTagName("identification")[0];
   let composer = "";
+  let savedViewConfig: import("../views/ViewMode").ViewConfig | undefined;
   if (identEl) {
     const creators = identEl.getElementsByTagName("creator");
     for (let i = 0; i < creators.length; i++) {
       if (creators[i].getAttribute("type") === "composer") {
         composer = creators[i].textContent?.trim() ?? "";
+        break;
+      }
+    }
+    // Read Nubium-specific view config from <miscellaneous-field>
+    const miscFields = identEl.getElementsByTagName("miscellaneous-field");
+    for (let i = 0; i < miscFields.length; i++) {
+      if (miscFields[i].getAttribute("name") === "nubium-view-config") {
+        try {
+          savedViewConfig = JSON.parse(miscFields[i].textContent ?? "");
+        } catch { /* ignore malformed */ }
         break;
       }
     }
@@ -1047,6 +1062,6 @@ export function importFromMusicXML(xml: string, withHints?: true): Score | Music
     parts,
   };
 
-  if (withHints) return { score, displayHints };
+  if (withHints) return { score, displayHints, viewConfig: savedViewConfig };
   return score;
 }
