@@ -181,7 +181,7 @@ function drawTabAnnotations(
   ctx: RenderContext,
   events: NoteEvent[],
   tabNotes: (TabNote | GhostNote)[],
-  staveY: number
+  stave: TabStave
 ): void {
   const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
   const prevFont = rawCtx.font;
@@ -189,11 +189,11 @@ function drawTabAnnotations(
   const prevStroke = rawCtx.strokeStyle;
   const prevLineWidth = rawCtx.lineWidth;
 
-  // Tab staff line positions: VexFlow TabStave has ~40px top padding before first line
-  // 6 lines, ~13px spacing between lines
-  const firstLineY = staveY + 40;
-  const onStaffTextY = firstLineY - 2; // just above first line, on the staff
-  const belowStaffY = staveY + TAB_STAFF_HEIGHT + 14;
+  const staveY = stave.getY();
+  // Use VexFlow's actual line positions for accurate Y coordinates
+  const line0Y = stave.getYForLine(0); // string 1 (top line)
+  const onStaffTextY = line0Y - 10; // above first line with spacing
+  const belowStaffY = staveY + TAB_STAFF_HEIGHT + 22;
 
   for (let i = 0; i < events.length; i++) {
     const event = events[i];
@@ -204,6 +204,13 @@ function drawTabAnnotations(
     const arts = event.articulations ?? [];
     const noteX = (tn as any).getAbsoluteX?.() ?? 0;
     if (noteX === 0) continue;
+
+    // Get the note's string Y position for slide drawing
+    // String 1 (high E) = line 0 (top), string 6 (low E) = line 5 (bottom)
+    const positions = (tn as TabNote).getPositions?.() ?? [];
+    const noteStringY = positions.length > 0
+      ? stave.getYForLine(positions[0].str - 1)
+      : stave.getYForLine(2.5); // fallback to center
 
     for (const art of arts) {
       // On-staff italic text (P.M., N.H., let ring, T)
@@ -218,49 +225,48 @@ function drawTabAnnotations(
       // Below-staff text (strokes, fingerpicking)
       const belowText = BELOW_STAFF_TEXTS[art.kind];
       if (belowText) {
-        rawCtx.font = "12px sans-serif";
+        const isFingerpick = art.kind.startsWith("fingerpick-");
+        rawCtx.font = isFingerpick ? "italic 12px sans-serif" : "12px sans-serif";
         rawCtx.fillStyle = typeof prevFill === "string" ? prevFill : "#000";
         rawCtx.fillText(belowText, noteX - 3, belowStaffY);
         continue;
       }
 
-      // Slide-in: short diagonal line before the note
+      // Slide-in: short diagonal line before the note at the note's string position
       // from-below: line goes ↗ into note, from-above: line goes ↘ into note
       if (art.kind === "slide-in-below" || art.kind === "slide-in-above") {
         rawCtx.strokeStyle = typeof prevStroke === "string" ? prevStroke : "#000";
         rawCtx.lineWidth = 1.5;
         const endX = noteX - 3;
         const startX = endX - 12;
-        const midY = firstLineY + 38; // center of tab staff
-        const yOff = 4; // shallow angle
+        const yOff = 6;
         rawCtx.beginPath();
         if (art.kind === "slide-in-below") {
-          rawCtx.moveTo(startX, midY + yOff);
-          rawCtx.lineTo(endX, midY - yOff);
+          rawCtx.moveTo(startX, noteStringY + yOff);
+          rawCtx.lineTo(endX, noteStringY - yOff);
         } else {
-          rawCtx.moveTo(startX, midY - yOff);
-          rawCtx.lineTo(endX, midY + yOff);
+          rawCtx.moveTo(startX, noteStringY - yOff);
+          rawCtx.lineTo(endX, noteStringY + yOff);
         }
         rawCtx.stroke();
         continue;
       }
 
-      // Slide-out: short diagonal line after the note
+      // Slide-out: short diagonal line after the note at the note's string position
       // out-above: line goes ↗ away, out-below: line goes ↘ away
       if (art.kind === "slide-out-below" || art.kind === "slide-out-above") {
         rawCtx.strokeStyle = typeof prevStroke === "string" ? prevStroke : "#000";
         rawCtx.lineWidth = 1.5;
         const startX = noteX + 6;
         const endX = startX + 12;
-        const midY = firstLineY + 38;
-        const yOff = 4;
+        const yOff = 6;
         rawCtx.beginPath();
         if (art.kind === "slide-out-above") {
-          rawCtx.moveTo(startX, midY + yOff);
-          rawCtx.lineTo(endX, midY - yOff);
+          rawCtx.moveTo(startX, noteStringY + yOff);
+          rawCtx.lineTo(endX, noteStringY - yOff);
         } else {
-          rawCtx.moveTo(startX, midY - yOff);
-          rawCtx.lineTo(endX, midY + yOff);
+          rawCtx.moveTo(startX, noteStringY - yOff);
+          rawCtx.lineTo(endX, noteStringY + yOff);
         }
         rawCtx.stroke();
         continue;
@@ -349,7 +355,7 @@ export function renderTabMeasure(
     renderTabConnections(ctx, matchedEvents, allTabNotes);
 
     // Draw above-staff text annotations and slide-in/out lines
-    drawTabAnnotations(ctx, matchedEvents, allTabNotes, y);
+    drawTabAnnotations(ctx, matchedEvents, allTabNotes, stave);
 
     // Collect bounding boxes (skip GhostNotes — they have no visual)
     // VexFlow TabNote.getBoundingBox() returns y=0/h=0, so use stave position instead

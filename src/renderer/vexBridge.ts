@@ -121,6 +121,8 @@ const ARTICULATION_VEX: Partial<Record<ArticulationKind, string>> = {
   marcato: "a^",
   "up-bow": "a|",
   "down-bow": "am",
+  "down-stroke": "am",
+  "up-stroke": "a|",
   "open-string": "ao",
   stopped: "a+",
   trill: "tr",

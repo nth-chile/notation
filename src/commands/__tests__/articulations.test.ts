@@ -127,4 +127,34 @@ describe("ToggleArticulation", () => {
       expect(event.articulations![0].kind).toBe("marcato");
     }
   });
+
+  it("cross-note: adding slide-in-below strips slide-up from previous note", () => {
+    const n1 = factory.note("C", 4, factory.dur("quarter"));
+    n1.articulations = [{ kind: "slide-up" }];
+    const n2 = factory.note("D", 4, factory.dur("quarter"));
+    const measures = [factory.measure([factory.voice([n1, n2])])];
+    const snap = makeSnapshot({ measures, cursor: { eventIndex: 1 } });
+
+    const result = new ToggleArticulation("slide-in-below").execute(snap);
+
+    const ev0 = result.score.parts[0].measures[0].voices[0].events[0];
+    const ev1 = result.score.parts[0].measures[0].voices[0].events[1];
+    expect(ev0.kind === "note" && (ev0.articulations ?? []).some((a: any) => a.kind === "slide-up")).toBe(false);
+    expect(ev1.kind === "note" && ev1.articulations?.some((a: any) => a.kind === "slide-in-below")).toBe(true);
+  });
+
+  it("cross-note: adding slide-up strips slide-in from next note", () => {
+    const n1 = factory.note("C", 4, factory.dur("quarter"));
+    const n2 = factory.note("D", 4, factory.dur("quarter"));
+    n2.articulations = [{ kind: "slide-in-below" }];
+    const measures = [factory.measure([factory.voice([n1, n2])])];
+    const snap = makeSnapshot({ measures, cursor: { eventIndex: 0 } });
+
+    const result = new ToggleArticulation("slide-up").execute(snap);
+
+    const ev0 = result.score.parts[0].measures[0].voices[0].events[0];
+    const ev1 = result.score.parts[0].measures[0].voices[0].events[1];
+    expect(ev0.kind === "note" && ev0.articulations?.some((a: any) => a.kind === "slide-up")).toBe(true);
+    expect(ev1.kind === "note" && (ev1.articulations ?? []).some((a: any) => a.kind === "slide-in-below")).toBe(false);
+  });
 });

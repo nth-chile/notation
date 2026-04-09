@@ -19,6 +19,7 @@ import { durationToTicks as durationToTicksFn, TICKS_PER_QUARTER } from "../mode
 import { factory } from "../model";
 import { getInstrument } from "../model/instruments";
 import { isCrossStaff } from "../model/note";
+import { pitchToTab, STANDARD_TUNING } from "../model/guitar";
 import { defaultInputState, type InputState, type CursorPosition } from "../input/InputState";
 import { CommandHistory } from "../commands/CommandHistory";
 import type { Selection, NoteSelection } from "../plugins/PluginAPI";
@@ -1511,29 +1512,46 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const EXCLUSION_GROUPS: string[][] = [
       ["bend", "pre-bend", "bend-release"],
       ["slide-in-below", "slide-in-above"],
-      ["slide-out-below", "slide-out-above"],
+      ["slide-out-below", "slide-out-above", "slide-up", "slide-down"],
       ["down-bow", "up-bow"],
       ["down-stroke", "up-stroke", "fingerpick-p", "fingerpick-i", "fingerpick-m", "fingerpick-a"],
       ["hammer-on", "pull-off"],
       ["staccato", "staccatissimo"],       // tenuto can coexist (portato)
       ["accent", "marcato"],               // marcato implies accent
-      ["dead-note", "bend", "pre-bend", "bend-release", "harmonic",
-       "slide-up", "slide-down", "slide-in-below", "slide-in-above",
-       "slide-out-below", "slide-out-above", "hammer-on", "pull-off",
-       "trill", "vibrato", "let-ring"],    // dead note = no pitch, these are meaningless
+      ["harmonic", "palm-mute", "tapping"],
     ];
+    // Dead note is incompatible with all of these, but they don't exclude each other
+    const DEAD_NOTE_INCOMPATIBLE = new Set([
+      "bend", "pre-bend", "bend-release", "harmonic",
+      "slide-up", "slide-down", "slide-in-below", "slide-in-above",
+      "slide-out-below", "slide-out-above", "hammer-on", "pull-off",
+      "trill", "vibrato", "let-ring",
+    ]);
     const excluded = new Set<string>();
     for (const group of EXCLUSION_GROUPS) {
       if (group.includes(kind)) {
         for (const k of group) if (k !== kind) excluded.add(k);
       }
     }
+    if (kind === "dead-note") {
+      for (const k of DEAD_NOTE_INCOMPATIBLE) excluded.add(k);
+    } else if (DEAD_NOTE_INCOMPATIBLE.has(kind)) {
+      excluded.add("dead-note");
+    }
 
     // Helper to toggle articulation on a single event
     const SEMITONE_ARTS = new Set(["bend", "pre-bend", "bend-release"]);
     const BEND_CYCLE = [1, 2, 3]; // half, full, 1½
-    const toggleArt = (ev: import("../model/note").NoteEvent): import("../model/note").NoteEvent => {
+    const toggleArt = (ev: import("../model/note").NoteEvent, nextEv?: import("../model/note").NoteEvent): import("../model/note").NoteEvent => {
       if (ev.kind === "rest" || ev.kind === "slash") return ev;
+
+      // Hammer-on/pull-off: block if next note is on a different string
+      if ((kind === "hammer-on" || kind === "pull-off") && nextEv) {
+        const curS = getString(ev);
+        const nextS = getString(nextEv);
+        if (curS != null && nextS != null && curS !== nextS) return ev;
+      }
+
       const arts = ev.articulations ?? [];
       const filtered = arts.filter((a) => a.kind !== kind && !excluded.has(a.kind));
 
@@ -1558,6 +1576,36 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       return { ...ev, articulations: filtered.length > 0 ? filtered : undefined };
     };
 
+    // Cross-note checks
+    const SLIDE_CONNECTIONS = new Set(["slide-up", "slide-down"]);
+    const SLIDE_INS = new Set(["slide-in-below", "slide-in-above"]);
+    const SLIDE_OUTS = new Set(["slide-out-below", "slide-out-above"]);
+
+    // Hammer-on/pull-off string check helper
+    const { partIndex: togglePartIdx } = state.inputState.cursor;
+    const partTuning = state.score.parts[togglePartIdx]?.tuning ?? STANDARD_TUNING;
+    const getString = (ev: import("../model/note").NoteEvent) => {
+      if (ev.kind === "note") return ev.tabInfo?.string ?? ev.head.tabInfo?.string ?? pitchToTab(ev.head.pitch, partTuning).string;
+      if (ev.kind === "chord") return ev.tabInfo?.string ?? ev.heads[0]?.tabInfo?.string ?? pitchToTab(ev.heads[0].pitch, partTuning).string;
+      return undefined;
+    };
+
+    const stripNeighborSlides = (voice: import("../model/score").Voice, idx: number) => {
+      const prev = idx > 0 ? voice.events[idx - 1] : undefined;
+      const next = idx < voice.events.length - 1 ? voice.events[idx + 1] : undefined;
+      const strip = (ev: import("../model/note").NoteEvent | undefined, kinds: Set<string>) => {
+        if (!ev || ev.kind === "rest" || ev.kind === "slash" || !ev.articulations) return;
+        ev.articulations = ev.articulations.filter((a) => !kinds.has(a.kind));
+        if (ev.articulations.length === 0) ev.articulations = undefined;
+      };
+      if (SLIDE_CONNECTIONS.has(kind)) {
+        strip(next, SLIDE_INS);
+        strip(prev, SLIDE_OUTS);
+      }
+      if (SLIDE_INS.has(kind)) strip(prev, SLIDE_CONNECTIONS);
+      // No cross-note cleanup for slide-out — only affects current note via same-note exclusion
+    };
+
     // Note-level selection
     if (state.noteSelection) {
       const ns = state.noteSelection;
@@ -1568,7 +1616,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         const startIdx = mi === ns.startMeasure ? ns.startEvent : 0;
         const endIdx = mi === ns.endMeasure ? ns.endEvent : voice.events.length - 1;
         for (let i = startIdx; i <= endIdx && i < voice.events.length; i++) {
-          voice.events[i] = toggleArt(voice.events[i]);
+          voice.events[i] = toggleArt(voice.events[i], voice.events[i + 1]);
+          stripNeighborSlides(voice, i);
         }
       }
       set({ score });
@@ -1585,7 +1634,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           const measure = part.measures[mi];
           if (!measure) continue;
           for (const voice of measure.voices) {
-            voice.events = voice.events.map((ev) => toggleArt(ev));
+            voice.events = voice.events.map((ev, idx) => {
+              const result = toggleArt(ev, voice.events[idx + 1]);
+              voice.events[idx] = result; // update in-place for neighbor checks
+              stripNeighborSlides(voice, idx);
+              return voice.events[idx];
+            });
           }
         }
         set({ score });
@@ -2358,7 +2412,8 @@ async function autoSave(score: Score, filePath: string | null): Promise<void> {
   try {
     const serialized = serializeScore(score);
     const viewConfig = useEditorStore.getState().viewConfig;
-    const payload = JSON.stringify({ score: serialized, filePath, viewConfig, savedAt: Date.now() });
+    const hiddenParts = [...useEditorStore.getState().hiddenParts];
+    const payload = JSON.stringify({ score: serialized, filePath, viewConfig, hiddenParts, savedAt: Date.now() });
 
     // Try Tauri app data dir first, fall back to localStorage
     const tauri = await getTauriRecoveryPath();
@@ -2375,11 +2430,13 @@ async function autoSave(score: Score, filePath: string | null): Promise<void> {
   }
 }
 
-// Subscribe to score changes: mark dirty + debounce auto-save
+// Subscribe to score/viewConfig changes: mark dirty + debounce auto-save
 useEditorStore.subscribe((state, prevState) => {
   if (state.score !== prevState.score) {
     const dirty = state.cleanScoreJson ? serializeScore(state.score) !== state.cleanScoreJson : true;
     if (dirty !== state.isDirty) useEditorStore.setState({ isDirty: dirty });
+  }
+  if (state.score !== prevState.score || state.viewConfig !== prevState.viewConfig || state.hiddenParts !== prevState.hiddenParts) {
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(() => {
       autoSave(state.score, state.filePath);
@@ -2432,6 +2489,7 @@ async function restoreAutoSave(): Promise<void> {
         filePath: parsed.filePath ?? parsed.importSource ?? null,
         cleanScoreJson: parsed.score,
         ...(parsed.viewConfig ? { viewConfig: parsed.viewConfig } : {}),
+        ...(parsed.hiddenParts ? { hiddenParts: new Set(parsed.hiddenParts) } : {}),
       });
     }
   } catch {
