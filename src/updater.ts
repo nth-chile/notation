@@ -1,4 +1,5 @@
 let updateChecked = false;
+let pendingUpdate: any = null;
 
 export async function checkForUpdates(manual = false) {
   if (!manual && updateChecked) return;
@@ -9,14 +10,8 @@ export async function checkForUpdates(manual = false) {
     const update = await check();
 
     if (update) {
-      // Download silently in background
-      await update.downloadAndInstall((event) => {
-        // Could show progress, but keep it simple
-        if (event.event === "Finished") {
-          // Update is ready — show persistent prompt
-          showUpdateDialog(update.version);
-        }
-      });
+      pendingUpdate = update;
+      showUpdateDialog(update.version);
     } else if (manual) {
       const { showToast } = await import("./components/Toast");
       showToast("You're on the latest version", "success");
@@ -31,6 +26,7 @@ export async function checkForUpdates(manual = false) {
 
 let updateDialogVisible = false;
 const updateDialogListeners = new Set<() => void>();
+let pendingVersion = "";
 
 export function getUpdateDialogState() {
   return updateDialogVisible ? pendingVersion : null;
@@ -40,8 +36,6 @@ export function subscribeUpdateDialog(cb: () => void) {
   updateDialogListeners.add(cb);
   return () => updateDialogListeners.delete(cb);
 }
-
-let pendingVersion = "";
 
 function showUpdateDialog(version: string) {
   pendingVersion = version;
@@ -54,7 +48,17 @@ export function dismissUpdateDialog() {
   for (const cb of updateDialogListeners) cb();
 }
 
-export async function restartApp() {
-  const { relaunch } = await import("@tauri-apps/plugin-process");
-  await relaunch();
+export async function installAndRestart() {
+  if (!pendingUpdate) return;
+  try {
+    const { showToast } = await import("./components/Toast");
+    showToast("Installing update…", "info");
+    await pendingUpdate.downloadAndInstall();
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();
+  } catch (err) {
+    const { showToast } = await import("./components/Toast");
+    showToast("Update failed — try again later", "error");
+    console.error("Update install failed:", err);
+  }
 }

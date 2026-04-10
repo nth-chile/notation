@@ -19,7 +19,7 @@ import { getSettings, matchesBinding } from "./settings";
 import { recordSave } from "./licensing";
 import { LicenseNag } from "./components/LicenseNag";
 import { useEffect, useCallback, useState, useSyncExternalStore, useRef } from "react";
-import { checkForUpdates, restartApp, getUpdateDialogState, subscribeUpdateDialog, dismissUpdateDialog } from "./updater";
+import { checkForUpdates, installAndRestart, getUpdateDialogState, subscribeUpdateDialog, dismissUpdateDialog } from "./updater";
 import {
   PluginManager,
   TransposePlugin,
@@ -141,7 +141,7 @@ export function App() {
 
     // Updater commands
     pm.registerCoreCommand("nubium.check-updates", "Check for Updates", () => checkForUpdates(true));
-    pm.registerCoreCommand("nubium.install-update", "Install Update and Restart", () => restartApp());
+    pm.registerCoreCommand("nubium.install-update", "Install Update and Restart", () => installAndRestart());
   }
 
   const pm = pluginManagerRef.current;
@@ -319,7 +319,7 @@ function UpdateDialog() {
           </button>
           <button
             className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:opacity-90"
-            onClick={restartApp}
+            onClick={installAndRestart}
           >
             Restart Now
           </button>
