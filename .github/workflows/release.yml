@@ -56,7 +56,6 @@ jobs:
       - run: npm ci
 
       - uses: tauri-apps/tauri-action@v0
-        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -75,31 +74,37 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Upload sig files with unique names
+      - name: Upload updater sig files
         if: runner.os == 'macOS'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           ARCH="${{ matrix.arch }}"
-          SIG=$(find src-tauri/target -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
+          SIG=$(find src-tauri/target -name "Nubium.app.tar.gz.sig" 2>/dev/null | head -1)
           if [ -f "$SIG" ]; then
             cp "$SIG" "Nubium_${ARCH}.app.tar.gz.sig"
+            echo "Uploading Nubium_${ARCH}.app.tar.gz.sig"
             gh release upload "$TAG" "Nubium_${ARCH}.app.tar.gz.sig" --clobber
+          else
+            echo "WARNING: No .sig file found"
+            find src-tauri/target -name "*.sig" 2>/dev/null
           fi
 
-      - name: Upload sig files (Linux)
+      - name: Upload updater sig files (Linux)
         if: runner.os == 'Linux'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           for sig in $(find src-tauri/target -name "*.AppImage.tar.gz.sig" 2>/dev/null); do
+            echo "Uploading $(basename "$sig")"
             gh release upload "$TAG" "$sig" --clobber || true
           done
 
   updater-json:
     needs: build
+    if: "!cancelled()"
     runs-on: ubuntu-22.04
     steps:
       - name: Generate and upload latest.json
@@ -115,43 +120,41 @@ jobs:
           # Download sig files from release
           mkdir -p sigs
           gh release download "$TAG" -R "$REPO" -p "*.sig" -D sigs 2>/dev/null || true
+          echo "Downloaded sig files:"
+          ls -la sigs/
 
-          get_sig() {
-            local file="sigs/$1"
-            if [ -f "$file" ]; then cat "$file"; else echo ""; fi
-          }
-
-          AARCH64_SIG=$(get_sig "Nubium_aarch64.app.tar.gz.sig")
-          X64_SIG=$(get_sig "Nubium_x86_64.app.tar.gz.sig")
-
-          # Find the AppImage sig (version is in filename)
+          AARCH64_SIG=""
+          X64_SIG=""
           APPIMAGE_SIG=""
-          APPIMAGE_FILE=$(gh release view "$TAG" -R "$REPO" --json assets -q '.assets[].name | select(endswith(".AppImage.tar.gz"))' | head -1)
+
+          [ -f sigs/Nubium_aarch64.app.tar.gz.sig ] && AARCH64_SIG=$(cat sigs/Nubium_aarch64.app.tar.gz.sig)
+          [ -f sigs/Nubium_x86_64.app.tar.gz.sig ] && X64_SIG=$(cat sigs/Nubium_x86_64.app.tar.gz.sig)
+
+          # Find AppImage sig and URL
+          APPIMAGE_URL=""
           APPIMAGE_SIG_FILE=$(find sigs -name "*AppImage.tar.gz.sig" 2>/dev/null | head -1)
           if [ -f "$APPIMAGE_SIG_FILE" ]; then
             APPIMAGE_SIG=$(cat "$APPIMAGE_SIG_FILE")
+            APPIMAGE_NAME=$(gh release view "$TAG" -R "$REPO" --json assets -q '.assets[].name | select(endswith(".AppImage.tar.gz"))' | head -1)
+            APPIMAGE_URL="${BASE}/${APPIMAGE_NAME}"
           fi
 
-          cat > latest.json << ENDJSON
-          {
-            "version": "${VERSION}",
-            "pub_date": "${DATE}",
-            "platforms": {
-              "darwin-aarch64": {
-                "signature": "${AARCH64_SIG}",
-                "url": "${BASE}/Nubium_aarch64.app.tar.gz"
-              },
-              "darwin-x86_64": {
-                "signature": "${X64_SIG}",
-                "url": "${BASE}/Nubium_x64.app.tar.gz"
-              },
-              "linux-x86_64": {
-                "signature": "${APPIMAGE_SIG}",
-                "url": "${BASE}/${APPIMAGE_FILE}"
-              }
-            }
-          }
-          ENDJSON
+          # Build platforms JSON
+          PLATFORMS="{"
+          if [ -n "$AARCH64_SIG" ]; then
+            PLATFORMS="${PLATFORMS}\"darwin-aarch64\":{\"signature\":\"${AARCH64_SIG}\",\"url\":\"${BASE}/Nubium_aarch64.app.tar.gz\"}"
+          fi
+          if [ -n "$X64_SIG" ]; then
+            [ "$PLATFORMS" != "{" ] && PLATFORMS="${PLATFORMS},"
+            PLATFORMS="${PLATFORMS}\"darwin-x86_64\":{\"signature\":\"${X64_SIG}\",\"url\":\"${BASE}/Nubium_x64.app.tar.gz\"}"
+          fi
+          if [ -n "$APPIMAGE_SIG" ] && [ -n "$APPIMAGE_URL" ]; then
+            [ "$PLATFORMS" != "{" ] && PLATFORMS="${PLATFORMS},"
+            PLATFORMS="${PLATFORMS}\"linux-x86_64\":{\"signature\":\"${APPIMAGE_SIG}\",\"url\":\"${APPIMAGE_URL}\"}"
+          fi
+          PLATFORMS="${PLATFORMS}}"
+
+          echo "{\"version\":\"${VERSION}\",\"pub_date\":\"${DATE}\",\"platforms\":${PLATFORMS}}" | python3 -m json.tool > latest.json
 
           echo "Generated latest.json:"
           cat latest.json
