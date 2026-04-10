@@ -110,5 +110,6 @@ Key signatures (fifths): -7 to 7. Barlines: single, double, final, repeat-start,
 - **Use `/fix-issues` for bug fix groups.** It reads related issues together, analyzes them, fixes them, and writes tests.
 - **Run `/test-changes` after finishing work.** It writes unit tests and updates GitHub issues.
 - **Run `/convo-review` before ending a conversation.** It saves context to memory, surfaces loose ends, and keeps the README up to date.
+- **Use `/release [version]` to ship.** Bumps version, commits, tags, pushes, waits for CI, publishes, verifies `latest.json`. Auto-increments patch if no version given.
 - **Work on a branch, not main.** Create a branch named after the issue group (e.g., `fix/voice-bugs`, `fix/selection`). Submit a PR when done. This prevents parallel agents from stepping on each other.
 - **Push back on bad fixes.** Don't force a change just because an issue says so. If the current behavior is correct or the fix would make things worse, explain your reasoning to the user and comment on the GitHub issue — don't silently skip it.
