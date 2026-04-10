@@ -256,8 +256,9 @@ export function App() {
   // Suppress unused variable warning — pluginVersion is used to trigger re-renders
   void pluginVersion;
 
-  // Check for updates on launch (Tauri only, non-blocking)
+  // Launch tasks: telemetry ping + update check
   useEffect(() => {
+    import("./telemetry").then((m) => m.sendLaunchPing());
     checkForUpdates();
   }, []);
 
