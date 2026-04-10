@@ -312,6 +312,21 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
             </div>
           </section>
 
+          <section>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Privacy</h3>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.telemetryOptOut}
+                  onChange={(e) => update("telemetryOptOut", e.target.checked)}
+                  className="accent-primary"
+                />
+                Disable anonymous usage statistics
+              </label>
+            </div>
+          </section>
+
         </div>
 
         )}

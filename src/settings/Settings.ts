@@ -25,6 +25,7 @@ export interface AppSettings {
   display: DisplaySettings;
   pitchBeforeDuration: boolean;
   insertMode: boolean;
+  telemetryOptOut: boolean;
 }
 
 const STORAGE_KEY = "nubium-settings";
@@ -60,6 +61,7 @@ function defaultSettings(): AppSettings {
     display: defaultDisplaySettings(),
     pitchBeforeDuration: false,
     insertMode: false,
+    telemetryOptOut: false,
   };
 }
 
