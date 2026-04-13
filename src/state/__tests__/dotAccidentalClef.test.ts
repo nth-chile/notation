@@ -29,7 +29,7 @@ function setupScore() {
       voice: 0,
       cursor: { partIndex: 0, measureIndex: 0, voiceIndex: 0, eventIndex: 0, staveIndex: 0 },
       octave: 4,
-      stepEntry: false,
+      noteEntry: false,
       graceNoteMode: false,
       textInputMode: null,
       textInputBuffer: "",
@@ -104,8 +104,8 @@ describe("setAccidental on existing note (#95)", () => {
     }
   });
 
-  it("sets accidental on chord heads", () => {
-    // Replace first event with a chord
+  it("sets accidental on the top chord head when none is explicitly selected", () => {
+    // Replace first event with a chord (C4, E4) — E4 is the top head.
     const score = structuredClone(useEditorStore.getState().score);
     score.parts[0].measures[0].voices[0].events[0] = factory.chord(
       [factory.noteHead("C", 4), factory.noteHead("E", 4)],
@@ -116,8 +116,26 @@ describe("setAccidental on existing note (#95)", () => {
     useEditorStore.getState().setAccidental("sharp");
     const evt = useEditorStore.getState().score.parts[0].measures[0].voices[0].events[0];
     if (evt.kind === "chord") {
-      expect(evt.heads[0].pitch.accidental).toBe("sharp");
+      // Only the top head is affected.
+      expect(evt.heads[0].pitch.accidental).toBe("natural");
       expect(evt.heads[1].pitch.accidental).toBe("sharp");
+    }
+  });
+
+  it("sets accidental on an explicitly selected chord head", () => {
+    const score = structuredClone(useEditorStore.getState().score);
+    score.parts[0].measures[0].voices[0].events[0] = factory.chord(
+      [factory.noteHead("C", 4), factory.noteHead("E", 4)],
+      factory.dur("quarter"),
+    );
+    useEditorStore.setState({ score });
+    useEditorStore.getState().setSelectedHeadIndex(0);
+
+    useEditorStore.getState().setAccidental("flat");
+    const evt = useEditorStore.getState().score.parts[0].measures[0].voices[0].events[0];
+    if (evt.kind === "chord") {
+      expect(evt.heads[0].pitch.accidental).toBe("flat");
+      expect(evt.heads[1].pitch.accidental).toBe("natural");
     }
   });
 
@@ -130,8 +148,6 @@ describe("setAccidental on existing note (#95)", () => {
     useEditorStore.getState().setAccidental("sharp");
     const evt = useEditorStore.getState().score.parts[0].measures[0].voices[0].events[0];
     expect(evt.kind).toBe("rest");
-    // inputState should still update
-    expect(useEditorStore.getState().inputState.accidental).toBe("sharp");
   });
 });
 

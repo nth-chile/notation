@@ -992,6 +992,18 @@ export function importFromMusicXML(xml: string, withHints?: true): Score | Music
     let hairpinState: HairpinState = { openStartId: null, openType: null };
 
     for (const measureEl of measureEls) {
+      // <print new-system="yes"/> or new-page="yes" at the start of this measure
+      // means the *previous* measure has a break attached to its end.
+      const printEl = getDirectChild(measureEl, "print");
+      if (printEl && measures.length > 0) {
+        const prev = measures[measures.length - 1];
+        if (printEl.getAttribute("new-page") === "yes") {
+          prev.break = "page";
+        } else if (printEl.getAttribute("new-system") === "yes") {
+          prev.break = "system";
+        }
+      }
+
       const result = parseMeasure(
         measureEl,
         currentClef,
@@ -1052,12 +1064,53 @@ export function importFromMusicXML(xml: string, withHints?: true): Score | Music
     });
   }
 
+  // Master playback tempo: prefer a direct <sound tempo> on the first measure
+  // (how we round-trip the toolbar BPM). Fall back to the first tempo-mark
+  // annotation found anywhere, then to 120.
+  let masterTempo = 120;
+  const firstPartEl = getDirectChild(scoreEl, "part");
+  const firstMeasureEl = firstPartEl ? getDirectChild(firstPartEl, "measure") : null;
+  if (firstMeasureEl) {
+    for (const soundEl of getDirectChildren(firstMeasureEl, "sound")) {
+      const t = parseFloat(soundEl.getAttribute("tempo") ?? "");
+      if (t > 0) { masterTempo = t; break; }
+    }
+  }
+  if (masterTempo === 120) {
+    outer: for (const part of parts) {
+      for (const m of part.measures) {
+        for (const ann of m.annotations) {
+          if (ann.kind === "tempo-mark") { masterTempo = ann.bpm; break outer; }
+        }
+      }
+    }
+  }
+
+  // Normalize barlines across parts: MusicXML sometimes marks a barline on
+  // only one part, but barlines are a score-level concept. If any part has a
+  // non-single barline at a given measure, propagate it to all parts.
+  if (parts.length > 1) {
+    const measureCount = parts[0].measures.length;
+    for (let mi = 0; mi < measureCount; mi++) {
+      let dominant: BarlineType = "single";
+      for (const p of parts) {
+        const b = p.measures[mi]?.barlineEnd;
+        if (b && b !== "single") { dominant = b; break; }
+      }
+      if (dominant !== "single") {
+        for (const p of parts) {
+          if (p.measures[mi]) p.measures[mi].barlineEnd = dominant;
+        }
+      }
+    }
+  }
+
   const score: Score = {
     id: newId<ScoreId>("scr"),
     title,
     composer,
     formatVersion: 1,
-    tempo: 120,
+    tempo: masterTempo,
     parts,
   };
 

@@ -6,7 +6,7 @@ import { isCrossStaff, type ArticulationKind } from "../model/note";
 import type { Stylesheet } from "../model/stylesheet";
 import { resolveStylesheet } from "../model/stylesheet";
 import { durationToTicks as durationToTicksFn, measureCapacity as measureCapacityFn, voiceTicksUsed as voiceTicksUsedFn } from "../model/duration";
-import { keyAccidental } from "../model/pitch";
+import { keyAccidental, pitchToMidi } from "../model/pitch";
 import { getBeamGroups } from "./beaming";
 
 export interface RenderContext {
@@ -30,6 +30,8 @@ export interface NoteBox {
   voiceIndex: number;
   eventIndex: number;
   staveIndex?: number;
+  /** Per-head hit rects for chord events, in the same order as event.heads. */
+  heads?: { x: number; y: number; width: number; height: number }[];
 }
 
 export interface AnnotationBox {
@@ -148,12 +150,25 @@ function addArticulations(sn: StaveNote, event: NoteEvent): void {
   }
 }
 
-export function initRenderer(canvas: HTMLCanvasElement, width?: number, height?: number): RenderContext {
+export function initRenderer(canvas: HTMLCanvasElement, width?: number, height?: number, zoom: number = 1): RenderContext {
   const renderer = new Renderer(canvas, Renderer.Backends.CANVAS);
+  const w = width ?? canvas.width;
+  const h = height ?? canvas.height;
   // VexFlow's resize() handles DPR internally: sets canvas.width = w * dpr,
   // canvas.style.width = w + 'px', and applies scale(dpr, dpr).
-  // Pass logical dimensions — do NOT pre-multiply by DPR.
-  renderer.resize(width ?? canvas.width, height ?? canvas.height);
+  renderer.resize(w, h);
+  if (zoom !== 1) {
+    // Scale the display size and backing store by zoom, then apply a combined
+    // setTransform so VexFlow's draw calls (at logical coords 0..w) render at
+    // `w * zoom` display px. Content layout is unchanged — only rendering scales.
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr * zoom);
+    canvas.height = Math.round(h * dpr * zoom);
+    canvas.style.width = `${w * zoom}px`;
+    canvas.style.height = `${h * zoom}px`;
+    const rawCtx = canvas.getContext("2d");
+    if (rawCtx) rawCtx.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0);
+  }
   const context = renderer.getContext();
   return { renderer, context };
 }
@@ -478,11 +493,18 @@ export interface RenderMeasureOptions {
   partIndex?: number;
   measureIndex?: number;
   activeNoteIds?: Set<NoteEventId>;
+  /** Notes to render in the selection color (not as strong as playback-active — applied via StaveNote.setStyle). */
+  selectedNoteIds?: Set<NoteEventId>;
+  /** When set, only the specified head index of the chord is styled instead of the whole note. */
+  selectedHeadByEventId?: Map<NoteEventId, number>;
   prevMeasure?: Measure;
   voiceFilter?: number[];
   staveIndex?: number;
   crossStaffStave?: Stave;
   crossStaffClef?: string;
+  /** Instrument range (MIDI). Notes outside are highlighted as out-of-range. */
+  instrumentMinPitch?: number;
+  instrumentMaxPitch?: number;
 }
 
 export function renderMeasure(
@@ -498,7 +520,9 @@ export function renderMeasure(
 ): MeasureRenderResult {
   const {
     stylesheet, partIndex = 0, measureIndex = 0, activeNoteIds,
+    selectedNoteIds, selectedHeadByEventId,
     prevMeasure, voiceFilter, staveIndex = 0, crossStaffStave, crossStaffClef,
+    instrumentMinPitch, instrumentMaxPitch,
   } = opts;
   const style = resolveStylesheet(stylesheet);
 
@@ -815,13 +839,64 @@ export function renderMeasure(
       }
     }
 
+    const hasRange = instrumentMinPitch != null && instrumentMaxPitch != null;
+    const isOutOfRange = (event: NoteEvent | undefined): boolean => {
+      if (!hasRange || !event) return false;
+      const min = instrumentMinPitch as number;
+      const max = instrumentMaxPitch as number;
+      if (event.kind === "note") {
+        const midi = pitchToMidi(event.head.pitch);
+        return midi < min || midi > max;
+      }
+      if (event.kind === "chord") {
+        return event.heads.some((h) => {
+          const midi = pitchToMidi(h.pitch);
+          return midi < min || midi > max;
+        });
+      }
+      if (event.kind === "grace") {
+        const midi = pitchToMidi(event.head.pitch);
+        return midi < min || midi > max;
+      }
+      return false;
+    };
+
     for (const vfVoice of vfVoices) {
+      // Color out-of-range notes (applied first so playback/selection can override)
+      if (hasRange) {
+        const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number };
+        const voiceEvents = m.voices[data.__voiceIndex]?.events ?? [];
+        data.__staveNotes.forEach((sn, idx) => {
+          if (isOutOfRange(voiceEvents[idx])) {
+            sn.setStyle({ fillStyle: "#d97706", strokeStyle: "#d97706" });
+          }
+        });
+      }
+
       // Color active playback notes
       if (activeNoteIds?.size) {
         const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] };
         data.__staveNotes.forEach((sn, idx) => {
           if (activeNoteIds.has(data.__eventIds[idx])) {
             sn.setStyle({ fillStyle: "#4a6fa5", strokeStyle: "#4a6fa5" });
+          }
+        });
+      }
+
+      if (selectedNoteIds?.size || selectedHeadByEventId?.size) {
+        const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[] };
+        data.__staveNotes.forEach((sn, idx) => {
+          const eid = data.__eventIds[idx];
+          if (!selectedNoteIds?.has(eid)) return;
+          const headIdx = selectedHeadByEventId?.get(eid);
+          if (headIdx != null) {
+            // Style only the specific chord head.
+            try {
+              const heads = (sn as unknown as { noteHeads: { setStyle: (s: { fillStyle: string; strokeStyle: string }) => void }[] }).noteHeads;
+              heads[headIdx]?.setStyle({ fillStyle: "#3b82f6", strokeStyle: "#3b82f6" });
+            } catch { /* fall through */ }
+          } else {
+            sn.setStyle({ fillStyle: "#3b82f6", strokeStyle: "#3b82f6" });
           }
         });
       }
@@ -857,6 +932,24 @@ export function renderMeasure(
               headH = nhBounds.yBottom - nhBounds.yTop;
             }
           } catch { /* pre-render or missing stave */ }
+          // Per-head hit rects for chord events (in model head order).
+          let headRects: { x: number; y: number; width: number; height: number }[] | undefined;
+          const modelEvt = m.voices[data.__voiceIndex]?.events[idx];
+          if (modelEvt && modelEvt.kind === "chord") {
+            try {
+              const heads = (sn as unknown as { noteHeads: { x: number; y: number; getWidth(): number }[] }).noteHeads;
+              if (heads && heads.length === modelEvt.heads.length) {
+                const hw = heads[0]?.getWidth() ?? (nhWidth > 0 ? nhWidth : 10);
+                const hh = 12; // ~one line-space, vertically centered on the head
+                headRects = heads.map((nh) => ({
+                  x: nh.x,
+                  y: nh.y - hh / 2,
+                  width: hw,
+                  height: hh,
+                }));
+              }
+            } catch { /* VexFlow internals unavailable */ }
+          }
           noteBoxes.push({
             id: data.__eventIds[idx],
             x, y, width: w, height: h,
@@ -868,6 +961,7 @@ export function renderMeasure(
             measureIndex,
             voiceIndex: data.__voiceIndex,
             eventIndex: idx,
+            heads: headRects,
           });
         }
       });

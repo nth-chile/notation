@@ -33,6 +33,7 @@ export { ClipboardPlugin } from "./builtins/Clipboard";
 export { MidiInputPlugin } from "./builtins/MidiInput";
 export { GuitarPlugin } from "./builtins/Guitar";
 export { TechniquesPlugin } from "./builtins/Techniques";
+export { LayoutBreaksPlugin } from "./builtins/LayoutBreaks";
 export { GuitarProImportPlugin } from "./builtins/GuitarProImport";
 
 // Community plugin registry

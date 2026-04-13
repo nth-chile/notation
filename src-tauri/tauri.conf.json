@@ -16,7 +16,8 @@
         "width": 1280,
         "height": 800,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -32,7 +33,15 @@
       "icons/icon.ico",
       "icons/icon.icns"
     ],
-    "targets": "all"
+    "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["musicxml", "mxl", "xml"],
+        "name": "MusicXML",
+        "description": "MusicXML score",
+        "role": "Editor"
+      }
+    ]
   },
   "plugins": {
     "updater": {

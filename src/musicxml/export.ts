@@ -439,9 +439,18 @@ function exportMeasure(
   staveCount = 1,
   slashHint = false,
   tabHint = false,
+  initialTempo?: number,
 ): string {
   const xmlMeasureNum = measure.isPickup ? "0" : measureNumber;
   let xml = `    <measure number="${xmlMeasureNum}"${measure.isPickup ? ' implicit="yes"' : ""}>\n`;
+
+  // Layout/section break: if the previous measure had a break, emit a <print>
+  // at the start of this measure.
+  if (prevMeasure?.break === "system") {
+    xml += `      <print new-system="yes"/>\n`;
+  } else if (prevMeasure?.break === "page" || prevMeasure?.break === "section") {
+    xml += `      <print new-page="yes"/>\n`;
+  }
 
   // Attributes — emit on first measure, or when clef/time/key change
   const needsAttributes =
@@ -523,6 +532,16 @@ function exportMeasure(
       xml += `        </measure-style>\n`;
     }
     xml += `      </attributes>\n`;
+  }
+
+  // Master playback tempo — silent <sound> on first measure so the toolbar BPM
+  // round-trips without showing a visible tempo mark. Skipped if the measure
+  // already has an explicit tempo-mark annotation at beat 0.
+  if (isFirstMeasure && initialTempo !== undefined) {
+    const hasExplicitTempo = measure.annotations.some((a) => a.kind === "tempo-mark");
+    if (!hasExplicitTempo) {
+      xml += `      <sound tempo="${initialTempo}"/>\n`;
+    }
   }
 
   // Navigation marks (segno, coda, fine, D.S., D.C.)
@@ -776,7 +795,7 @@ export function exportToMusicXML(score: Score, viewConfig?: ViewConfig): string 
 
     for (let m = 0; m < part.measures.length; m++) {
       const prevMeasure = m > 0 ? part.measures[m - 1] : undefined;
-      xml += exportMeasure(part.measures[m], m + 1, m === 0, prevMeasure, staveCount, slashHint, tabHint);
+      xml += exportMeasure(part.measures[m], m + 1, m === 0, prevMeasure, staveCount, slashHint, tabHint, i === 0 ? score.tempo : undefined);
     }
 
     xml += `  </part>\n`;

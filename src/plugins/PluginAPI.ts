@@ -22,6 +22,10 @@ export interface NoteSelection {
   /** Anchor position — the fixed end. Left/right move the other end. */
   anchorMeasure: number;
   anchorEvent: number;
+  /** True when this came from an explicit range action (double-click, drag, alt+shift+arrow).
+   *  Single-click creates a non-range selection that highlights just the clicked note without
+   *  triggering range-scoped behaviors like looping playback or drawing the selection band. */
+  rangeMode?: boolean;
   /** @deprecated single-measure compat — use startMeasure */
   measureIndex?: number;
 }

@@ -10,45 +10,53 @@ export interface KeyBinding {
   alt?: boolean;
 }
 
+export type ShortcutMode = "normal" | "note-entry" | "both";
+
 export interface ShortcutAction {
   id: string;
   label: string;
   category: string;
   defaultBinding: KeyBinding;
+  /** Which editor mode(s) this action is active in. Defaults to "both". */
+  mode?: ShortcutMode;
 }
 
 /** All available shortcut actions with their default bindings */
 export const SHORTCUT_ACTIONS: ShortcutAction[] = [
-  // Note input
-  { id: "note:a", label: "Insert A", category: "Notes", defaultBinding: { key: "a" } },
-  { id: "note:b", label: "Insert B", category: "Notes", defaultBinding: { key: "b" } },
-  { id: "note:c", label: "Insert C", category: "Notes", defaultBinding: { key: "c" } },
-  { id: "note:d", label: "Insert D", category: "Notes", defaultBinding: { key: "d" } },
-  { id: "note:e", label: "Insert E", category: "Notes", defaultBinding: { key: "e" } },
-  { id: "note:f", label: "Insert F", category: "Notes", defaultBinding: { key: "f" } },
-  { id: "note:g", label: "Insert G", category: "Notes", defaultBinding: { key: "g" } },
-  { id: "insert-rest", label: "Insert rest", category: "Notes", defaultBinding: { key: "r" } },
+  // Note input (note entry mode only)
+  { id: "note:a", label: "Insert A", category: "Notes", defaultBinding: { key: "a" }, mode: "note-entry" },
+  { id: "note:b", label: "Insert B", category: "Notes", defaultBinding: { key: "b" }, mode: "note-entry" },
+  { id: "note:c", label: "Insert C", category: "Notes", defaultBinding: { key: "c" }, mode: "note-entry" },
+  { id: "note:d", label: "Insert D", category: "Notes", defaultBinding: { key: "d" }, mode: "note-entry" },
+  { id: "note:e", label: "Insert E", category: "Notes", defaultBinding: { key: "e" }, mode: "note-entry" },
+  { id: "note:f", label: "Insert F", category: "Notes", defaultBinding: { key: "f" }, mode: "note-entry" },
+  { id: "note:g", label: "Insert G", category: "Notes", defaultBinding: { key: "g" }, mode: "note-entry" },
+  { id: "insert-rest", label: "Insert rest", category: "Notes", defaultBinding: { key: "r" }, mode: "note-entry" },
   { id: "delete", label: "Delete note", category: "Notes", defaultBinding: { key: "backspace" } },
 
-  // Duration
-  { id: "duration:whole", label: "Whole note", category: "Duration", defaultBinding: { key: "1" } },
-  { id: "duration:half", label: "Half note", category: "Duration", defaultBinding: { key: "2" } },
-  { id: "duration:quarter", label: "Quarter note", category: "Duration", defaultBinding: { key: "3" } },
-  { id: "duration:eighth", label: "Eighth note", category: "Duration", defaultBinding: { key: "4" } },
-  { id: "duration:16th", label: "16th note", category: "Duration", defaultBinding: { key: "5" } },
-  { id: "duration:32nd", label: "32nd note", category: "Duration", defaultBinding: { key: "6" } },
-  { id: "duration:64th", label: "64th note", category: "Duration", defaultBinding: { key: "7" } },
-  { id: "toggle-dot", label: "Toggle dot", category: "Duration", defaultBinding: { key: "." } },
-  { id: "toggle-step-entry", label: "Step entry mode", category: "Notes", defaultBinding: { key: "n" } },
-  { id: "toggle-insert-mode", label: "Insert mode", category: "Notes", defaultBinding: { key: "i" } },
-  { id: "toggle-pitch-before-duration", label: "Toggle pitch-before-duration", category: "Notes", defaultBinding: { key: "k" } },
-  { id: "toggle-grace-note", label: "Grace note mode", category: "Notes", defaultBinding: { key: "g", shift: true } },
-  { id: "toggle-slur", label: "Slur (start/end)", category: "Notes", defaultBinding: { key: "s", shift: true } },
-  { id: "toggle-tie", label: "Tie", category: "Notes", defaultBinding: { key: "t" } },
-  { id: "hairpin:crescendo", label: "Crescendo (start/end)", category: "Annotation", defaultBinding: { key: ",", shift: true, alt: true } },
-  { id: "hairpin:diminuendo", label: "Diminuendo (start/end)", category: "Annotation", defaultBinding: { key: ".", shift: true, alt: true } },
+  // Duration (note entry sets pending; normal changes selection)
+  { id: "duration:whole", label: "Whole note", category: "Duration", defaultBinding: { key: "1" }, mode: "note-entry" },
+  { id: "duration:half", label: "Half note", category: "Duration", defaultBinding: { key: "2" }, mode: "note-entry" },
+  { id: "duration:quarter", label: "Quarter note", category: "Duration", defaultBinding: { key: "3" }, mode: "note-entry" },
+  { id: "duration:eighth", label: "Eighth note", category: "Duration", defaultBinding: { key: "4" }, mode: "note-entry" },
+  { id: "duration:16th", label: "16th note", category: "Duration", defaultBinding: { key: "5" }, mode: "note-entry" },
+  { id: "duration:32nd", label: "32nd note", category: "Duration", defaultBinding: { key: "6" }, mode: "note-entry" },
+  { id: "duration:64th", label: "64th note", category: "Duration", defaultBinding: { key: "7" }, mode: "note-entry" },
+  { id: "toggle-dot", label: "Toggle dot", category: "Duration", defaultBinding: { key: "." }, mode: "note-entry" },
 
-  // Accidentals
+  // Mode toggles
+  { id: "toggle-note-entry", label: "Note entry mode", category: "Modes", defaultBinding: { key: "n" } },
+  { id: "toggle-insert-mode", label: "Insert sub-mode", category: "Modes", defaultBinding: { key: "i" }, mode: "note-entry" },
+  { id: "toggle-pitch-before-duration", label: "Pitch before duration", category: "Modes", defaultBinding: { key: "k" }, mode: "note-entry" },
+  { id: "toggle-grace-note", label: "Grace note mode", category: "Modes", defaultBinding: { key: "g", shift: true }, mode: "note-entry" },
+
+  // Transforms (work in both modes)
+  { id: "toggle-slur", label: "Slur", category: "Transforms", defaultBinding: { key: "s" }, mode: "normal" },
+  { id: "toggle-tie", label: "Tie", category: "Transforms", defaultBinding: { key: "t" } },
+  { id: "hairpin:crescendo", label: "Crescendo", category: "Annotation", defaultBinding: { key: ",", shift: true, alt: true } },
+  { id: "hairpin:diminuendo", label: "Diminuendo", category: "Annotation", defaultBinding: { key: ".", shift: true, alt: true } },
+
+  // Accidentals (note entry sets pending; normal applies to selection)
   { id: "accidental:sharp", label: "Sharp", category: "Accidentals", defaultBinding: { key: "=" } },
   { id: "accidental:flat", label: "Flat", category: "Accidentals", defaultBinding: { key: "-" } },
 
@@ -63,6 +71,10 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "octave:down", label: "Octave down", category: "Navigation", defaultBinding: { key: "arrowdown", alt: true, ctrl: true } },
   { id: "part:up", label: "Previous part", category: "Navigation", defaultBinding: { key: "arrowup" } },
   { id: "part:down", label: "Next part", category: "Navigation", defaultBinding: { key: "arrowdown" } },
+  { id: "measure:prev", label: "Previous measure", category: "Navigation", defaultBinding: { key: "arrowleft", ctrl: true } },
+  { id: "measure:next", label: "Next measure", category: "Navigation", defaultBinding: { key: "arrowright", ctrl: true } },
+  { id: "measure:prev-alt", label: "Previous measure (alt)", category: "Navigation", defaultBinding: { key: ";" } },
+  { id: "measure:next-alt", label: "Next measure (alt)", category: "Navigation", defaultBinding: { key: "'" } },
   { id: "nav:beginning", label: "Go to beginning", category: "Navigation", defaultBinding: { key: "enter" } },
 
   // Selection
@@ -93,30 +105,34 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "toggle:tab", label: "Toggle tab notation", category: "Views", defaultBinding: { key: "2", ctrl: true, shift: true } },
   { id: "toggle:slash", label: "Toggle slash notation", category: "Views", defaultBinding: { key: "3", ctrl: true, shift: true } },
 
-  // Annotation
-  { id: "chord-mode", label: "Chord input", category: "Annotation", defaultBinding: { key: "c", shift: true } },
-  { id: "lyric-mode", label: "Lyric input", category: "Annotation", defaultBinding: { key: "l", shift: true } },
-  { id: "dynamics-popover", label: "Dynamics", category: "Annotation", defaultBinding: { key: "d", shift: true } },
+  // Annotation (normal mode bare letters; Shift/Ctrl variants work in both)
+  { id: "chord-mode", label: "Chord input", category: "Annotation", defaultBinding: { key: "c" }, mode: "normal" },
+  { id: "lyric-mode", label: "Lyric input", category: "Annotation", defaultBinding: { key: "l" }, mode: "normal" },
+  { id: "dynamics-popover", label: "Dynamics", category: "Annotation", defaultBinding: { key: "d" }, mode: "normal" },
   { id: "tempo-popover", label: "Tempo marking", category: "Annotation", defaultBinding: { key: "t", ctrl: true, shift: true } },
   { id: "time-sig-popover", label: "Time signature", category: "Annotation", defaultBinding: { key: "t", ctrl: true } },
   { id: "key-sig-popover", label: "Key signature", category: "Annotation", defaultBinding: { key: "k", ctrl: true } },
-  { id: "rehearsal-popover", label: "Rehearsal mark", category: "Annotation", defaultBinding: { key: "r", shift: true } },
-  { id: "barline-popover", label: "Barline", category: "Annotation", defaultBinding: { key: "b", shift: true } },
+  { id: "rehearsal-popover", label: "Rehearsal mark", category: "Annotation", defaultBinding: { key: "r" }, mode: "normal" },
+  { id: "barline-popover", label: "Barline", category: "Annotation", defaultBinding: { key: "b" }, mode: "normal" },
   { id: "navigation-popover", label: "Navigation marks", category: "Annotation", defaultBinding: { key: "n", shift: true } },
 
+  // Transforms + chord nav
+  { id: "toggle-cross-staff", label: "Toggle cross-staff", category: "Notes", defaultBinding: { key: "x" }, mode: "normal" },
+  { id: "chord:next-head", label: "Next chord head", category: "Notes", defaultBinding: { key: "]" } },
+  { id: "chord:prev-head", label: "Previous chord head", category: "Notes", defaultBinding: { key: "[" } },
+
   // Articulations
-  { id: "toggle-cross-staff", label: "Toggle cross-staff", category: "Notes", defaultBinding: { key: "x", shift: true } },
   { id: "articulation:accent", label: "Accent", category: "Articulations", defaultBinding: { key: ">", shift: true } },
   { id: "articulation:staccato", label: "Staccato", category: "Articulations", defaultBinding: { key: "<", shift: true } },
-  { id: "articulation:tenuto", label: "Tenuto", category: "Articulations", defaultBinding: { key: "t", shift: true } },
-  { id: "articulation:fermata", label: "Fermata", category: "Articulations", defaultBinding: { key: "u", shift: true } },
+  { id: "articulation:tenuto", label: "Tenuto", category: "Articulations", defaultBinding: { key: "_", shift: true } },
+  { id: "articulation:fermata", label: "Fermata", category: "Articulations", defaultBinding: { key: "u" }, mode: "normal" },
   { id: "articulation:marcato", label: "Marcato", category: "Articulations", defaultBinding: { key: "^", shift: true } },
   { id: "articulation:trill", label: "Trill", category: "Articulations", defaultBinding: { key: "r", shift: true, alt: true } },
 
   // Playback
   { id: "play-pause", label: "Play / Pause", category: "Playback", defaultBinding: { key: " " } },
   { id: "stop-playback", label: "Stop playback", category: "Playback", defaultBinding: { key: ".", ctrl: true } },
-  { id: "toggle-metronome", label: "Toggle metronome", category: "Playback", defaultBinding: { key: "m", shift: true } },
+  { id: "toggle-metronome", label: "Toggle metronome", category: "Playback", defaultBinding: { key: "m" }, mode: "normal" },
   { id: "toggle-count-in", label: "Toggle count-in", category: "Playback", defaultBinding: { key: "i", shift: true } },
 
   // File
@@ -132,6 +148,11 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "toggle-plugins", label: "Toggle plugins", category: "UI", defaultBinding: { key: "e", ctrl: true, shift: true } },
   { id: "file-history", label: "File history", category: "File", defaultBinding: { key: "h", ctrl: true, shift: true } },
   { id: "go-to-measure", label: "Go to measure", category: "Navigation", defaultBinding: { key: "g", ctrl: true } },
+
+  // Zoom (score-only)
+  { id: "zoom:in", label: "Zoom in", category: "View", defaultBinding: { key: "=", ctrl: true } },
+  { id: "zoom:out", label: "Zoom out", category: "View", defaultBinding: { key: "-", ctrl: true } },
+  { id: "zoom:reset", label: "Reset zoom", category: "View", defaultBinding: { key: "0", ctrl: true } },
 ];
 
 /** Build default bindings map from action definitions */
@@ -141,6 +162,63 @@ export function defaultKeyBindings(): Record<string, KeyBinding> {
     map[action.id] = { ...action.defaultBinding };
   }
   return map;
+}
+
+/** Pre-v2 default bindings, used to auto-upgrade users who never customized
+ *  a shortcut. If their stored binding matches the old default, we rewrite
+ *  it to the new default; otherwise we preserve their override. */
+const LEGACY_DEFAULT_BINDINGS: Record<string, KeyBinding> = {
+  "chord-mode": { key: "c", shift: true },
+  "lyric-mode": { key: "l", shift: true },
+  "dynamics-popover": { key: "d", shift: true },
+  "rehearsal-popover": { key: "r", shift: true },
+  "barline-popover": { key: "b", shift: true },
+  "toggle-cross-staff": { key: "x", shift: true },
+  "toggle-metronome": { key: "m", shift: true },
+  "toggle-slur": { key: "s", shift: true },
+  "articulation:fermata": { key: "u", shift: true },
+  "articulation:tenuto": { key: "t", shift: true },
+};
+
+function bindingsEqual(a: KeyBinding, b: KeyBinding): boolean {
+  return a.key === b.key && !!a.ctrl === !!b.ctrl && !!a.shift === !!b.shift && !!a.alt === !!b.alt;
+}
+
+/** Migrate a stored keyBindings record from any older schema to the current one. */
+export function migrateKeyBindings(stored: Record<string, KeyBinding>): Record<string, KeyBinding> {
+  const out: Record<string, KeyBinding> = { ...stored };
+
+  // Rename toggle-step-entry → toggle-note-entry, preserving any user override.
+  if (out["toggle-step-entry"]) {
+    if (!out["toggle-note-entry"]) {
+      out["toggle-note-entry"] = out["toggle-step-entry"];
+    }
+    delete out["toggle-step-entry"];
+  }
+
+  // For each action that got a new default, replace the stored binding if it
+  // still matches the old default (i.e. user never customized it).
+  for (const [actionId, legacy] of Object.entries(LEGACY_DEFAULT_BINDINGS)) {
+    const current = out[actionId];
+    if (current && bindingsEqual(current, legacy)) {
+      const action = SHORTCUT_ACTIONS.find((a) => a.id === actionId);
+      if (action) out[actionId] = { ...action.defaultBinding };
+    }
+  }
+
+  return out;
+}
+
+/** Look up an action's mode filter. Defaults to "both" if unspecified. */
+export function actionMode(actionId: string): ShortcutMode {
+  return SHORTCUT_ACTIONS.find((a) => a.id === actionId)?.mode ?? "both";
+}
+
+/** Check if an action should fire in the current editor mode. */
+export function actionActiveInMode(actionId: string, noteEntry: boolean): boolean {
+  const mode = actionMode(actionId);
+  if (mode === "both") return true;
+  return mode === (noteEntry ? "note-entry" : "normal");
 }
 
 /** Format a keybinding for display */

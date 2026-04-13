@@ -32,19 +32,31 @@ VITE_CLEAN_SETTINGS=1 npm run tauri dev  # Same for desktop
 
 ## Keyboard Shortcuts
 
-**Note input:** A-G: insert note | R: rest | Backspace: delete | 1-7: duration | .: dot | =/- : sharp/flat
-**Modes:** N: step entry | I: insert mode | K: pitch-before-duration | Shift+G: grace note | Shift+S: slur | T: tie | Shift+X: cross-staff
-**Navigation:** Arrow L/R: move cursor | Arrow U/D: navigate parts | Enter: go to beginning | Ctrl+G: go to measure
-**Pitch:** Alt+Up/Down: diatonic | Shift+Alt+Up/Down: chromatic | Ctrl+Alt+Up/Down: octave
-**Selection:** Shift+Arrow L/R: extend measure selection | Alt+Shift+Arrow L/R: extend note selection | Ctrl+A: select all | Ctrl+C/X/V: copy/cut/paste | Escape: clear
-**Editing:** Ctrl+Z / Ctrl+Shift+Z: undo/redo | Ctrl+M: insert measure | Ctrl+Backspace: delete measure
-**Voices:** Ctrl+1-4: switch voice
-**Annotations:** Shift+C: chord input | Shift+L: lyric input | Shift+D: dynamics | Shift+R: rehearsal mark | Shift+B: barline | Shift+N: navigation marks | Ctrl+T: time sig | Ctrl+K: key sig | Ctrl+Shift+T: tempo | Shift+Alt+,: crescendo | Shift+Alt+.: diminuendo
-**Articulations:** Shift+>: accent | Shift+<: staccato | Shift+T: tenuto | Shift+U: fermata | Shift+^: marcato | Shift+Alt+R: trill
-**Playback:** Space: play/pause | Ctrl+.: stop | Shift+M: metronome | Shift+I: count-in
-**File:** Ctrl+N: new | Ctrl+O: open | Ctrl+S: save | Ctrl+Shift+H: file history
-**UI:** Ctrl+,: settings | Ctrl+B: left sidebar | Ctrl+Shift+B: right sidebar | Ctrl+Shift+P: command palette | Ctrl+Shift+E: plugins | Ctrl+Shift+A: AI chat
-**Views:** Ctrl+Shift+1: toggle standard | Ctrl+Shift+2: toggle tab | Ctrl+Shift+3: toggle slash
+The editor has two top-level modes: **Normal** (default) and **Note Entry**. Press `N` to toggle. In Normal mode letter keys are command shortcuts; in Note Entry mode they insert notes. `Escape` exits Note Entry back to Normal.
+
+**Note Entry mode:**
+- A-G: insert note | R: rest | 1-7: duration | .: dot | =/- : sharp/flat
+- Shift+A-G: add pitch to chord at cursor
+- I: insert sub-mode (push existing notes forward) | K: pitch-before-duration | Shift+G: grace note
+
+**Normal mode (commands):**
+- C: chord symbol | L: lyric | D: dynamics | B: barline | R: rehearsal mark | Shift+N: navigation marks
+- S: slur | T: tie | M: metronome | X: cross-staff | U: fermata
+- Backspace: delete selection or note at caret
+
+**Both modes:**
+- [ / ]: cycle to previous/next chord head
+- Arrow L/R: move cursor | Arrow U/D: navigate parts | Enter: go to beginning | Ctrl+G: go to measure
+- Alt+Up/Down: diatonic pitch | Shift+Alt+Up/Down: chromatic | Ctrl+Alt+Up/Down: octave
+- Shift+Arrow L/R: extend measure selection | Alt+Shift+Arrow L/R: extend note selection
+- Ctrl+A: select all | Ctrl+C/X/V: copy/cut/paste | Ctrl+Z/Shift+Z: undo/redo
+- Ctrl+M: insert measure | Ctrl+Backspace: delete measure | Ctrl+1-4: voice
+- Ctrl+T: time sig | Ctrl+K: key sig | Ctrl+Shift+T: tempo | Shift+Alt+,/.: crescendo/diminuendo
+- Shift+>: accent | Shift+<: staccato | Shift+_: tenuto | Shift+^: marcato | Shift+Alt+R: trill
+- Space: play/pause | Ctrl+.: stop | Shift+I: count-in
+- Ctrl+N: new | Ctrl+O: open | Ctrl+S: save | Ctrl+Shift+H: file history
+- Ctrl+,: settings | Ctrl+B: left sidebar | Ctrl+Shift+B: right sidebar | Ctrl+Shift+P: command palette | Ctrl+Shift+E: plugins | Ctrl+Shift+A: AI chat
+- Ctrl+Shift+1/2/3: toggle standard/tab/slash notation
 
 ## Internal JSON Format
 

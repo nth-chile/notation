@@ -786,3 +786,12 @@ export function getScoreDuration(score: Score): number {
 export function setNotePlayer(player: NotePlayer | null): void {
   customPlayer = player;
 }
+
+export function previewPitches(midis: number[], instrumentId?: string): void {
+  if (!customPlayer || midis.length === 0) return;
+  customPlayer.resume?.();
+  const now = Tone.now();
+  for (const midi of midis) {
+    customPlayer.play(midi, 0.5, now, instrumentId, 90);
+  }
+}

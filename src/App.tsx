@@ -15,7 +15,7 @@ import { useLayoutStore } from "./state/LayoutState";
 import { saveScore } from "./fileio/save";
 import { loadScore } from "./fileio/load";
 import { emptyScore } from "./model/factory";
-import { getSettings, matchesBinding } from "./settings";
+import { getSettings, matchesBinding, updateSettings } from "./settings";
 import { recordSave } from "./licensing";
 import { LicenseNag } from "./components/LicenseNag";
 import { useEffect, useCallback, useState, useSyncExternalStore, useRef } from "react";
@@ -34,6 +34,7 @@ import {
   MidiInputPlugin,
   GuitarPlugin,
   TechniquesPlugin,
+  LayoutBreaksPlugin,
 } from "./plugins";
 import { setGlobalPluginManager } from "./plugins/PluginManager";
 import { isCommunityPluginsEnabled, loadAllInstalled } from "./plugins/CommunityRegistry";
@@ -103,6 +104,7 @@ export function App() {
     pm.registerAndActivate(MidiInputPlugin, false);
     pm.registerAndActivate(GuitarPlugin, true);
     pm.registerAndActivate(TechniquesPlugin, true);
+    pm.registerAndActivate(LayoutBreaksPlugin, true);
     // GuitarProImportPlugin disabled — needs real-world testing with .gp files before enabling
     // pm.registerAndActivate(GuitarProImportPlugin, true);
 
@@ -202,9 +204,9 @@ export function App() {
     }
   }, [setScore, setFilePath]);
 
-  const handleOpen = useCallback(async () => {
+  const handleOpen = useCallback(async (presetPath?: string) => {
     try {
-      const result = await loadScore();
+      const result = await loadScore(presetPath);
       if (!result) return;
       setScore(result.score);
       setFilePath(result.path);
@@ -237,6 +239,15 @@ export function App() {
       "toggle-right-sidebar": () => useLayoutStore.getState().toggleSidebar("right"),
       "toggle-plugins": () => setPluginsVisible((v) => !v),
       "file-history": () => showHistoryModal(),
+      "zoom:in": () => {
+        const next = Math.min(3, Math.round((getSettings().scoreZoom + 0.1) * 10) / 10);
+        updateSettings({ scoreZoom: next });
+      },
+      "zoom:out": () => {
+        const next = Math.max(0.5, Math.round((getSettings().scoreZoom - 0.1) * 10) / 10);
+        updateSettings({ scoreZoom: next });
+      },
+      "zoom:reset": () => updateSettings({ scoreZoom: 1 }),
     };
     function handleKeyDown(e: KeyboardEvent) {
       const bindings = getSettings().keyBindings;
@@ -261,6 +272,26 @@ export function App() {
     import("./telemetry").then((m) => m.sendLaunchPing());
     checkForUpdates();
   }, []);
+
+  // OS file-association: open files delivered by Finder/Explorer double-click.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const { invoke } = await import("@tauri-apps/api/core");
+        unlisten = await listen<string>("nubium://file-opened", (e) => {
+          if (typeof e.payload === "string" && e.payload) handleOpen(e.payload);
+        });
+        // Drain any file queued before the listener was registered.
+        const pending = await invoke<string | null>("take_pending_open");
+        if (pending) handleOpen(pending);
+      } catch {
+        // Not running under Tauri — no OS file association to wire up.
+      }
+    })();
+    return () => { if (unlisten) unlisten(); };
+  }, [handleOpen]);
 
   return (
     <TooltipProvider delayDuration={600} skipDelayDuration={400}>

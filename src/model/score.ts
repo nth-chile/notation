@@ -28,6 +28,12 @@ export interface Part {
   capo?: number;
 }
 
+/** Layout/section break attached to the *end* of a measure — the break happens
+ *  before the next measure. Values are mutually exclusive except "section"
+ *  which implies a system break and also resets measure numbering / shows
+ *  courtesies. */
+export type MeasureBreak = "system" | "page" | "section";
+
 export interface Measure {
   id: MeasureId;
   clef: Clef;
@@ -38,6 +44,8 @@ export interface Measure {
   annotations: Annotation[];
   voices: Voice[];
   isPickup?: boolean;
+  /** Break forced at the end of this measure (before the next one). */
+  break?: MeasureBreak;
 }
 
 export interface Voice {

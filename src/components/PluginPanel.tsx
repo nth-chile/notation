@@ -12,7 +12,7 @@ import {
   loadPluginFromBundle,
   type RegistryEntry,
 } from "../plugins/CommunityRegistry";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Switch } from "./ui/switch";
 import { Settings, Download, Trash2, RefreshCw, ArrowUpCircle } from "lucide-react";
 
@@ -398,6 +398,9 @@ export function PluginPanel({ visible, onClose, pluginManager }: PluginPanelProp
       <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Plugins</DialogTitle>
+          <DialogDescription className="sr-only">
+            Manage installed plugins and browse community plugins.
+          </DialogDescription>
         </DialogHeader>
 
         {/* Tabs */}

@@ -4,7 +4,7 @@ import type { Accidental } from "../model";
 export class SetAccidental implements Command {
   description = "Set accidental";
 
-  constructor(private accidental: Accidental) {}
+  constructor(private accidental: Accidental, private headIndex?: number | null) {}
 
   execute(state: EditorSnapshot): EditorSnapshot {
     const score = structuredClone(state.score);
@@ -20,10 +20,18 @@ export class SetAccidental implements Command {
     if (evt.kind === "note" || evt.kind === "grace") {
       evt.head = { ...evt.head, pitch: { ...evt.head.pitch, accidental: this.accidental } };
     } else if (evt.kind === "chord") {
-      evt.heads = evt.heads.map((h) => ({
-        ...h,
-        pitch: { ...h.pitch, accidental: this.accidental },
-      }));
+      if (this.headIndex != null && this.headIndex >= 0 && this.headIndex < evt.heads.length) {
+        evt.heads = evt.heads.map((h, i) =>
+          i === this.headIndex
+            ? { ...h, pitch: { ...h.pitch, accidental: this.accidental } }
+            : h,
+        );
+      } else {
+        evt.heads = evt.heads.map((h) => ({
+          ...h,
+          pitch: { ...h.pitch, accidental: this.accidental },
+        }));
+      }
     }
 
     return { score, inputState: input };

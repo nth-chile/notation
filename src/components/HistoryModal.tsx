@@ -64,6 +64,10 @@ export function HistoryModal() {
     <div
       className="fixed inset-0 bg-black/50 flex justify-center pt-24 z-[1100]"
       onClick={close}
+      role="dialog"
+      aria-modal="true"
+      aria-label="File History"
+      aria-describedby="history-modal-desc"
     >
       <div
         className="bg-popover border rounded-lg w-[440px] max-h-[480px] flex flex-col shadow-2xl overflow-hidden"
@@ -72,6 +76,9 @@ export function HistoryModal() {
         <div className="px-4 py-3 border-b text-sm font-semibold">
           File History
         </div>
+        <p id="history-modal-desc" className="sr-only">
+          Browse and restore previous versions of your score.
+        </p>
         <div className="overflow-y-auto flex-1">
           {loading && (
             <div className="py-5 px-4 text-center text-sm text-muted-foreground">

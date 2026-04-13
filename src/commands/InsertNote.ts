@@ -2,7 +2,7 @@ import type { Command, EditorSnapshot } from "./Command";
 import type { PitchClass, Octave, Accidental, Duration } from "../model";
 import { newId, type NoteEventId } from "../model/ids";
 import { durationToTicks, measureCapacity, voiceTicksUsed } from "../model/duration";
-import { appendMeasureToAllParts } from "./measureUtils";
+import { appendMeasureToAllParts, resolveVoiceForStaff } from "./measureUtils";
 
 export class InsertNote implements Command {
   description = "Insert note";
@@ -17,20 +17,15 @@ export class InsertNote implements Command {
   execute(state: EditorSnapshot): EditorSnapshot {
     const score = structuredClone(state.score);
     const input = structuredClone(state.inputState);
-    const { partIndex, measureIndex, voiceIndex, eventIndex } = input.cursor;
+    const { partIndex, measureIndex, eventIndex } = input.cursor;
 
     const measure = score.parts[partIndex]?.measures[measureIndex];
     if (!measure) return state;
 
-    // Auto-create voices up to the requested index
+    // Resolve voice index to one matching the cursor's staff (grand staff).
     const staveIndex = input.cursor.staveIndex ?? 0;
-    while (measure.voices.length <= voiceIndex) {
-      measure.voices.push({
-        id: newId<import("../model/ids").VoiceId>("vce"),
-        events: [],
-        staff: staveIndex,
-      });
-    }
+    const voiceIndex = resolveVoiceForStaff(measure, input.cursor.voiceIndex, staveIndex);
+    input.cursor.voiceIndex = voiceIndex;
     const voice = measure.voices[voiceIndex];
 
     // Check measure capacity
@@ -54,18 +49,12 @@ export class InsertNote implements Command {
       input.cursor.measureIndex = measureIndex + 1;
       input.cursor.eventIndex = 0;
 
-      // Ensure target voice exists in next measure
+      // Ensure target voice exists in next measure on the correct staff
       const nextMeasure = part.measures[input.cursor.measureIndex];
-      while (nextMeasure.voices.length <= voiceIndex) {
-        nextMeasure.voices.push({
-          id: newId<import("../model/ids").VoiceId>("vce"),
-          events: [],
-          staff: staveIndex,
-        });
-      }
+      const nextVoiceIndex = resolveVoiceForStaff(nextMeasure, voiceIndex, staveIndex);
+      input.cursor.voiceIndex = nextVoiceIndex;
 
-      // Insert in the next measure
-      const nextVoice = nextMeasure.voices[voiceIndex];
+      const nextVoice = nextMeasure.voices[nextVoiceIndex];
       const nextCap = measureCapacity(
         nextMeasure.timeSignature.numerator,
         nextMeasure.timeSignature.denominator

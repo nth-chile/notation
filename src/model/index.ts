@@ -1,4 +1,4 @@
-export type { Score, Part, Measure, Voice } from "./score";
+export type { Score, Part, Measure, Voice, MeasureBreak } from "./score";
 export type { Note, Chord, Rest, Slash, GraceNote, NoteHead, NoteEvent, TupletRatio } from "./note";
 export type { NavigationMarks, Volta } from "./navigation";
 export type { Pitch, PitchClass, Accidental, Octave } from "./pitch";

@@ -9,15 +9,20 @@ export class SetRepeatBarline implements Command {
   execute(state: EditorSnapshot): EditorSnapshot {
     const score = structuredClone(state.score);
     const input = structuredClone(state.inputState);
-    const { measureIndex } = input.cursor;
+    const { measureIndex, partIndex } = input.cursor;
 
-    // Apply barline change across all parts at this measure index
+    // Determine the new barline from the cursor's part, then apply uniformly.
+    // Using the cursor's part as the reference keeps all parts in sync even
+    // when they started desynced (e.g. from MusicXML import).
+    const refMeasure = score.parts[partIndex]?.measures[measureIndex];
+    if (!refMeasure) return state;
+    const newBarline =
+      refMeasure.barlineEnd === this.barlineType ? "single" : this.barlineType;
+
     for (const part of score.parts) {
       const measure = part.measures[measureIndex];
       if (!measure) continue;
-      // Toggle: if already set to the target type, revert to "single"
-      measure.barlineEnd =
-        measure.barlineEnd === this.barlineType ? "single" : this.barlineType;
+      measure.barlineEnd = newBarline;
     }
 
     return { score, inputState: input };

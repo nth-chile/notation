@@ -1,6 +1,7 @@
 export type { Command, EditorSnapshot } from "./Command";
 export { CommandHistory } from "./CommandHistory";
 export { InsertNote } from "./InsertNote";
+export { AddPitchToChord } from "./AddPitchToChord";
 export { InsertRest } from "./InsertRest";
 export { DeleteNote } from "./DeleteNote";
 export { ChangePitch } from "./ChangePitch";
@@ -32,3 +33,5 @@ export type { StemDirectionValue } from "./SetStemDirection";
 export { SetScoreMeta } from "./SetScoreMeta";
 export { SetPartProperty } from "./SetPartProperty";
 export type { PartPropertyUpdate } from "./SetPartProperty";
+export { ChangeInstrument } from "./ChangeInstrument";
+export { SetMeasureBreak } from "./SetMeasureBreak";

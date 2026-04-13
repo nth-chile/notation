@@ -58,7 +58,7 @@ const ACCIDENTALS: { acc: Accidental; label: string }[] = [
 
 function ModesPanel() {
   const inputState = useEditorStore((s) => s.inputState);
-  const toggleStepEntry = useEditorStore((s) => s.toggleStepEntry);
+  const toggleNoteEntry = useEditorStore((s) => s.toggleNoteEntry);
   const toggleInsertMode = useEditorStore((s) => s.toggleInsertMode);
   const toggleGraceNoteMode = useEditorStore((s) => s.toggleGraceNoteMode);
   const togglePitchBeforeDuration = useEditorStore((s) => s.togglePitchBeforeDuration);
@@ -67,16 +67,16 @@ function ModesPanel() {
   return (
     <div className="flex items-center gap-1">
       <TooltipButton
-        variant={inputState.stepEntry ? "default" : "ghost"}
+        variant={inputState.noteEntry ? "default" : "ghost"}
         size="icon"
-        onClick={toggleStepEntry}
-        tooltip={`Step entry (${hotkey("toggle-step-entry")})`}
-        actionId="toggle-step-entry"
+        onClick={toggleNoteEntry}
+        tooltip={`Note entry (${hotkey("toggle-note-entry")})`}
+        actionId="toggle-note-entry"
         className="text-xs font-bold"
       >
         N
       </TooltipButton>
-      {inputState.stepEntry && (
+      {inputState.noteEntry && (
         <TooltipButton
           variant={inputState.insertMode ? "default" : "ghost"}
           size="icon"
@@ -287,8 +287,8 @@ export function registerCoreEditor(pm: PluginManager): void {
   pm.registerCoreCommand("nubium.stem-auto", "Stem auto", () => {
     useEditorStore.getState().setStemDirection(null);
   });
-  pm.registerCoreCommand("nubium.toggle-step-entry", "Toggle step entry", () => {
-    useEditorStore.getState().toggleStepEntry();
+  pm.registerCoreCommand("nubium.toggle-note-entry", "Toggle note entry", () => {
+    useEditorStore.getState().toggleNoteEntry();
   });
   pm.registerCoreCommand("nubium.toggle-grace-note", "Toggle grace note mode", () => {
     useEditorStore.getState().toggleGraceNoteMode();

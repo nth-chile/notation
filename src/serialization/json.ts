@@ -148,6 +148,7 @@ function measureToJson(m: Measure, index: number): Record<string, unknown> {
 
   if (m.isPickup) obj.pickup = true;
   if (m.barlineEnd !== "single") obj.barline = m.barlineEnd;
+  if (m.break) obj.break = m.break;
 
   if (m.annotations.length > 0) {
     obj.annotations = m.annotations.map(annotationToJson);
@@ -436,6 +437,7 @@ export function parseMeasure(m: Record<string, unknown>): Measure {
     navigation: (m.navigation as NavigationMarks) || undefined,
     voices,
     isPickup: (m.pickup as boolean) || undefined,
+    break: (m.break as import("../model").MeasureBreak) || undefined,
   };
 }
 

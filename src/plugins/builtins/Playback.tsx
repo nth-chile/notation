@@ -178,7 +178,10 @@ function TransportPanel() {
           value={tempoInput !== null ? tempoInput : String(effectiveBpm)}
           onChange={(e) => setTempoInput(e.target.value)}
           onBlur={handleTempoCommit}
-          onKeyDown={(e) => { if (e.key === "Enter") handleTempoCommit(); else if (e.key === "Escape") setTempoInput(null); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { handleTempoCommit(); (e.currentTarget as HTMLInputElement).blur(); }
+            else if (e.key === "Escape") { setTempoInput(null); (e.currentTarget as HTMLInputElement).blur(); }
+          }}
           onFocus={() => setTempoInput(String(score.tempo))}
           className="w-14 h-7 text-center text-sm font-semibold"
         />

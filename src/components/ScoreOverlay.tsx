@@ -1,19 +1,24 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useEditorStore } from "../state";
 import type { NoteBox } from "../renderer/vexBridge";
+import { previewPitches } from "../playback/TonePlayback";
+import { pitchToMidi } from "../model/pitch";
 
 const HIT_PADDING = 8; // extra pixels around text for easier clicking
 
 interface Props {
   width: number;
   height: number;
+  zoom: number;
 }
 
-export function ScoreOverlay({ width, height }: Props) {
+export function ScoreOverlay({ width, height, zoom }: Props) {
   const score = useEditorStore((s) => s.score);
   const noteBoxes = useEditorStore((s) => s.noteBoxes);
   const hitBoxes = useEditorStore((s) => s.hitBoxes);
   const annotationBoxes = useEditorStore((s) => s.annotationBoxes);
+  const breakBoxes = useEditorStore((s) => s.breakBoxes);
+  const setMeasureBreak = useEditorStore((s) => s.setMeasureBreak);
   const measurePositions = useEditorStore((s) => s.measurePositions);
   const titlePositions = useEditorStore((s) => s.titlePositions);
   const editingTitle = useEditorStore((s) => s.editingTitle);
@@ -21,6 +26,7 @@ export function ScoreOverlay({ width, height }: Props) {
   const setEditingTitle = useEditorStore((s) => s.setEditingTitle);
   const setEditingComposer = useEditorStore((s) => s.setEditingComposer);
   const setCursorDirect = useEditorStore((s) => s.setCursorDirect);
+  const setSelectedHeadIndex = useEditorStore((s) => s.setSelectedHeadIndex);
   const setSelection = useEditorStore((s) => s.setSelection);
   const setNoteSelection = useEditorStore((s) => s.setNoteSelection);
   const editAnnotation = useEditorStore((s) => s.editAnnotation);
@@ -86,8 +92,13 @@ export function ScoreOverlay({ width, height }: Props) {
     const el = overlayRef.current;
     if (!el) return { x: 0, y: 0 };
     const rect = el.getBoundingClientRect();
-    return { x: e.clientX - rect.left + el.scrollLeft, y: e.clientY - rect.top + el.scrollTop };
-  }, []);
+    // Overlay is sized at display px; divide by zoom so hit-testing matches
+    // measurePositions/noteBoxes which are in logical coordinates.
+    return {
+      x: (e.clientX - rect.left + el.scrollLeft) / zoom,
+      y: (e.clientY - rect.top + el.scrollTop) / zoom,
+    };
+  }, [zoom]);
 
   /** Find which measure contains (x, y) and determine part/voice context. */
   const hitTestMeasure = useCallback((x: number, y: number) => {
@@ -164,6 +175,7 @@ export function ScoreOverlay({ width, height }: Props) {
       endEvent: startFirst ? nearest.eventIndex : drag.anchor.eventIndex,
       anchorMeasure: drag.anchor.measureIndex,
       anchorEvent: drag.anchor.eventIndex,
+      rangeMode: true,
     });
   }, [toCanvasCoords, findNearestNote, setNoteSelection]);
 
@@ -182,10 +194,23 @@ export function ScoreOverlay({ width, height }: Props) {
     const { x, y } = toCanvasCoords(e);
     const isDoubleClick = e.detail === 2;
 
+    // Break marker hit-test: clicking the badge removes the break.
+    if (!isDoubleClick) {
+      for (const bb of breakBoxes) {
+        if (x >= bb.x && x <= bb.x + bb.width && y >= bb.y && y <= bb.y + bb.height) {
+          const st = useEditorStore.getState();
+          const prevCursor = st.inputState.cursor;
+          st.setCursorDirect({ ...prevCursor, measureIndex: bb.measureIndex });
+          setMeasureBreak(null);
+          return;
+        }
+      }
+    }
+
     if (isDoubleClick) {
       window.getSelection()?.removeAllRanges();
 
-      // Double-click on a note — select it using anchor from mousedown
+      // Double-click on a note — select the whole event (clear any specific-head targeting).
       if (drag?.directNoteHit) {
         const a = drag.anchor;
         const stave = a.staveIndex ?? (score.parts[a.partIndex]?.measures[a.measureIndex]?.voices[a.voiceIndex]?.staff ?? 0);
@@ -193,6 +218,7 @@ export function ScoreOverlay({ width, height }: Props) {
           mp.partIndex === a.partIndex && mp.measureIndex === a.measureIndex && mp.staveIndex === stave
         );
         setCursorDirect({ partIndex: a.partIndex, measureIndex: a.measureIndex, voiceIndex: a.voiceIndex, eventIndex: a.eventIndex, staveIndex: stave }, dblMp?.isTab ?? false);
+        setSelectedHeadIndex(null);
         setNoteSelection({
           partIndex: a.partIndex,
           voiceIndex: a.voiceIndex,
@@ -202,6 +228,7 @@ export function ScoreOverlay({ width, height }: Props) {
           endEvent: a.eventIndex,
           anchorMeasure: a.measureIndex,
           anchorEvent: a.eventIndex,
+          rangeMode: true,
         });
         noteAnchorRef.current = a;
         anchorRef.current = { partIndex: a.partIndex, measureIndex: a.measureIndex };
@@ -258,6 +285,38 @@ export function ScoreOverlay({ width, height }: Props) {
         staveIndex: clickedStaveIndex,
       }, clickedMp?.isTab ?? false);
 
+      // Pick which chord head (if any) was clicked — after setCursor so it isn't clobbered.
+      let clickedHeadIndex: number | null = null;
+      if (nb.heads && nb.heads.length > 0) {
+        for (let i = 0; i < nb.heads.length; i++) {
+          const h = nb.heads[i];
+          if (x >= h.x && x <= h.x + h.width && y >= h.y && y <= h.y + h.height) {
+            clickedHeadIndex = i;
+            break;
+          }
+        }
+        if (clickedHeadIndex == null) {
+          let bestDist = Infinity;
+          for (let i = 0; i < nb.heads.length; i++) {
+            const h = nb.heads[i];
+            const cy = h.y + h.height / 2;
+            const dy = Math.abs(y - cy);
+            if (dy < bestDist) { bestDist = dy; clickedHeadIndex = i; }
+          }
+        }
+      }
+      setSelectedHeadIndex(clickedHeadIndex);
+
+      const clickedPart = score.parts[nb.partIndex];
+      const clickedEvent = clickedPart?.measures[nb.measureIndex]?.voices[nb.voiceIndex]?.events[nb.eventIndex];
+      if (clickedEvent) {
+        if (clickedEvent.kind === "note" || clickedEvent.kind === "grace") {
+          previewPitches([pitchToMidi(clickedEvent.head.pitch)], clickedPart?.instrumentId);
+        } else if (clickedEvent.kind === "chord") {
+          previewPitches(clickedEvent.heads.map((h) => pitchToMidi(h.pitch)), clickedPart?.instrumentId);
+        }
+      }
+
       if (e.shiftKey && noteAnchorRef.current &&
           noteAnchorRef.current.partIndex === nb.partIndex &&
           noteAnchorRef.current.voiceIndex === nb.voiceIndex) {
@@ -273,6 +332,7 @@ export function ScoreOverlay({ width, height }: Props) {
           endEvent: startFirst ? nb.eventIndex : noteAnchorRef.current.eventIndex,
           anchorMeasure: noteAnchorRef.current.measureIndex,
           anchorEvent: noteAnchorRef.current.eventIndex,
+          rangeMode: true,
         });
       } else if (e.shiftKey && anchorRef.current) {
         setSelection({
@@ -284,24 +344,18 @@ export function ScoreOverlay({ width, height }: Props) {
       } else {
         noteAnchorRef.current = { partIndex: nb.partIndex, measureIndex: nb.measureIndex, voiceIndex: nb.voiceIndex, eventIndex: nb.eventIndex };
         anchorRef.current = { partIndex: nb.partIndex, measureIndex: nb.measureIndex };
-        // In step entry mode (without insert): select the clicked note
-        // Otherwise: just move cursor, clear selection
-        const { stepEntry, insertMode } = useEditorStore.getState().inputState;
-        if (stepEntry && !insertMode) {
-          setNoteSelection({
-            partIndex: nb.partIndex,
-            voiceIndex: nb.voiceIndex,
-            startMeasure: nb.measureIndex,
-            startEvent: nb.eventIndex,
-            endMeasure: nb.measureIndex,
-            endEvent: nb.eventIndex,
-            anchorMeasure: nb.measureIndex,
-            anchorEvent: nb.eventIndex,
-          });
-        } else {
-          setNoteSelection(null);
-          setSelection(null);
-        }
+        // Always highlight the clicked note so it's visible which event edits will affect.
+        // (setNoteSelection already clears measure-level selection as a side effect.)
+        setNoteSelection({
+          partIndex: nb.partIndex,
+          voiceIndex: nb.voiceIndex,
+          startMeasure: nb.measureIndex,
+          startEvent: nb.eventIndex,
+          endMeasure: nb.measureIndex,
+          endEvent: nb.eventIndex,
+          anchorMeasure: nb.measureIndex,
+          anchorEvent: nb.eventIndex,
+        });
       }
       return;
     }
@@ -366,6 +420,8 @@ export function ScoreOverlay({ width, height }: Props) {
         height,
         cursor: "default",
         userSelect: "none",
+        transform: zoom !== 1 ? `scale(${zoom})` : undefined,
+        transformOrigin: "top left",
       }}
     >
       {titleRect && (

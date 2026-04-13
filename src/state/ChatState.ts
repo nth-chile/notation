@@ -148,7 +148,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         : settings.provider === "gemini" ? new GeminiProvider()
         : new OpenAIProvider();
 
-      const score = useEditorStore.getState().score;
+      const editorState = useEditorStore.getState();
+      const score = editorState.score;
+      const cursor = editorState.inputState.cursor;
+      const selection = editorState.selection ?? undefined;
       const tools = buildToolDefinitions();
       const config = { model: ps.model, maxTokens: 16384, providerOptions: { apiKey: ps.apiKey } };
 
@@ -160,7 +163,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       });
       const apiMessages: ChatMessage[] = [
         { role: "system", content: buildSystemPrompt() },
-        { role: "system", content: buildScoreContext(score) },
+        { role: "system", content: buildScoreContext(score, { cursor, selection }) },
         ...recentMessages,
       ];
 
