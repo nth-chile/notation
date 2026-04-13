@@ -1639,7 +1639,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       }
 
       m.annotations = m.annotations.filter(
-        (a) => a.kind !== "chord-symbol" && a.kind !== "lyric" && a.kind !== "rehearsal-mark" && a.kind !== "tempo-mark"
+        (a) => a.kind !== "lyric" && a.kind !== "rehearsal-mark" && a.kind !== "tempo-mark"
       );
       m.navigation = undefined;
       m.barlineEnd = "single";
