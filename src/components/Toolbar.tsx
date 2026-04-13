@@ -50,6 +50,10 @@ function ScrollFade({ children, className }: { children: React.ReactNode; classN
   const update = useCallback(() => {
     const el = ref.current;
     if (!el) return;
+    // dnd-kit's auto-scroll can set scrollTop on this container during drag
+    // (Chrome forces overflow-y to hidden when overflow-x is auto, but
+    // scrollTop is still programmatically settable and shifts children).
+    if (el.scrollTop !== 0) el.scrollTop = 0;
     const { scrollLeft, scrollWidth, clientWidth } = el;
     const canLeft = scrollLeft > 1;
     const canRight = scrollLeft < scrollWidth - clientWidth - 1;

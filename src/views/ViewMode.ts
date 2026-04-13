@@ -59,11 +59,41 @@ export function getPartDisplay(viewConfig: ViewConfig, partIndex: number): Notat
   return viewConfig.notationDisplay[partIndex] ?? DEFAULT_NOTATION_DISPLAY;
 }
 
-/** Derive input mode: tab when cursor is on a tab stave, or when tab-only display */
-export function getEffectiveInputMode(viewConfig: ViewConfig, partIndex: number, tabInputActive?: boolean): InputMode {
+/**
+ * Returns true if the given staveIndex within a part corresponds to a tab stave.
+ * Stave indexing order within a part: standard staves (0..N-1), then slash, then tab.
+ * `standardCount` is the number of standard staves this part is showing (instrument.staves
+ * or 0 when standard display is off).
+ */
+export function isTabStave(
+  viewConfig: ViewConfig,
+  partIndex: number,
+  staveIndex: number,
+  standardCount: number,
+): boolean {
+  const display = getPartDisplay(viewConfig, partIndex);
+  if (!display.tab) return false;
+  const tabStaveIdx = standardCount + (display.slash ? 1 : 0);
+  return staveIndex === tabStaveIdx;
+}
+
+/** Derive input mode: tab when cursor is on a tab stave, or when tab-only display.
+ *  If `staveIndex` and `standardCount` are provided, derives mode from the cursor
+ *  position. Otherwise falls back to the legacy `tabInputActive` boolean. */
+export function getEffectiveInputMode(
+  viewConfig: ViewConfig,
+  partIndex: number,
+  tabInputActive?: boolean,
+  staveIndex?: number,
+  standardCount?: number,
+): InputMode {
+  if (staveIndex != null && standardCount != null) {
+    if (isTabStave(viewConfig, partIndex, staveIndex, standardCount)) return "tab";
+    // Non-tab stave of a multi-stave-display part is always standard.
+    return "standard";
+  }
   if (tabInputActive) return "tab";
   const display = getPartDisplay(viewConfig, partIndex);
-  // Tab-only → tab input mode; otherwise standard
   if (display.tab && !display.standard && !display.slash) return "tab";
   return "standard";
 }

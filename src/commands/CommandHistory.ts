@@ -44,14 +44,14 @@ export class CommandHistory {
     const after = command.execute(state);
     this.undoStack.push({ command, before });
     this.redoStack = [];
-    return after;
+    return clampSelectedHeadIndex(after);
   }
 
   undo(currentState: EditorSnapshot): EditorSnapshot | null {
     const entry = this.undoStack.pop();
     if (!entry) return null;
     this.redoStack.push({ command: entry.command, before: currentState });
-    return entry.before;
+    return clampSelectedHeadIndex(entry.before);
   }
 
   redo(currentState: EditorSnapshot): EditorSnapshot | null {
@@ -60,11 +60,11 @@ export class CommandHistory {
     // For snapshot entries, `before` IS the after-state (saved by undo as currentState)
     if (entry.command.isSnapshot) {
       this.undoStack.push({ command: entry.command, before: structuredClone(currentState) });
-      return entry.before;
+      return clampSelectedHeadIndex(entry.before);
     }
     const after = entry.command.execute(currentState);
     this.undoStack.push({ command: entry.command, before: currentState });
-    return after;
+    return clampSelectedHeadIndex(after);
   }
 
   get canUndo(): boolean {
@@ -74,4 +74,20 @@ export class CommandHistory {
   get canRedo(): boolean {
     return this.redoStack.length > 0;
   }
+}
+
+/**
+ * Clear or clamp `selectedHeadIndex` when the event it referred to is no longer a chord
+ * with that head. Avoids stale state after commands that reshape chords.
+ */
+function clampSelectedHeadIndex(snapshot: EditorSnapshot): EditorSnapshot {
+  const headIdx = snapshot.inputState.selectedHeadIndex;
+  if (headIdx == null) return snapshot;
+  const c = snapshot.inputState.cursor;
+  const voice = snapshot.score.parts[c.partIndex]?.measures[c.measureIndex]?.voices[c.voiceIndex];
+  const evt = voice?.events[c.eventIndex];
+  if (!evt || evt.kind !== "chord" || headIdx < 0 || headIdx >= evt.heads.length) {
+    return { ...snapshot, inputState: { ...snapshot.inputState, selectedHeadIndex: null } };
+  }
+  return snapshot;
 }

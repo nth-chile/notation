@@ -193,6 +193,11 @@ function breakMeasuresIntoLines(
       lineWidths.push(w);
       lineWidth += w;
       mi++;
+
+      // Forced break attached to the *end* of this measure — close the line.
+      if (m.break === "system" || m.break === "page" || m.break === "section") {
+        break;
+      }
     }
 
     lines.push({ start: lineStart, end: mi, widths: lineWidths });
@@ -268,8 +273,15 @@ export function computeLayout(
 
     const systemH = sysHeight;
 
-    // Page break logic: if this system would overflow, move to next page
-    if (usePages && li > 0 && pageY + systemH > pageContentHeight) {
+    // Forced page break from the previous line's last measure.
+    const prevLineEndMeasure = li > 0 ? lineBreaks[li - 1].end - 1 : -1;
+    const prevBreak = prevLineEndMeasure >= 0
+      ? score.parts[0]?.measures[prevLineEndMeasure]?.break
+      : undefined;
+    const forcedPageBreak = usePages && (prevBreak === "page" || prevBreak === "section");
+
+    // Page break logic: if this system would overflow OR a forced break was set, move to next page
+    if (usePages && li > 0 && (forcedPageBreak || pageY + systemH > pageContentHeight)) {
       currentPage++;
       pageY = config.topMargin;
       absoluteY = currentPage * config.pageHeight + config.topMargin;

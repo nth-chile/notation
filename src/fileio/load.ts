@@ -27,34 +27,37 @@ async function extractMxl(data: ArrayBuffer): Promise<string> {
 
 export type LoadResult = { score: Score; path: string; displayHints: MusicXMLImportResult["displayHints"]; viewConfig?: MusicXMLImportResult["viewConfig"] };
 
-export async function loadScore(): Promise<LoadResult | null> {
+export async function loadScore(presetPath?: string): Promise<LoadResult | null> {
   function fromXml(xml: string, path: string): LoadResult {
     const result = importFromMusicXML(xml, true);
     return { score: result.score, path, displayHints: result.displayHints, viewConfig: result.viewConfig };
   }
 
   try {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const { readTextFile } = await import("@tauri-apps/plugin-fs");
+    const { readTextFile, readFile } = await import("@tauri-apps/plugin-fs");
 
-    const path = await open({
-      filters: [
-        { name: "MusicXML", extensions: ["musicxml", "mxl", "xml"] },
-      ],
-      multiple: false,
-    });
+    let path: string | null = presetPath ?? null;
+    if (!path) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({
+        filters: [
+          { name: "MusicXML", extensions: ["musicxml", "mxl", "xml"] },
+        ],
+        multiple: false,
+      });
+      path = picked as string | null;
+    }
 
     if (!path) return null;
 
-    if (isMxlExtension(path as string)) {
-      const { readFile } = await import("@tauri-apps/plugin-fs");
-      const buf = await readFile(path as string);
+    if (isMxlExtension(path)) {
+      const buf = await readFile(path);
       const xml = await extractMxl(buf.buffer as ArrayBuffer);
-      return fromXml(xml, path as string);
+      return fromXml(xml, path);
     }
 
-    const content = await readTextFile(path as string);
-    return fromXml(content, path as string);
+    const content = await readTextFile(path);
+    return fromXml(content, path);
   } catch {
     return new Promise((resolve) => {
       const input = document.createElement("input");

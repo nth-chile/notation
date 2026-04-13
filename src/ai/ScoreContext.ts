@@ -1,5 +1,6 @@
 import type { Score } from "../model";
 import { scoreToAIJson } from "../serialization";
+import type { CursorPosition } from "../input/InputState";
 
 /**
  * Builds the system prompt for the AI.
@@ -16,28 +17,44 @@ Rules:
 5. Make musical judgment calls rather than asking for clarification.`;
 }
 
-/**
- * Serializes the score for inclusion in the AI context.
- */
-export function buildScoreContext(
-  score: Score,
+export interface ScoreContextInput {
+  cursor?: CursorPosition;
   selection?: {
     partIndex: number;
     measureStart: number;
     measureEnd: number;
-  }
-): string {
+  };
+}
+
+/**
+ * Serializes the score plus the user's current cursor/selection for the AI context.
+ */
+export function buildScoreContext(score: Score, input: ScoreContextInput = {}): string {
   const json = scoreToAIJson(score);
   const jsonStr = JSON.stringify(json, null, 2);
 
-  if (!selection) {
-    return `Here is the current score:\n\n\`\`\`json\n${jsonStr}\n\`\`\``;
+  const lines: string[] = [`Here is the current score:\n\n\`\`\`json\n${jsonStr}\n\`\`\``];
+
+  const { cursor, selection } = input;
+
+  if (cursor) {
+    const part = score.parts[cursor.partIndex];
+    const partName = part?.name ?? `part ${cursor.partIndex + 1}`;
+    lines.push(
+      `Cursor: part "${partName}" (index ${cursor.partIndex}), measure ${cursor.measureIndex + 1}, voice ${cursor.voiceIndex + 1}, event index ${cursor.eventIndex}, staff ${cursor.staveIndex + 1}.`
+    );
   }
 
-  const part = score.parts[selection.partIndex];
-  if (!part) {
-    return `Here is the current score:\n\n\`\`\`json\n${jsonStr}\n\`\`\``;
+  if (selection) {
+    const part = score.parts[selection.partIndex];
+    if (part) {
+      lines.push(
+        `Selection: part "${part.name}" (index ${selection.partIndex}), measures ${selection.measureStart + 1}-${selection.measureEnd + 1}.`
+      );
+    }
+  } else {
+    lines.push(`Selection: none.`);
   }
 
-  return `Here is the current score:\n\n\`\`\`json\n${jsonStr}\n\`\`\`\n\nFocus on Part "${part.name}", measures ${selection.measureStart + 1} through ${selection.measureEnd + 1}.`;
+  return lines.join("\n\n");
 }

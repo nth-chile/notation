@@ -33,6 +33,7 @@ export function buildToolDefinitions(): ToolDefinition[] {
     buildReplaceScoreTool(),
     buildGetScoreTool(),
     buildGetSelectionTool(),
+    buildGetCursorTool(),
   ];
 }
 
@@ -52,6 +53,8 @@ export function executeTool(call: ToolCallRequest): ToolCallResult {
         return executeGetScore(call);
       case "get_selection":
         return executeGetSelection(call);
+      case "get_cursor":
+        return executeGetCursor(call);
       default:
         return { callId: call.id, content: JSON.stringify({ error: `Unknown tool: ${call.name}` }), isError: true };
     }
@@ -183,6 +186,17 @@ function buildGetSelectionTool(): ToolDefinition {
   };
 }
 
+function buildGetCursorTool(): ToolDefinition {
+  return {
+    name: "get_cursor",
+    description: "Get the current cursor position: part, measure, voice, event index, and staff. Use when you need to know where 'here' is after edits.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  };
+}
+
 // --- Tool executors ---
 
 function executeCommand(call: ToolCallRequest): ToolCallResult {
@@ -264,4 +278,18 @@ function executeGetSelection(call: ToolCallRequest): ToolCallResult {
     };
   }
   return { callId: call.id, content: JSON.stringify(null) };
+}
+
+function executeGetCursor(call: ToolCallRequest): ToolCallResult {
+  const cursor = useEditorStore.getState().inputState.cursor;
+  return {
+    callId: call.id,
+    content: JSON.stringify({
+      partIndex: cursor.partIndex,
+      measureIndex: cursor.measureIndex,
+      voiceIndex: cursor.voiceIndex,
+      eventIndex: cursor.eventIndex,
+      staveIndex: cursor.staveIndex,
+    }),
+  };
 }

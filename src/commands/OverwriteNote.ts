@@ -1,6 +1,7 @@
 import type { Command, EditorSnapshot } from "./Command";
 import type { PitchClass, Octave, Accidental, Duration } from "../model";
 import { newId, type NoteEventId } from "../model/ids";
+import { resolveVoiceForStaff } from "./measureUtils";
 
 /**
  * Overwrites the event at cursor with a new note (step entry mode).
@@ -19,11 +20,17 @@ export class OverwriteNote implements Command {
   execute(state: EditorSnapshot): EditorSnapshot {
     const score = structuredClone(state.score);
     const input = structuredClone(state.inputState);
-    const { partIndex, measureIndex, voiceIndex, eventIndex } = input.cursor;
+    const { partIndex, measureIndex, eventIndex } = input.cursor;
 
     const measure = score.parts[partIndex]?.measures[measureIndex];
-    const voice = measure?.voices[voiceIndex];
-    if (!voice || !measure) return state;
+    if (!measure) return state;
+
+    // Resolve voice index to one matching the cursor's staff (grand staff).
+    const staveIndex = input.cursor.staveIndex ?? 0;
+    const voiceIndex = resolveVoiceForStaff(measure, input.cursor.voiceIndex, staveIndex);
+    input.cursor.voiceIndex = voiceIndex;
+    const voice = measure.voices[voiceIndex];
+    if (!voice) return state;
 
     const newEvent = {
       kind: "note" as const,

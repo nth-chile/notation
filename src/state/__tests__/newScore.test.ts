@@ -63,4 +63,35 @@ describe("New score (reset)", () => {
     useEditorStore.getState().setFilePath(null);
     expect(useEditorStore.getState().filePath).toBeNull();
   });
+
+  it("resets inputState to defaults", () => {
+    // Set up non-default input state
+    useEditorStore.setState({
+      inputState: {
+        ...useEditorStore.getState().inputState,
+        duration: { type: "16th", dots: 1 },
+        accidental: "sharp",
+        accidentalExplicit: true,
+        noteEntry: true,
+        insertMode: true,
+        graceNoteMode: true,
+        cursor: { partIndex: 0, measureIndex: 3, voiceIndex: 1, eventIndex: 5, staveIndex: 1 },
+      },
+    });
+
+    useEditorStore.getState().setScore(emptyScore());
+
+    const after = useEditorStore.getState().inputState;
+    expect(after.duration).toEqual({ type: "quarter", dots: 0 });
+    expect(after.accidental).toBe("natural");
+    expect(after.accidentalExplicit).toBe(false);
+    expect(after.noteEntry).toBe(false);
+    expect(after.insertMode).toBe(false);
+    expect(after.graceNoteMode).toBe(false);
+    expect(after.cursor.partIndex).toBe(0);
+    expect(after.cursor.measureIndex).toBe(0);
+    expect(after.cursor.voiceIndex).toBe(0);
+    expect(after.cursor.eventIndex).toBe(0);
+    expect(after.cursor.staveIndex).toBe(0);
+  });
 });

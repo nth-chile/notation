@@ -13,6 +13,7 @@ import type { Annotation } from "../model/annotations";
 import type { Selection } from "../plugins/PluginAPI";
 import type { Measure } from "../model";
 import { useEditorStore } from "../state/EditorState";
+import { getInstrument } from "../model/instruments";
 
 /** Detect whether time/key signature changed from the previous measure. */
 function sigChanges(m: Measure, mi: number, prevMeasure: Measure | undefined, isFirstInLine: boolean) {
@@ -91,12 +92,22 @@ function detectRestRuns(
   return runs;
 }
 
+export interface BreakBox {
+  measureIndex: number;
+  kind: "system" | "page" | "section";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface ScoreRenderResult {
   noteBoxes: Map<NoteEventId, NoteBox>;
   /** All note boxes including duplicates across staves (standard + tab + slash) — used for click hit-testing */
   hitBoxes: NoteBox[];
   annotationBoxes: AnnotationBox[];
   measurePositions: { partIndex: number; measureIndex: number; staveIndex: number; x: number; y: number; width: number; height: number; noteStartX: number; isTab?: boolean }[];
+  breakBoxes: BreakBox[];
   contentHeight: number;
 }
 
@@ -160,6 +171,8 @@ export function renderScore(
   availableWidth?: number,
   selection?: Selection | null,
   pendingPitch?: { pitchClass: import("../model").PitchClass; octave: import("../model").Octave; accidental: import("../model").Accidental } | null,
+  selectedNoteIds?: Set<NoteEventId>,
+  selectedHeadByEventId?: Map<NoteEventId, number>,
 ): ScoreRenderResult {
   clearCanvas(ctx, canvas);
 
@@ -376,6 +389,15 @@ export function renderScore(
             };
           }
 
+          // Chord symbols only render on the top visible part (they're stored on
+          // every part so hide/reorder preserves them, but display once per system).
+          if (filteredPi > 0) {
+            measureToRender = {
+              ...measureToRender,
+              annotations: measureToRender.annotations.filter((a) => a.kind !== "chord-symbol"),
+            };
+          }
+
           // When slash stave is separate, filter slash events out of standard stave
           // (they'll be rendered on the slash stave instead)
           if (hasSlash && si < slashStaveIdx) {
@@ -433,6 +455,7 @@ export function renderScore(
             // The other stave's clef for creating StaveNotes with correct pitch mapping
             const crossClef = standardStaves >= 2 ? (si === 0 ? "bass" : "treble") : undefined;
 
+            const instDef = getInstrument(part.instrumentId);
             result = renderMeasure(
               ctx, measureToRender, layout.x, layout.y, layout.width,
               clefChanged, timeSigChanged, keySigChanged,
@@ -441,11 +464,15 @@ export function renderScore(
                 partIndex: originalPi,
                 measureIndex: mi,
                 activeNoteIds,
+                selectedNoteIds,
+                selectedHeadByEventId,
                 prevMeasure: mi > 0 ? part.measures[mi - 1] : undefined,
                 voiceFilter: voiceIndicesForStave(m, si, staveCount),
                 staveIndex: si,
                 crossStaffStave: crossStave,
                 crossStaffClef: crossClef,
+                instrumentMinPitch: instDef?.minPitch,
+                instrumentMaxPitch: instDef?.maxPitch,
               },
             );
 
@@ -603,9 +630,49 @@ export function renderScore(
     drawPlaybackCursor(ctx, score, playbackTick, measurePositions, config, allNoteBoxes);
   }
 
+  // Draw layout-break markers (small clickable icon at top-right of each measure with a break).
+  const breakBoxes: BreakBox[] = [];
+  {
+    const refPart = score.parts[0];
+    if (refPart) {
+      for (let mi = 0; mi < refPart.measures.length; mi++) {
+        const br = refPart.measures[mi].break;
+        if (!br) continue;
+        // Use the TOP stave of the first visible part for this measure
+        const mp = measurePositions.find(
+          (p) => p.measureIndex === mi && p.staveIndex === 0
+        );
+        if (!mp) continue;
+        const icon = br === "system" ? "↵" : br === "page" ? "⇲" : "§";
+        const size = 16;
+        const bx = mp.x + mp.width - size - 4;
+        const by = mp.y - size - 2;
+        // Draw pill background
+        const ctx2d = (rawCtx as unknown as { context2D?: CanvasRenderingContext2D }).context2D;
+        if (ctx2d) {
+          ctx2d.save();
+          ctx2d.fillStyle = "#4a6fa5";
+          ctx2d.globalAlpha = 0.85;
+          if (ctx2d.roundRect) ctx2d.beginPath(), ctx2d.roundRect(bx, by, size, size, 3), ctx2d.fill();
+          else ctx2d.fillRect(bx, by, size, size);
+          ctx2d.globalAlpha = 1;
+          ctx2d.fillStyle = "#fff";
+          ctx2d.font = "bold 12px sans-serif";
+          ctx2d.textAlign = "center";
+          ctx2d.textBaseline = "middle";
+          ctx2d.fillText(icon, bx + size / 2, by + size / 2 + 1);
+          ctx2d.textAlign = "start";
+          ctx2d.textBaseline = "alphabetic";
+          ctx2d.restore();
+        }
+        breakBoxes.push({ measureIndex: mi, kind: br, x: bx, y: by, width: size, height: size });
+      }
+    }
+  }
+
   const contentHeight = totalContentHeight(score, config, tabParts, viewConfig);
 
-  return { noteBoxes: allNoteBoxes, hitBoxes: allHitBoxes, annotationBoxes: allAnnotationBoxes, measurePositions, contentHeight };
+  return { noteBoxes: allNoteBoxes, hitBoxes: allHitBoxes, annotationBoxes: allAnnotationBoxes, measurePositions, breakBoxes, contentHeight };
 }
 
 const VOICE_COLORS = ["#3b82f6", "#22c55e", "#f97316", "#ef4444"];
@@ -646,6 +713,7 @@ function drawCursor(
     if (localVoiceIdx < 0) localVoiceIdx = 0;
   }
   const cursorColor = VOICE_COLORS[localVoiceIdx] ?? VOICE_COLORS[0];
+  const noteEntry = useEditorStore.getState().inputState.noteEntry;
 
   // Try to find the actual noteBox at the cursor position, preferring the stave the cursor is on
   let targetBox: NoteBox | undefined;
@@ -699,6 +767,11 @@ function drawCursor(
   const staffBottom = mp.y + headroom + lineSpan;
 
   rawCtx.save();
+
+  // In normal mode the caret is just a selection anchor — render it dimmed
+  // so it's unambiguously "not active for input". In note entry mode it's
+  // drawn solid and full opacity.
+  if (!noteEntry) rawCtx.globalAlpha = 0.35;
 
   // Draw note highlight rect if on a note
   // Draw vertical cursor line spanning full staff.

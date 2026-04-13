@@ -1,5 +1,7 @@
 import type { Command, EditorSnapshot } from "./Command";
 import type { Duration } from "../model";
+import { durationToTicks, ticksToDurations } from "../model/duration";
+import { newId, type NoteEventId } from "../model/ids";
 
 export class ChangeDuration implements Command {
   description = "Change duration";
@@ -20,7 +22,42 @@ export class ChangeDuration implements Command {
     const event = voice.events[eventIndex];
     if (!event) return state;
 
+    const oldTicks = durationToTicks(event.duration, event.tuplet);
     event.duration = { ...this.duration };
+    const newTicks = durationToTicks(event.duration, event.tuplet);
+
+    if (newTicks < oldTicks) {
+      // Shortening: insert filler rests for freed ticks
+      const fillerRests = ticksToDurations(oldTicks - newTicks).map((d) => ({
+        kind: "rest" as const,
+        id: newId<NoteEventId>("evt"),
+        duration: d,
+      }));
+      voice.events.splice(eventIndex + 1, 0, ...fillerRests);
+    } else if (newTicks > oldTicks) {
+      // Lengthening: consume trailing rests to make room
+      const needed = newTicks - oldTicks;
+      let consumed = 0;
+      let removeCount = 0;
+      for (let i = eventIndex + 1; i < voice.events.length && consumed < needed; i++) {
+        if (voice.events[i].kind !== "rest") break;
+        consumed += durationToTicks(voice.events[i].duration, voice.events[i].tuplet);
+        removeCount++;
+      }
+      if (consumed >= needed) {
+        voice.events.splice(eventIndex + 1, removeCount);
+        if (consumed > needed) {
+          const excessRests = ticksToDurations(consumed - needed).map((d) => ({
+            kind: "rest" as const,
+            id: newId<NoteEventId>("evt"),
+            duration: d,
+          }));
+          voice.events.splice(eventIndex + 1, 0, ...excessRests);
+        }
+      }
+      // If not enough trailing rests, just change the duration anyway
+      // (measure will be overfull — user can fix manually)
+    }
 
     return { score, inputState: input };
   }

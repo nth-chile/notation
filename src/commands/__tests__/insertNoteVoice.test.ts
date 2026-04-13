@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { factory } from "../../model";
 import { InsertNote } from "../InsertNote";
+import { OverwriteNote } from "../OverwriteNote";
+import { InsertModeNote } from "../InsertModeNote";
 import type { EditorSnapshot } from "../Command";
 import { defaultInputState } from "../../input/InputState";
 
@@ -21,38 +23,44 @@ function makeSnapshot(overrides?: {
   };
 }
 
-describe("InsertNote voice auto-creation", () => {
-  it("auto-creates voice when voiceIndex exceeds existing voices", () => {
+describe("InsertNote voice/staff resolution", () => {
+  it("creates a new voice on the target staff when none exists (grand staff)", () => {
+    // Measure has only a treble voice; cursor is on the bass staff.
     const snap = makeSnapshot({
       measures: [factory.measure([factory.voice([])])],
-      cursor: { voiceIndex: 1, eventIndex: 0 },
+      cursor: { voiceIndex: 0, eventIndex: 0, staveIndex: 1 },
     });
 
-    // Only voice 0 exists — inserting at voiceIndex 1 should create it
     const cmd = new InsertNote("C", 4, "natural", factory.dur("quarter"));
     const result = cmd.execute(snap);
 
-    expect(result.score.parts[0].measures[0].voices).toHaveLength(2);
-    expect(result.score.parts[0].measures[0].voices[1].events).toHaveLength(1);
-    expect(result.score.parts[0].measures[0].voices[1].events[0].kind).toBe("note");
+    const voices = result.score.parts[0].measures[0].voices;
+    // A new bass-staff voice was created; treble voice untouched.
+    expect(voices).toHaveLength(2);
+    expect(voices[0].events).toHaveLength(0);
+    expect((voices[1].staff ?? 0)).toBe(1);
+    expect(voices[1].events).toHaveLength(1);
+    expect(voices[1].events[0].kind).toBe("note");
+    // Cursor is now pointing at the bass voice.
+    expect(result.inputState.cursor.voiceIndex).toBe(1);
   });
 
-  it("auto-creates multiple intermediate voices", () => {
+  it("reuses an existing voice on the target staff", () => {
+    const trebleVoice = factory.voice([]);
+    const bassVoice = { ...factory.voice([]), staff: 1 };
     const snap = makeSnapshot({
-      measures: [factory.measure([factory.voice([])])],
-      cursor: { voiceIndex: 3, eventIndex: 0 },
+      measures: [factory.measure([trebleVoice, bassVoice])],
+      cursor: { voiceIndex: 0, eventIndex: 0, staveIndex: 1 },
     });
 
-    const cmd = new InsertNote("D", 4, "natural", factory.dur("quarter"));
+    const cmd = new InsertNote("D", 3, "natural", factory.dur("quarter"));
     const result = cmd.execute(snap);
 
-    // Should have voices 0, 1, 2, 3
-    expect(result.score.parts[0].measures[0].voices).toHaveLength(4);
-    // Intermediate voices are empty
-    expect(result.score.parts[0].measures[0].voices[1].events).toHaveLength(0);
-    expect(result.score.parts[0].measures[0].voices[2].events).toHaveLength(0);
-    // Target voice has the note
-    expect(result.score.parts[0].measures[0].voices[3].events).toHaveLength(1);
+    const voices = result.score.parts[0].measures[0].voices;
+    expect(voices).toHaveLength(2);
+    expect(voices[0].events).toHaveLength(0);
+    expect(voices[1].events).toHaveLength(1);
+    expect(result.inputState.cursor.voiceIndex).toBe(1);
   });
 
   it("does not duplicate voices when voice already exists", () => {
@@ -66,5 +74,68 @@ describe("InsertNote voice auto-creation", () => {
 
     expect(result.score.parts[0].measures[0].voices).toHaveLength(2);
     expect(result.score.parts[0].measures[0].voices[1].events).toHaveLength(1);
+  });
+});
+
+describe("OverwriteNote voice/staff resolution", () => {
+  it("creates a new voice on the bass staff when overwriting from bass cursor", () => {
+    const snap = makeSnapshot({
+      measures: [factory.measure([factory.voice([
+        factory.note("C", 4, factory.dur("quarter")),
+      ])])],
+      cursor: { voiceIndex: 0, eventIndex: 0, staveIndex: 1 },
+    });
+
+    const cmd = new OverwriteNote("D", 3, "natural", factory.dur("quarter"));
+    const result = cmd.execute(snap);
+
+    const voices = result.score.parts[0].measures[0].voices;
+    expect(voices).toHaveLength(2);
+    // Treble voice untouched
+    expect(voices[0].events[0].kind).toBe("note");
+    // Bass voice created with the new note
+    expect((voices[1].staff ?? 0)).toBe(1);
+    expect(voices[1].events).toHaveLength(1);
+    expect(result.inputState.cursor.voiceIndex).toBe(1);
+  });
+
+  it("reuses existing bass voice when overwriting", () => {
+    const bassVoice = { ...factory.voice([
+      factory.note("E", 3, factory.dur("quarter")),
+    ]), staff: 1 };
+    const snap = makeSnapshot({
+      measures: [factory.measure([factory.voice([
+        factory.note("C", 4, factory.dur("quarter")),
+      ]), bassVoice])],
+      cursor: { voiceIndex: 0, eventIndex: 0, staveIndex: 1 },
+    });
+
+    const cmd = new OverwriteNote("D", 3, "natural", factory.dur("quarter"));
+    const result = cmd.execute(snap);
+
+    const voices = result.score.parts[0].measures[0].voices;
+    expect(voices).toHaveLength(2);
+    // Bass voice overwritten
+    expect(voices[1].events[0]).toMatchObject({ kind: "note" });
+    expect(result.inputState.cursor.voiceIndex).toBe(1);
+  });
+});
+
+describe("InsertModeNote voice/staff resolution", () => {
+  it("creates a new voice on the bass staff in insert mode", () => {
+    const snap = makeSnapshot({
+      measures: [factory.measure([factory.voice([])])],
+      cursor: { voiceIndex: 0, eventIndex: 0, staveIndex: 1 },
+    });
+
+    const cmd = new InsertModeNote("C", 3, "natural", factory.dur("quarter"));
+    const result = cmd.execute(snap);
+
+    const voices = result.score.parts[0].measures[0].voices;
+    expect(voices).toHaveLength(2);
+    expect(voices[0].events).toHaveLength(0);
+    expect((voices[1].staff ?? 0)).toBe(1);
+    expect(voices[1].events).toHaveLength(1);
+    expect(result.inputState.cursor.voiceIndex).toBe(1);
   });
 });

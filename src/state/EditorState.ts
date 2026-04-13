@@ -23,6 +23,7 @@ import { defaultInputState, type InputState, type CursorPosition } from "../inpu
 import { CommandHistory } from "../commands/CommandHistory";
 import type { Selection, NoteSelection } from "../plugins/PluginAPI";
 import { InsertNote } from "../commands/InsertNote";
+import { AddPitchToChord } from "../commands/AddPitchToChord";
 import { InsertTabNote } from "../commands/InsertTabNote";
 import { InsertModeNote } from "../commands/InsertModeNote";
 import { InsertRest } from "../commands/InsertRest";
@@ -32,6 +33,7 @@ import { ChangeDuration } from "../commands/ChangeDuration";
 import { InsertMeasure } from "../commands/InsertMeasure";
 import { DeleteMeasure } from "../commands/DeleteMeasure";
 import { DeleteSelectedMeasures } from "../commands/DeleteSelectedMeasures";
+import { ClearSelectedMeasures } from "../commands/ClearSelectedMeasures";
 import { ChangeTimeSig } from "../commands/ChangeTimeSig";
 import { ChangeKeySig } from "../commands/ChangeKeySig";
 import { ChangeClef } from "../commands/ChangeClef";
@@ -41,9 +43,12 @@ import { SetRehearsalMark } from "../commands/SetRehearsalMark";
 import { SetTempo } from "../commands/SetTempo";
 import { SetSwing } from "../commands/SetSwing";
 import { AddPart } from "../commands/AddPart";
+import { ChangeInstrument } from "../commands/ChangeInstrument";
 import { RemovePart } from "../commands/RemovePart";
 import { ReorderParts } from "../commands/ReorderParts";
 import { SetRepeatBarline } from "../commands/SetRepeatBarline";
+import { SetMeasureBreak } from "../commands/SetMeasureBreak";
+import type { MeasureBreak } from "../model";
 import { SetVolta } from "../commands/SetVolta";
 import { SetNavigationMark } from "../commands/SetNavigationMark";
 import { ToggleArticulation } from "../commands/ToggleArticulation";
@@ -67,8 +72,24 @@ import type { NoteBox, AnnotationBox } from "../renderer/vexBridge";
 import { newId, type VoiceId, type MeasureId } from "../model/ids";
 import { pitchToMidi, midiToPitch, stepUp, stepDown, keyAccidental } from "../model/pitch";
 import { getGlobalPluginManager } from "../plugins/PluginManager";
+import { previewPitches } from "../playback/TonePlayback";
 
 const history = new CommandHistory();
+
+function previewEventAt(score: Score, cursor: CursorPosition): void {
+  const part = score.parts[cursor.partIndex];
+  const event = part?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex]?.events[cursor.eventIndex];
+  if (!event) return;
+  let midis: number[] = [];
+  if (event.kind === "note" || event.kind === "grace") {
+    midis = [pitchToMidi(event.head.pitch)];
+  } else if (event.kind === "chord") {
+    midis = event.heads.map((h) => pitchToMidi(h.pitch));
+  } else {
+    return;
+  }
+  previewPitches(midis, part?.instrumentId);
+}
 
 const AUTOSAVE_KEY = "nubium-autosave";
 const AUTOSAVE_DEBOUNCE_MS = 2000;
@@ -90,6 +111,7 @@ interface EditorStore {
   noteBoxes: Map<NoteEventId, NoteBox>;
   hitBoxes: NoteBox[];
   annotationBoxes: AnnotationBox[];
+  breakBoxes: import("../renderer/ScoreRenderer").BreakBox[];
   measurePositions: { partIndex: number; measureIndex: number; staveIndex: number; x: number; y: number; width: number; height: number; noteStartX: number; isTab?: boolean }[];
   titlePositions: { title?: { x: number; y: number; width: number; height: number }; composer?: { x: number; y: number; width: number; height: number } };
   editingTitle: boolean;
@@ -97,19 +119,20 @@ interface EditorStore {
   selection: Selection | null;
   noteSelection: NoteSelection | null;
   clipboardMeasures: Measure[] | null;
-  clipboardEvents: { voiceIndex: number; events: import("../model/note").NoteEvent[] } | null;
+  clipboardEvents: { voiceIndex: number; measures: import("../model/note").NoteEvent[][] } | null;
   /** Position of the last note entered — nudge commands target this when cursor has advanced past it */
   lastEnteredPosition: CursorPosition | null;
 
   // Actions
   insertNote(pitchClass: PitchClass): void;
+  addPitchToChord(pitchClass: PitchClass): void;
   insertTabNote(fret: number, string: number): void;
   insertRest(): void;
   deleteNote(): void;
   setDuration(type: DurationType): void;
   toggleDot(): void;
   setAccidental(acc: Accidental): void;
-  toggleStepEntry(): void;
+  toggleNoteEntry(): void;
   toggleInsertMode(): void;
   togglePitchBeforeDuration(): void;
   commitPendingPitch(): void;
@@ -125,6 +148,7 @@ interface EditorStore {
   markClean(): void;
   setNoteBoxes(boxes: Map<NoteEventId, NoteBox>, hitBoxes?: NoteBox[]): void;
   setAnnotationBoxes(boxes: AnnotationBox[]): void;
+  setBreakBoxes(boxes: import("../renderer/ScoreRenderer").BreakBox[]): void;
   setMeasurePositions(positions: EditorStore["measurePositions"]): void;
   setTitlePositions(positions: EditorStore["titlePositions"]): void;
   setEditingTitle(editing: boolean): void;
@@ -136,9 +160,12 @@ interface EditorStore {
   deleteNoteSelection(): void;
   extendSelection(direction: "left" | "right"): void;
   deleteSelectedMeasures(): void;
+  clearSelectedMeasures(): void;
   copySelection(): void;
   pasteAtCursor(): Promise<void>;
   setCursorDirect(cursor: CursorPosition, tabInputActive?: boolean): void;
+  setSelectedHeadIndex(index: number | null): void;
+  cycleChordHead(direction: "next" | "prev"): void;
   setTitle(title: string): void;
   setComposer(composer: string): void;
   undo(): void;
@@ -188,6 +215,7 @@ interface EditorStore {
 
   // Phase 5: Multi-track/Part management
   addPart(instrumentId: string): void;
+  changeInstrument(partIndex: number, instrumentId: string): void;
   removePart(partIndex: number): void;
   reorderPart(partIndex: number, direction: "up" | "down"): void;
   toggleSolo(partIndex: number): void;
@@ -207,6 +235,7 @@ interface EditorStore {
 
   // Phase 10: Navigation marks
   setRepeatBarline(barlineType: BarlineType): void;
+  setMeasureBreak(breakType: MeasureBreak | null): void;
   setVolta(volta: Volta | null): void;
   setNavigationMark(markType: NavigationMarkType, value?: string | boolean): void;
 
@@ -315,6 +344,26 @@ function cursorOnExistingEvent(score: Score, cursor: CursorPosition): boolean {
   return cursor.eventIndex < voice.events.length;
 }
 
+/** Resolve which chord head to act on. Returns the explicit selection when valid;
+ *  otherwise, on a chord, defaults to the top (highest-pitch) head. */
+function resolveChordHead(
+  score: Score,
+  cursor: CursorPosition,
+  selected: number | null | undefined,
+): number | null {
+  const voice = score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+  const event = voice?.events[cursor.eventIndex];
+  if (!event || event.kind !== "chord" || event.heads.length === 0) return null;
+  if (selected != null && selected >= 0 && selected < event.heads.length) return selected;
+  let topIdx = 0;
+  let topMidi = pitchToMidi(event.heads[0].pitch);
+  for (let i = 1; i < event.heads.length; i++) {
+    const m = pitchToMidi(event.heads[i].pitch);
+    if (m > topMidi) { topMidi = m; topIdx = i; }
+  }
+  return topIdx;
+}
+
 const initialScore = factory.emptyScore();
 export const useEditorStore = create<EditorStore>((set, get) => ({
   score: initialScore,
@@ -328,6 +377,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   noteBoxes: new Map(),
   hitBoxes: [],
   annotationBoxes: [],
+  breakBoxes: [],
   measurePositions: [],
   titlePositions: {},
   editingTitle: false,
@@ -460,10 +510,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         inputState: {
           ...state.inputState,
           pendingPitch: { pitchClass, octave, accidental: acc },
+          accidental: "natural",
+          accidentalExplicit: false,
         },
       });
       return;
     }
+
+    const clearAcc = { accidental: "natural" as Accidental, accidentalExplicit: false };
 
     // Grace note mode: insert a grace note before the current event
     if (state.inputState.graceNoteMode) {
@@ -473,7 +527,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         acc,
       );
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
-      set({ score: result.score, inputState: result.inputState, lastEnteredPosition: { ...cursor } });
+      set({ score: result.score, inputState: { ...result.inputState, ...clearAcc }, lastEnteredPosition: { ...cursor } });
+      previewEventAt(result.score, cursor);
       return;
     }
 
@@ -489,12 +544,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         score: state.score,
         inputState: state.inputState,
       });
-      set({ score: result.score, inputState: result.inputState, lastEnteredPosition: { ...cursor } });
+      set({ score: result.score, inputState: { ...result.inputState, ...clearAcc }, lastEnteredPosition: { ...cursor } });
+      previewEventAt(result.score, cursor);
       return;
     }
 
-    // Step entry mode: overwrite existing events with input duration
-    if (state.inputState.stepEntry && cursorOnExistingEvent(state.score, cursor)) {
+    // Cursor on existing event: overwrite it with the new note.
+    if (cursorOnExistingEvent(state.score, cursor)) {
       const cmd = new OverwriteNote(
         pitchClass,
         octave,
@@ -507,28 +563,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       });
       set({
         score: result.score,
-        inputState: result.inputState,
+        inputState: { ...result.inputState, ...clearAcc },
         lastEnteredPosition: { ...cursor },
       });
-      return;
-    }
-
-    // If cursor is on an existing note, change pitch instead of inserting
-    if (cursorOnExistingEvent(state.score, cursor)) {
-      const cmd = new ChangePitch(
-        pitchClass,
-        octave,
-        acc
-      );
-      const result = history.execute(cmd, {
-        score: state.score,
-        inputState: state.inputState,
-      });
-      set({
-        score: result.score,
-        inputState: result.inputState,
-        lastEnteredPosition: { ...cursor },
-      });
+      previewEventAt(result.score, cursor);
       return;
     }
 
@@ -544,9 +582,83 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
     set({
       score: result.score,
-      inputState: result.inputState,
+      inputState: { ...result.inputState, ...clearAcc },
       lastEnteredPosition: { ...cursor },
     });
+    previewEventAt(result.score, cursor);
+  },
+
+  addPitchToChord(pitchClass: PitchClass) {
+    const state = get();
+    const { cursor } = state.inputState;
+    const voice = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+    if (!voice) return;
+
+    // Target the current event, or the one just before the cursor (e.g. right after
+    // step entry inserts a note and advances the cursor past it).
+    let targetIndex = cursor.eventIndex;
+    let target = voice.events[targetIndex];
+    if ((!target || (target.kind !== "note" && target.kind !== "chord")) && targetIndex > 0) {
+      targetIndex = targetIndex - 1;
+      target = voice.events[targetIndex];
+    }
+    if (!target || (target.kind !== "note" && target.kind !== "chord")) return;
+
+    const measure = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
+    const fifths = measure?.keySignature?.fifths ?? 0;
+    const acc = state.inputState.accidentalExplicit
+      ? state.inputState.accidental
+      : keyAccidental(pitchClass, fifths);
+
+    // Collect pitches already in the target so we can avoid duplicates.
+    const existing = target.kind === "note" ? [target.head.pitch] : target.heads.map((h) => h.pitch);
+    const refPitch = existing[0];
+    if (!refPitch) return;
+    const refMidi = pitchToMidi(refPitch);
+    const isDup = (o: number) =>
+      existing.some((p) => p.pitchClass === pitchClass && p.octave === o && p.accidental === acc);
+
+    // Pick the nearest octave, but if it already exists, walk upward then downward to find a free one.
+    let bestOctave = refPitch.octave;
+    let bestDist = Infinity;
+    for (let o = 0; o <= 9; o++) {
+      const midi = pitchToMidi({ pitchClass, accidental: "natural", octave: o as Octave });
+      const dist = Math.abs(midi - refMidi);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestOctave = o as Octave;
+      }
+    }
+    if (isDup(bestOctave)) {
+      let found: Octave | null = null;
+      for (let o = bestOctave + 1; o <= 9; o++) {
+        if (!isDup(o)) { found = o as Octave; break; }
+      }
+      if (found == null) {
+        for (let o = bestOctave - 1; o >= 0; o--) {
+          if (!isDup(o)) { found = o as Octave; break; }
+        }
+      }
+      if (found == null) return; // all octaves occupied — give up
+      bestOctave = found;
+    }
+
+    const cmd = new AddPitchToChord(pitchClass, bestOctave, acc, targetIndex);
+    const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
+    // Select the newly added head so subsequent accidental/pitch shortcuts
+    // target only that note, not the whole chord.
+    const resultEvent = result.score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex]?.events[targetIndex];
+    const newHeadIndex = resultEvent?.kind === "chord" ? resultEvent.heads.length - 1 : null;
+    set({
+      score: result.score,
+      inputState: {
+        ...result.inputState,
+        accidental: "natural",
+        accidentalExplicit: false,
+        selectedHeadIndex: newHeadIndex,
+      },
+    });
+    previewEventAt(result.score, { ...cursor, eventIndex: targetIndex });
   },
 
   insertTabNote(fret: number, string: number) {
@@ -559,36 +671,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const cmd = new InsertTabNote(fret, string, { ...state.inputState.duration }, tuning, capo);
     const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
     set({ score: result.score, inputState: result.inputState, lastEnteredPosition: { ...cursor } });
+    previewEventAt(result.score, cursor);
   },
 
   insertRest() {
     const state = get();
     if (state.inputState.insertMode) {
       const cmd = new InsertModeNote("C", 4, "natural", { ...state.inputState.duration }, true);
-      const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
-      set({ score: result.score, inputState: result.inputState, lastEnteredPosition: null });
-      return;
-    }
-    // Overwrite existing event with a rest (matching note overwrite/change behavior)
-    const { cursor } = state.inputState;
-    if (cursorOnExistingEvent(state.score, cursor)) {
-      const cmd: import("../commands/Command").Command = {
-        description: "Overwrite with rest",
-        execute(s) {
-          const sc = structuredClone(s.score);
-          const inp = structuredClone(s.inputState);
-          const v = sc.parts[inp.cursor.partIndex]?.measures[inp.cursor.measureIndex]?.voices[inp.cursor.voiceIndex];
-          if (!v) return s;
-          v.events[inp.cursor.eventIndex] = {
-            kind: "rest",
-            id: newId<import("../model/ids").NoteEventId>("evt"),
-            duration: { ...inp.duration },
-          };
-          inp.cursor.eventIndex += 1;
-          return { score: sc, inputState: inp };
-        },
-        undo(s) { return s; },
-      };
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
       set({ score: result.score, inputState: result.inputState, lastEnteredPosition: null });
       return;
@@ -675,7 +764,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         }
       }
       set({ score });
-    } else if (state.selection && !state.inputState.stepEntry) {
+    } else if (state.selection && !state.inputState.noteEntry) {
       const { partIndex, measureStart, measureEnd } = state.selection;
       history.pushSnapshot({ score: state.score, inputState: state.inputState });
       const score = structuredClone(state.score);
@@ -728,7 +817,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         }
       }
       set({ score });
-    } else if (state.selection && !state.inputState.stepEntry) {
+    } else if (state.selection && !state.inputState.noteEntry) {
       // Bar-level selection: toggle dot on all events in selected measures
       const { partIndex, measureStart, measureEnd } = state.selection;
       history.pushSnapshot({ score: state.score, inputState: state.inputState });
@@ -779,10 +868,34 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       return ev;
     };
 
-    // Note-level selection: apply accidental to selected events
+    // Note-level selection: apply accidental to selected events. If the selection
+    // covers exactly one chord event and a head is selected (or defaulted), apply
+    // only to that head instead of the whole chord.
     if (state.noteSelection) {
       const ns = state.noteSelection;
       const score = structuredClone(state.score);
+      const singleEvent =
+        ns.startMeasure === ns.endMeasure && ns.startEvent === ns.endEvent;
+      if (singleEvent) {
+        const voice = score.parts[ns.partIndex]?.measures[ns.startMeasure]?.voices[ns.voiceIndex];
+        const ev = voice?.events[ns.startEvent];
+        if (voice && ev && ev.kind === "chord" && ev.heads.length > 0) {
+          const headIdx = resolveChordHead(
+            score,
+            { ...state.inputState.cursor, measureIndex: ns.startMeasure, voiceIndex: ns.voiceIndex, eventIndex: ns.startEvent },
+            state.inputState.selectedHeadIndex,
+          );
+          const h = headIdx ?? 0;
+          voice.events[ns.startEvent] = {
+            ...ev,
+            heads: ev.heads.map((head, i) =>
+              i === h ? { ...head, pitch: { ...head.pitch, accidental: acc } } : head,
+            ),
+          };
+          set({ score, inputState: { ...state.inputState, accidental: "natural", accidentalExplicit: false } });
+          return;
+        }
+      }
       for (let mi = ns.startMeasure; mi <= ns.endMeasure; mi++) {
         const voice = score.parts[ns.partIndex]?.measures[mi]?.voices[ns.voiceIndex];
         if (!voice) continue;
@@ -792,12 +905,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           voice.events[i] = applyAccToEvent(voice.events[i], acc);
         }
       }
-      set({ score, inputState: { ...state.inputState, accidental: acc, accidentalExplicit: true } });
+      set({ score, inputState: { ...state.inputState, accidental: "natural", accidentalExplicit: false } });
       return;
     }
 
     // Bar-level selection: apply accidental to all pitched events
-    if (state.selection && !state.inputState.stepEntry) {
+    if (state.selection && !state.inputState.noteEntry) {
       const { partIndex, measureStart, measureEnd } = state.selection;
       const score = structuredClone(state.score);
       const part = score.parts[partIndex];
@@ -809,7 +922,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
             voice.events = voice.events.map((ev) => applyAccToEvent(ev, acc));
           }
         }
-        set({ score, inputState: { ...state.inputState, accidental: acc, accidentalExplicit: true } });
+        set({ score, inputState: { ...state.inputState, accidental: "natural", accidentalExplicit: false } });
       }
       return;
     }
@@ -818,22 +931,26 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (cursorOnExistingEvent(state.score, cursor)) {
       const voice = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
       const event = voice?.events[cursor.eventIndex];
+      const headIdx = resolveChordHead(state.score, cursor, state.inputState.selectedHeadIndex);
       let noteAcc: Accidental = "natural";
       if (event?.kind === "note" || event?.kind === "grace") {
         noteAcc = event.head.pitch.accidental ?? "natural";
       } else if (event?.kind === "chord" && event.heads.length > 0) {
-        noteAcc = event.heads[0].pitch.accidental ?? "natural";
+        const refHead =
+          headIdx != null && headIdx >= 0 && headIdx < event.heads.length ? headIdx : 0;
+        noteAcc = event.heads[refHead].pitch.accidental ?? "natural";
       }
       const newAcc = noteAcc === acc ? "natural" : acc;
-      const cmd = new SetAccidentalCmd(newAcc);
+      const cmd = new SetAccidentalCmd(newAcc, headIdx);
       const result = history.execute(cmd, {
         score: state.score,
         inputState: state.inputState,
       });
       set({
         score: result.score,
-        inputState: { ...result.inputState, accidental: newAcc, accidentalExplicit: true },
+        inputState: { ...result.inputState, accidental: "natural", accidentalExplicit: false },
       });
+      previewEventAt(result.score, cursor);
       return;
     }
 
@@ -848,30 +965,19 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }));
   },
 
-  toggleStepEntry() {
+  toggleNoteEntry() {
     set((s) => {
-      const newStep = !s.inputState.stepEntry;
-      const cursor = s.inputState.cursor;
-      // Entering step entry (not insert): auto-select note at cursor
-      // Leaving step entry: clear note selection
-      let noteSelection = s.noteSelection;
-      if (newStep && !s.inputState.insertMode && cursorOnExistingEvent(s.score, cursor)) {
-        noteSelection = {
-          partIndex: cursor.partIndex,
-          voiceIndex: cursor.voiceIndex,
-          startMeasure: cursor.measureIndex,
-          startEvent: cursor.eventIndex,
-          endMeasure: cursor.measureIndex,
-          endEvent: cursor.eventIndex,
-          anchorMeasure: cursor.measureIndex,
-          anchorEvent: cursor.eventIndex,
-        };
-      } else if (!newStep) {
-        noteSelection = null;
-      }
+      const entering = !s.inputState.noteEntry;
+      // Leaving note entry: clear sub-modes and any pending pitch.
+      // Entering: leave cursor/selection as-is.
       return {
-        inputState: { ...s.inputState, stepEntry: newStep },
-        noteSelection,
+        inputState: {
+          ...s.inputState,
+          noteEntry: entering,
+          insertMode: entering ? s.inputState.insertMode : false,
+          graceNoteMode: entering ? s.inputState.graceNoteMode : false,
+          pendingPitch: entering ? s.inputState.pendingPitch : null,
+        },
       };
     });
   },
@@ -879,29 +985,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   toggleInsertMode() {
     set((s) => {
       const newInsert = !s.inputState.insertMode;
-      const newStep = newInsert ? true : s.inputState.stepEntry;
-      // Insert mode on: clear note selection (cursor is insertion point)
-      // Insert mode off, still in step entry: auto-select note at cursor
-      const cursor = s.inputState.cursor;
-      let noteSelection = s.noteSelection;
-      if (newInsert) {
-        noteSelection = null;
-      } else if (newStep && cursorOnExistingEvent(s.score, cursor)) {
-        noteSelection = {
-          partIndex: cursor.partIndex,
-          voiceIndex: cursor.voiceIndex,
-          startMeasure: cursor.measureIndex,
-          startEvent: cursor.eventIndex,
-          endMeasure: cursor.measureIndex,
-          endEvent: cursor.eventIndex,
-          anchorMeasure: cursor.measureIndex,
-          anchorEvent: cursor.eventIndex,
-        };
-      }
-      updateSettings({ insertMode: newInsert });
+      // Insert is a sub-mode of note entry — turning it on implies note entry.
       return {
-        inputState: { ...s.inputState, insertMode: newInsert, stepEntry: newStep },
-        noteSelection,
+        inputState: {
+          ...s.inputState,
+          insertMode: newInsert,
+          noteEntry: newInsert || s.inputState.noteEntry,
+        },
       };
     });
   },
@@ -942,6 +1032,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       inputState: { ...result.inputState, pendingPitch: null },
       lastEnteredPosition: notePos,
     });
+    previewEventAt(result.score, notePos);
   },
 
   moveCursor(direction: "left" | "right") {
@@ -973,7 +1064,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         }
       }
 
-      return { inputState: { ...s.inputState, cursor, pendingPitch: null }, lastEnteredPosition: null };
+      return { inputState: { ...s.inputState, cursor, pendingPitch: null, selectedHeadIndex: null }, lastEnteredPosition: null };
     });
   },
 
@@ -1012,9 +1103,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
     // If cursor is on an existing note, nudge it by octave
     if (cursorOnExistingEvent(state.score, state.inputState.cursor)) {
-      const cmd = new NudgePitch(direction, "octave");
+      const headIdx = resolveChordHead(state.score, state.inputState.cursor, state.inputState.selectedHeadIndex);
+      const cmd = new NudgePitch(direction, "octave", headIdx);
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
       set({ score: result.score, inputState: result.inputState });
+      previewEventAt(result.score, state.inputState.cursor);
       return;
     }
     // If we just entered a note (cursor advanced past it), nudge that note
@@ -1023,6 +1116,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const cmd = new NudgePitch(direction, "octave");
       const result = history.execute(cmd, { score: state.score, inputState: tempInput });
       set({ score: result.score, inputState: state.inputState });
+      previewEventAt(result.score, state.lastEnteredPosition);
       return;
     }
   },
@@ -1055,9 +1149,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
     // If cursor is on an existing note, nudge it directly
     if (cursorOnExistingEvent(state.score, state.inputState.cursor)) {
-      const cmd = new NudgePitch(direction, mode);
+      const headIdx = resolveChordHead(state.score, state.inputState.cursor, state.inputState.selectedHeadIndex);
+      const cmd = new NudgePitch(direction, mode, headIdx);
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
       set({ score: result.score, inputState: result.inputState });
+      previewEventAt(result.score, state.inputState.cursor);
       return;
     }
     // If we just entered a note (cursor advanced past it), nudge that note
@@ -1067,6 +1163,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const result = history.execute(cmd, { score: state.score, inputState: tempInput });
       // Keep the current cursor position (don't jump back)
       set({ score: result.score, inputState: state.inputState });
+      previewEventAt(result.score, state.lastEnteredPosition);
       return;
     }
   },
@@ -1076,6 +1173,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     history.pushSnapshot({ score: state.score, inputState: state.inputState });
     set((s) => ({
       score,
+      inputState: defaultInputState(),
       viewConfig: { ...s.viewConfig, notationDisplay: {} },
     }));
   },
@@ -1107,6 +1205,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({ noteBoxes: boxes, hitBoxes: hitBoxes ?? [...boxes.values()] });
   },
 
+  setBreakBoxes(boxes) {
+    set({ breakBoxes: boxes });
+  },
   setAnnotationBoxes(boxes: AnnotationBox[]) {
     set({ annotationBoxes: boxes });
   },
@@ -1149,6 +1250,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         endEvent: cursor.eventIndex,
         anchorMeasure: cursor.measureIndex,
         anchorEvent: cursor.eventIndex,
+        rangeMode: true,
       },
       selection: null,
     });
@@ -1213,6 +1315,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           startEvent: startFirst ? ns.anchorEvent : movEvent,
           endMeasure: startFirst ? movMeasure : ns.anchorMeasure,
           endEvent: startFirst ? movEvent : ns.anchorEvent,
+          rangeMode: true,
         },
         inputState: {
           ...s.inputState,
@@ -1227,6 +1330,35 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const state = get();
     const ns = state.noteSelection;
     if (!ns) return;
+
+    // Single chord head selected: delete just that head via the cursor-aware path
+    // so DeleteNote's head-aware logic runs (collapses the chord to a note / whole event).
+    const headIdx = state.inputState.selectedHeadIndex;
+    if (
+      headIdx != null &&
+      ns.startMeasure === ns.endMeasure &&
+      ns.startEvent === ns.endEvent
+    ) {
+      const voice = state.score.parts[ns.partIndex]?.measures[ns.startMeasure]?.voices[ns.voiceIndex];
+      const evt = voice?.events[ns.startEvent];
+      if (evt?.kind === "chord") {
+        const cursorAligned = {
+          ...state.inputState,
+          cursor: {
+            ...state.inputState.cursor,
+            partIndex: ns.partIndex,
+            measureIndex: ns.startMeasure,
+            voiceIndex: ns.voiceIndex,
+            eventIndex: ns.startEvent,
+          },
+        };
+        const cmd = new DeleteNote();
+        const result = history.execute(cmd, { score: state.score, inputState: cursorAligned });
+        set({ score: result.score, inputState: result.inputState, noteSelection: null });
+        return;
+      }
+    }
+
     const score = structuredClone(state.score);
     // Delete selected events across measures (reverse order to preserve indices)
     for (let mi = ns.endMeasure; mi >= ns.startMeasure; mi--) {
@@ -1296,6 +1428,21 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
+  clearSelectedMeasures() {
+    const state = get();
+    if (!state.selection) return;
+    const cmd = new ClearSelectedMeasures(state.selection);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({
+      score: result.score,
+      inputState: result.inputState,
+      selection: null,
+    });
+  },
+
   copySelection() {
     const state = get();
     if (state.selection) {
@@ -1312,16 +1459,48 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const ns = state.noteSelection;
       const part = state.score.parts[ns.partIndex];
       if (!part) return;
-      // Collect only the selected events from the active voice
-      const events: import("../model/note").NoteEvent[] = [];
+
+      // Single chord head selected: copy just that head as a single-note event.
+      const headIdx = state.inputState.selectedHeadIndex;
+      if (
+        headIdx != null &&
+        ns.startMeasure === ns.endMeasure &&
+        ns.startEvent === ns.endEvent
+      ) {
+        const voice = part.measures[ns.startMeasure]?.voices[ns.voiceIndex];
+        const evt = voice?.events[ns.startEvent];
+        if (evt?.kind === "chord" && headIdx >= 0 && headIdx < evt.heads.length) {
+          const headEvent: import("../model/note").NoteEvent = {
+            kind: "note",
+            id: evt.id,
+            duration: evt.duration,
+            head: evt.heads[headIdx],
+            stemDirection: evt.stemDirection,
+            tabInfo: evt.tabInfo,
+            articulations: evt.articulations,
+            tuplet: evt.tuplet,
+            renderStaff: evt.renderStaff,
+          };
+          const cloned = structuredClone({ voiceIndex: ns.voiceIndex, measures: [[headEvent]] });
+          set({ clipboardEvents: cloned, clipboardMeasures: null });
+          const payload = JSON.stringify({ nubium: "events", data: cloned });
+          navigator.clipboard.writeText(payload).catch(() => {});
+          return;
+        }
+      }
+
+      // Collect selected events from the active voice, grouped by source measure
+      // so paste can distribute them back across measures instead of dumping
+      // everything into a single voice.
+      const measures: import("../model/note").NoteEvent[][] = [];
       for (let m = ns.startMeasure; m <= ns.endMeasure; m++) {
         const voice = part.measures[m]?.voices[ns.voiceIndex];
-        if (!voice) continue;
+        if (!voice) { measures.push([]); continue; }
         const startIdx = m === ns.startMeasure ? ns.startEvent : 0;
         const endIdx = m === ns.endMeasure ? ns.endEvent : voice.events.length - 1;
-        events.push(...voice.events.slice(startIdx, endIdx + 1));
+        measures.push(voice.events.slice(startIdx, endIdx + 1));
       }
-      const cloned = structuredClone({ voiceIndex: ns.voiceIndex, events });
+      const cloned = structuredClone({ voiceIndex: ns.voiceIndex, measures });
       set({ clipboardEvents: cloned, clipboardMeasures: null });
       // Write to system clipboard for cross-tab support
       const payload = JSON.stringify({ nubium: "events", data: cloned });
@@ -1349,35 +1528,89 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
     // Prefer system clipboard data over in-memory (enables cross-tab paste)
     const clipboardEvents = systemClipboard?.nubium === "events"
-      ? systemClipboard.data as { voiceIndex: number; events: import("../model/note").NoteEvent[] }
+      ? systemClipboard.data as { voiceIndex: number; measures: import("../model/note").NoteEvent[][] }
       : state.clipboardEvents;
     const clipboardMeasures = systemClipboard?.nubium === "measures"
       ? systemClipboard.data as Measure[]
       : state.clipboardMeasures;
 
-    // Note-level paste: overwrite events at cursor position
-    if (clipboardEvents && clipboardEvents.events.length > 0) {
+    // Note-level paste: distribute events across measures, one source measure
+    // per destination measure. If a note selection is active, it's cleared
+    // first and used as the insertion origin instead of the cursor.
+    if (clipboardEvents && clipboardEvents.measures.some((m) => m.length > 0)) {
       const score = structuredClone(state.score);
       const part = score.parts[cursor.partIndex];
       if (!part) return;
-      const measure = part.measures[cursor.measureIndex];
-      if (!measure) return;
-      const voice = measure.voices[cursor.voiceIndex];
-      if (!voice) return;
 
-      const newEvents = structuredClone(clipboardEvents.events).map((e: any) => {
-        e.id = newId<NoteEventId>("evt");
-        return e;
-      });
-      const replaceCount = Math.min(newEvents.length, voice.events.length - cursor.eventIndex);
-      voice.events.splice(cursor.eventIndex, replaceCount, ...newEvents);
+      const ns = state.noteSelection;
+      const ms = state.selection;
+      // Use whichever selection exists (note selection wins), else cursor.
+      const startMeasure = ns ? ns.startMeasure : ms ? ms.measureStart : cursor.measureIndex;
+      const startEventIdx = ns ? ns.startEvent : ms ? 0 : cursor.eventIndex;
+      // Destination stave follows the cursor. For grand-staff parts this is
+      // what lets the user paste into the bass clef by first clicking there.
+      const destStave = cursor.staveIndex ?? 0;
 
-      const newEventIdx = Math.min(cursor.eventIndex + newEvents.length, voice.events.length) - 1;
-      // Push snapshot for undo (before-paste state)
+      // Clear the selected range before inserting (walk backward so indices
+      // stay valid). Note selection clears only its stored voice; measure
+      // selection clears the cursor's stave in each measure.
+      if (ns) {
+        for (let m = ns.endMeasure; m >= ns.startMeasure; m--) {
+          const vc = part.measures[m]?.voices[ns.voiceIndex];
+          if (!vc) continue;
+          const sIdx = m === ns.startMeasure ? ns.startEvent : 0;
+          const eIdx = m === ns.endMeasure ? ns.endEvent : vc.events.length - 1;
+          vc.events.splice(sIdx, eIdx - sIdx + 1);
+        }
+      } else if (ms) {
+        for (let m = ms.measureEnd; m >= ms.measureStart; m--) {
+          const measure = part.measures[m];
+          if (!measure) continue;
+          const flatIdx = findOrCreateVoiceForStaff(measure, destStave, 0);
+          measure.voices[flatIdx].events = [];
+        }
+      }
+
+      // Deep-clone source measures and re-id every event
+      const sourceMeasures: import("../model/note").NoteEvent[][] =
+        structuredClone(clipboardEvents.measures).map((evs) =>
+          evs.map((e: any) => { e.id = newId<NoteEventId>("evt"); return e; })
+        );
+
+      let lastMeasure = startMeasure;
+      let lastEventIdx = startEventIdx;
+      let lastDestVoiceIdx = cursor.voiceIndex;
+
+      for (let i = 0; i < sourceMeasures.length; i++) {
+        const destIdx = startMeasure + i;
+        const destMeasure = part.measures[destIdx];
+        if (!destMeasure) break;
+
+        // Resolve (or create) the first voice on the destination stave for
+        // this measure. Each measure's voice layout is independent, so we
+        // redo the lookup per measure.
+        const destVoiceFlat = findOrCreateVoiceForStaff(destMeasure, destStave, 0);
+        const destVoice = destMeasure.voices[destVoiceFlat];
+        if (!destVoice) break;
+
+        // If the voice was freshly created and holds nothing, start at offset 0.
+        // Otherwise respect cursor's startEventIdx on the first measure.
+        const srcEvents = sourceMeasures[i];
+        if (srcEvents.length === 0) { lastMeasure = destIdx; lastEventIdx = 0; lastDestVoiceIdx = destVoiceFlat; continue; }
+
+        const offset = i === 0 ? Math.min(startEventIdx, destVoice.events.length) : 0;
+        const replaceCount = Math.min(srcEvents.length, destVoice.events.length - offset);
+        destVoice.events.splice(offset, replaceCount, ...srcEvents);
+
+        lastMeasure = destIdx;
+        lastEventIdx = offset + srcEvents.length - 1;
+        lastDestVoiceIdx = destVoiceFlat;
+      }
+
       history.pushSnapshot({ score: state.score, inputState: state.inputState });
       set({
         score,
-        inputState: { ...state.inputState, cursor: { ...cursor, eventIndex: Math.max(0, newEventIdx) } },
+        inputState: { ...state.inputState, cursor: { ...cursor, measureIndex: lastMeasure, eventIndex: Math.max(0, lastEventIdx), voiceIndex: lastDestVoiceIdx } },
         selection: null,
         noteSelection: null,
       });
@@ -1444,7 +1677,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       return m;
     });
 
-    const startIndex = cursor.measureIndex;
+    // If a measure selection is active, paste at its start (replace the range).
+    // Otherwise paste at the cursor.
+    const startIndex = state.selection ? state.selection.measureStart : cursor.measureIndex;
     // Ensure enough measures exist to paste into
     while (part.measures.length < startIndex + measuresToInsert.length) {
       const refM = part.measures[part.measures.length - 1] ?? refMeasure;
@@ -1501,6 +1736,45 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         tabFretBuffer: tabInputActive !== undefined && tabInputActive !== s.inputState.tabInputActive ? "" : s.inputState.tabFretBuffer,
       },
     }));
+  },
+
+  setSelectedHeadIndex(index: number | null) {
+    set((s) => ({ inputState: { ...s.inputState, selectedHeadIndex: index } }));
+  },
+
+  cycleChordHead(direction: "next" | "prev") {
+    const state = get();
+    const { cursor } = state.inputState;
+    const voice = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+    // Accept the event at cursor, or the one just before (matches addPitchToChord).
+    let targetIndex = cursor.eventIndex;
+    let target = voice?.events[targetIndex];
+    if ((!target || target.kind !== "chord") && targetIndex > 0) {
+      targetIndex = targetIndex - 1;
+      target = voice?.events[targetIndex];
+    }
+    if (!target || target.kind !== "chord" || target.heads.length === 0) return;
+
+    const count = target.heads.length;
+    const current = state.inputState.selectedHeadIndex ?? 0;
+    const next = direction === "next"
+      ? (current + 1) % count
+      : (current - 1 + count) % count;
+
+    set({
+      inputState: { ...state.inputState, selectedHeadIndex: next },
+      noteSelection: {
+        partIndex: cursor.partIndex,
+        voiceIndex: cursor.voiceIndex,
+        startMeasure: cursor.measureIndex,
+        startEvent: targetIndex,
+        endMeasure: cursor.measureIndex,
+        endEvent: targetIndex,
+        anchorMeasure: cursor.measureIndex,
+        anchorEvent: targetIndex,
+      },
+      selection: null,
+    });
   },
 
 
@@ -1671,7 +1945,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
 
     // Bar-level selection
-    if (state.selection && !state.inputState.stepEntry) {
+    if (state.selection && !state.inputState.noteEntry) {
       const { partIndex, measureStart, measureEnd } = state.selection;
       const score = structuredClone(state.score);
       const part = score.parts[partIndex];
@@ -1743,7 +2017,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
 
     // Bar-level selection
-    if (state.selection && !state.inputState.stepEntry) {
+    if (state.selection && !state.inputState.noteEntry) {
       const { partIndex: pi, measureStart, measureEnd } = state.selection;
       const score = structuredClone(state.score);
       const p = score.parts[pi];
@@ -1989,14 +2263,20 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const { partIndex, measureIndex, voiceIndex, eventIndex } = state.inputState.cursor;
       const voice =
         state.score.parts[partIndex]?.measures[measureIndex]?.voices[voiceIndex];
+      const event = voice?.events[eventIndex];
+      if (!event) {
+        // No event at cursor (empty voice) — just close the dialog
+        set((s) => ({
+          inputState: { ...s.inputState, textInputMode: null, textInputBuffer: "", textInputInitialValue: "" },
+        }));
+        return;
+      }
       let beatOffset = 0;
       if (voice) {
         for (let i = 0; i < eventIndex && i < voice.events.length; i++) {
           beatOffset += durationToTicksFn(voice.events[i].duration, voice.events[i].tuplet);
         }
       }
-      const event = voice?.events[eventIndex];
-      if (!event) return;
       const cmd = new SetChordSymbol(text, beatOffset, event.id);
       const result = history.execute(cmd, {
         score: state.score,
@@ -2114,7 +2394,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
     if (sel) {
       measureRange = { start: sel.measureStart, end: sel.measureEnd };
-    } else if (noteSel) {
+    } else if (noteSel && noteSel.rangeMode) {
       measureRange = { start: noteSel.startMeasure, end: noteSel.endMeasure };
     } else if (part) {
       // Play from cursor position
@@ -2200,6 +2480,19 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   addPart(instrumentId: string) {
     const state = get();
     const cmd = new AddPart(instrumentId);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({
+      score: result.score,
+      inputState: result.inputState,
+    });
+  },
+
+  changeInstrument(partIndex: number, instrumentId: string) {
+    const state = get();
+    const cmd = new ChangeInstrument(partIndex, instrumentId);
     const result = history.execute(cmd, {
       score: state.score,
       inputState: state.inputState,
@@ -2394,6 +2687,16 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       score: result.score,
       inputState: result.inputState,
     });
+  },
+
+  setMeasureBreak(breakType: MeasureBreak | null) {
+    const state = get();
+    const cmd = new SetMeasureBreak(breakType);
+    const result = history.execute(cmd, {
+      score: state.score,
+      inputState: state.inputState,
+    });
+    set({ score: result.score, inputState: result.inputState });
   },
 
   setVolta(volta: Volta | null) {

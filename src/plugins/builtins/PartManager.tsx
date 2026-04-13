@@ -32,6 +32,7 @@ function PartsPanel() {
   const score = useEditorStore((s) => s.score);
   const cursorPartIndex = useEditorStore((s) => s.inputState.cursor.partIndex);
   const addPart = useEditorStore((s) => s.addPart);
+  const changeInstrument = useEditorStore((s) => s.changeInstrument);
   const removePart = useEditorStore((s) => s.removePart);
   const reorderPart = useEditorStore((s) => s.reorderPart);
   const toggleSolo = useEditorStore((s) => s.toggleSolo);
@@ -134,7 +135,20 @@ function PartsPanel() {
               <div className="p-0.5 flex-shrink-0 cursor-grab">
                 <GripVertical className="h-3 w-3 text-muted-foreground" />
               </div>
-              <span className="font-semibold text-[11px] leading-none mt-0.5">{part.name}</span>
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <span className="font-semibold text-[11px] leading-none mt-0.5 truncate">{part.name}</span>
+                <select
+                  value={part.instrumentId}
+                  onChange={(e) => { e.stopPropagation(); changeInstrument(index, e.target.value); }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-5 text-[10px] rounded-sm border border-input bg-background px-1 max-w-[110px]"
+                  title="Change instrument"
+                >
+                  {INSTRUMENTS.map((inst) => (
+                    <option key={inst.id} value={inst.id}>{inst.name}</option>
+                  ))}
+                </select>
+              </div>
               <div className="flex-1" />
               <div className="flex flex-col gap-1 items-end">
                 {(() => {

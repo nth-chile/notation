@@ -3,6 +3,7 @@ import type { PitchClass, Octave, Accidental, Duration } from "../model";
 import { newId, type NoteEventId } from "../model/ids";
 import { shiftVoiceForward } from "../model/voiceInsert";
 import { measure as makeMeasure, voice as makeVoice } from "../model/factory";
+import { resolveVoiceForStaff } from "./measureUtils";
 
 /**
  * Insert mode: inserts a note and pushes subsequent events forward.
@@ -22,10 +23,18 @@ export class InsertModeNote implements Command {
   execute(state: EditorSnapshot): EditorSnapshot {
     const score = structuredClone(state.score);
     const input = structuredClone(state.inputState);
-    const { partIndex, measureIndex, voiceIndex, eventIndex } = input.cursor;
+    const { partIndex, measureIndex, eventIndex } = input.cursor;
 
     const part = score.parts[partIndex];
     if (!part) return state;
+
+    const measure = part.measures[measureIndex];
+    if (!measure) return state;
+
+    // Resolve voice index to one matching the cursor's staff (grand staff).
+    const staveIndex = input.cursor.staveIndex ?? 0;
+    const voiceIndex = resolveVoiceForStaff(measure, input.cursor.voiceIndex, staveIndex);
+    input.cursor.voiceIndex = voiceIndex;
 
     const newEvent = this.isRest
       ? {

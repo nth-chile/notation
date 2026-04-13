@@ -10,6 +10,7 @@ export class NudgePitch implements Command {
   constructor(
     private direction: "up" | "down",
     private mode: NudgeMode,
+    private headIndex?: number | null,
   ) {}
 
   execute(state: EditorSnapshot): EditorSnapshot {
@@ -42,8 +43,12 @@ export class NudgePitch implements Command {
     if (event.kind === "note") {
       event.head.pitch = nudge(event.head.pitch);
     } else if (event.kind === "chord") {
-      for (const head of event.heads) {
-        head.pitch = nudge(head.pitch);
+      if (this.headIndex != null && this.headIndex >= 0 && this.headIndex < event.heads.length) {
+        event.heads[this.headIndex].pitch = nudge(event.heads[this.headIndex].pitch);
+      } else {
+        for (const head of event.heads) {
+          head.pitch = nudge(head.pitch);
+        }
       }
     } else if (event.kind === "grace") {
       event.head.pitch = nudge(event.head.pitch);

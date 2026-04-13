@@ -116,7 +116,32 @@
       "Bash(brew install:*)",
       "Bash(rsvg-convert -w 512 -h 512 /tmp/nubium-icon.svg -o src-tauri/icons/icon.png)",
       "Bash(npm pack:*)",
-      "Bash(npx @anthropic-ai/mcp-playwright --install)"
+      "Bash(npx @anthropic-ai/mcp-playwright --install)",
+      "Bash(rm -rf /Users/jared/Library/Caches/ms-playwright/mcp-chrome-3af26b0/SingletonLock)",
+      "Read(//Users/jared/Library/Caches/ms-playwright/mcp-chrome-3af26b0/**)",
+      "Bash(pear stage:*)",
+      "Bash(git push:*)",
+      "Bash(/usr/bin/grep -r \"environment\" /Users/jared/work/nubium/vitest.config.ts /Users/jared/work/nubium/vite.config.ts)",
+      "Bash(/usr/bin/grep -r \"jsdom\\\\|happy-dom\" /Users/jared/work/nubium/src/musicxml/__tests__/)",
+      "Bash(/usr/bin/grep -n \"\" /Users/jared/work/nubium/src/renderer/measureWidth.ts)",
+      "Bash(/usr/bin/grep:*)",
+      "Bash(security find-identity:*)",
+      "Bash(security export:*)",
+      "Bash(security find-certificate:*)",
+      "Read(//Users/jared/Desktop/**)",
+      "Bash(npx tauri:*)",
+      "Bash(TAURI_SIGNING_PRIVATE_KEY=$\\(cat src-tauri/keys/nubium.key\\) TAURI_SIGNING_PRIVATE_KEY_PASSWORD=\"\" npx tauri signer sign /tmp/nubium-release/Nubium_x64.app.tar.gz)",
+      "Bash(git log:*)",
+      "Bash(xargs -I {} sh -c 'head -1 {} | grep -q \"^import\\\\|^export\\\\|^//\" || echo \"No header: {}\"')",
+      "Bash(git ls-tree:*)",
+      "Bash(awk '$1 > 500 {print}')",
+      "Bash(read f:*)",
+      "Bash(npm list:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(npm outdated:*)",
+      "Bash(TAURI_SIGNING_PRIVATE_KEY=$\\(cat src-tauri/keys/nubium.key\\) TAURI_SIGNING_PRIVATE_KEY_PASSWORD=\"\" npx tauri signer sign /tmp/nubium-b6/Nubium_aarch64.app.tar.gz)",
+      "Bash(TAURI_SIGNING_PRIVATE_KEY=$\\(cat src-tauri/keys/nubium.key\\) TAURI_SIGNING_PRIVATE_KEY_PASSWORD=\"\" npx tauri signer sign /tmp/nubium-b6/Nubium_x64.app.tar.gz)",
+      "Bash(npx wrangler:*)"
     ]
   }
 }

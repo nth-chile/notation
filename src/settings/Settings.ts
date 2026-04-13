@@ -1,5 +1,5 @@
 import type { ClefType } from "../model/time";
-import { type KeyBinding, defaultKeyBindings } from "./keybindings";
+import { type KeyBinding, defaultKeyBindings, migrateKeyBindings } from "./keybindings";
 
 export interface DisplaySettings {
   showLyrics: boolean;
@@ -24,7 +24,8 @@ export interface AppSettings {
   viewMode: string;
   display: DisplaySettings;
   pitchBeforeDuration: boolean;
-  insertMode: boolean;
+  followPlaybackCursor: boolean;
+  scoreZoom: number;
   telemetryOptOut: boolean;
 }
 
@@ -60,7 +61,8 @@ function defaultSettings(): AppSettings {
     viewMode: "full-score",
     display: defaultDisplaySettings(),
     pitchBeforeDuration: false,
-    insertMode: false,
+    followPlaybackCursor: true,
+    scoreZoom: 1,
     telemetryOptOut: false,
   };
 }
@@ -130,7 +132,7 @@ export function getSettings(): AppSettings {
       if (stored) {
         const parsed = JSON.parse(stored);
         // Merge keybindings: defaults + stored, so new keybindings aren't lost
-        const mergedBindings = { ...defaultKeyBindings(), ...(parsed.keyBindings ?? {}) };
+        const mergedBindings = migrateKeyBindings({ ...defaultKeyBindings(), ...(parsed.keyBindings ?? {}) });
         const mergedDisplay = { ...defaultDisplaySettings(), ...(parsed.display ?? {}) };
         currentSettings = { ...defaultSettings(), ...parsed, keyBindings: mergedBindings, display: mergedDisplay };
       } else {
@@ -144,7 +146,7 @@ export function getSettings(): AppSettings {
   // Async: try to load from config file (takes priority if it exists)
   readConfigFile().then((fileSettings) => {
     if (fileSettings) {
-      const mergedBindings = { ...defaultKeyBindings(), ...(fileSettings.keyBindings ?? {}) };
+      const mergedBindings = migrateKeyBindings({ ...defaultKeyBindings(), ...(fileSettings.keyBindings ?? {}) });
       const mergedDisplay = { ...defaultDisplaySettings(), ...(fileSettings.display ?? {}) };
       currentSettings = { ...defaultSettings(), ...fileSettings, keyBindings: mergedBindings, display: mergedDisplay };
       // Sync localStorage with config file

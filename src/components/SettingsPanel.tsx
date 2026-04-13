@@ -5,7 +5,7 @@ import { useEditorStore } from "../state";
 import { useLayoutStore } from "../state/LayoutState";
 import { getLicenseState, activateLicense, deactivateLicense } from "../licensing";
 import { openExternal } from "../utils/openExternal";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 
@@ -90,6 +90,9 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
       <DialogContent className={`${tab === "hotkeys" ? "max-w-lg" : "max-w-md"} max-h-[80vh] overflow-y-auto`}>
         <DialogHeader>
           <DialogTitle className="sr-only">Settings</DialogTitle>
+          <DialogDescription className="sr-only">
+            Configure application settings, hotkeys, license, and send feedback.
+          </DialogDescription>
           <div className="flex gap-1 border-b border-border pb-2">
             <button
               onClick={() => setTab("settings")}
@@ -263,6 +266,16 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
                   className="accent-primary"
                 />
                 Pitch before duration
+              </label>
+
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.followPlaybackCursor}
+                  onChange={(e) => update("followPlaybackCursor", e.target.checked)}
+                  className="accent-primary"
+                />
+                Follow playback cursor
               </label>
             </div>
           </section>

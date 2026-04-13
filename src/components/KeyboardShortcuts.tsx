@@ -2,8 +2,25 @@ import { useEffect } from "react";
 import { useEditorStore } from "../state";
 import type { PitchClass, DurationType } from "../model";
 import { getEffectiveInputMode } from "../views/ViewMode";
+import { partStandardStaveCount } from "../renderer/SystemLayout";
 import { getSettings, matchesBinding } from "../settings";
+import { actionActiveInMode } from "../settings/keybindings";
 import { getGlobalPluginManager } from "../plugins/PluginManager";
+
+/** Whether the cursor is currently on a tab stave, accounting for viewConfig. */
+function isCursorOnTabStave(): boolean {
+  const st = useEditorStore.getState();
+  const c = st.inputState.cursor;
+  const viewConfig = st.viewConfig;
+  const standardCount = partStandardStaveCount(st.score, c.partIndex, viewConfig);
+  return getEffectiveInputMode(
+    viewConfig,
+    c.partIndex,
+    st.inputState.tabInputActive,
+    c.staveIndex,
+    standardCount,
+  ) === "tab";
+}
 
 // Flash event bus — toolbar buttons subscribe to this
 const flashListeners = new Set<(actionId: string) => void>();
@@ -17,6 +34,8 @@ export function emitFlash(actionId: string) {
 
 export function KeyboardShortcuts() {
   const insertNote = useEditorStore((s) => s.insertNote);
+  const addPitchToChord = useEditorStore((s) => s.addPitchToChord);
+  const cycleChordHead = useEditorStore((s) => s.cycleChordHead);
   const insertRest = useEditorStore((s) => s.insertRest);
   const deleteNote = useEditorStore((s) => s.deleteNote);
   const setDuration = useEditorStore((s) => s.setDuration);
@@ -40,9 +59,10 @@ export function KeyboardShortcuts() {
   const toggleMetronome = useEditorStore((s) => s.toggleMetronome);
   const toggleCountIn = useEditorStore((s) => s.toggleCountIn);
   const moveCursorPart = useEditorStore((s) => s.moveCursorPart);
+  const moveCursorToMeasure = useEditorStore((s) => s.moveCursorToMeasure);
   const toggleNotation = useEditorStore((s) => s.toggleNotation);
   const toggleArticulation = useEditorStore((s) => s.toggleArticulation);
-  const toggleStepEntry = useEditorStore((s) => s.toggleStepEntry);
+  const toggleNoteEntry = useEditorStore((s) => s.toggleNoteEntry);
   const toggleInsertMode = useEditorStore((s) => s.toggleInsertMode);
   const togglePitchBeforeDuration = useEditorStore((s) => s.togglePitchBeforeDuration);
   const toggleGraceNoteMode = useEditorStore((s) => s.toggleGraceNoteMode);
@@ -60,6 +80,7 @@ export function KeyboardShortcuts() {
   const deleteNoteSelection = useEditorStore((s) => s.deleteNoteSelection);
   const extendSelection = useEditorStore((s) => s.extendSelection);
   const deleteSelectedMeasures = useEditorStore((s) => s.deleteSelectedMeasures);
+  const clearSelectedMeasures = useEditorStore((s) => s.clearSelectedMeasures);
   const copySelection = useEditorStore((s) => s.copySelection);
   const pasteAtCursor = useEditorStore((s) => s.pasteAtCursor);
 
@@ -80,7 +101,7 @@ export function KeyboardShortcuts() {
       "insert-rest": () => insertRest(),
       "delete": () => {
         if (noteSelection) deleteNoteSelection();
-        else if (selection) deleteSelectedMeasures();
+        else if (selection) clearSelectedMeasures();
         else deleteNote();
       },
 
@@ -93,7 +114,7 @@ export function KeyboardShortcuts() {
       "duration:32nd": () => setDuration("32nd" as DurationType),
       "duration:64th": () => setDuration("64th" as DurationType),
       "toggle-dot": () => toggleDot(),
-      "toggle-step-entry": () => toggleStepEntry(),
+      "toggle-note-entry": () => toggleNoteEntry(),
       "toggle-insert-mode": () => toggleInsertMode(),
       "toggle-pitch-before-duration": () => togglePitchBeforeDuration(),
       "toggle-grace-note": () => toggleGraceNoteMode(),
@@ -102,6 +123,8 @@ export function KeyboardShortcuts() {
       "hairpin:crescendo": () => setHairpin("crescendo"),
       "hairpin:diminuendo": () => setHairpin("diminuendo"),
       "toggle-cross-staff": () => toggleCrossStaff(),
+      "chord:next-head": () => cycleChordHead("next"),
+      "chord:prev-head": () => cycleChordHead("prev"),
       "go-to-measure": () => getGlobalPluginManager()?.executeCommand("nubium.go-to-measure"),
 
       // Accidentals
@@ -119,6 +142,10 @@ export function KeyboardShortcuts() {
       "octave:down": () => changeOctave("down"),
       "part:up": () => moveCursorPart("up"),
       "part:down": () => moveCursorPart("down"),
+      "measure:prev": () => moveCursorToMeasure("prev"),
+      "measure:next": () => moveCursorToMeasure("next"),
+      "measure:prev-alt": () => moveCursorToMeasure("prev"),
+      "measure:next-alt": () => moveCursorToMeasure("next"),
       "nav:beginning": () => useEditorStore.getState().setCursorDirect({ partIndex: 0, measureIndex: 0, voiceIndex: 0, eventIndex: 0, staveIndex: 0 }),
 
       // Selection
@@ -138,7 +165,17 @@ export function KeyboardShortcuts() {
           });
         }
       },
-      "escape": () => { setSelection(null); setNoteSelection(null); useEditorStore.setState((s) => ({ inputState: { ...s.inputState, pendingPitch: null } })); },
+      "escape": () => {
+        const st = useEditorStore.getState();
+        if (st.inputState.noteEntry) {
+          // Exit note entry; keep selection state as-is.
+          toggleNoteEntry();
+          return;
+        }
+        setSelection(null);
+        setNoteSelection(null);
+        useEditorStore.setState((s) => ({ inputState: { ...s.inputState, pendingPitch: null } }));
+      },
       "copy": () => { if (selection || noteSelection) copySelection(); },
       "paste": () => { pasteAtCursor(); },
       "cut": () => { if (selection) { copySelection(); deleteSelectedMeasures(); } else if (noteSelection) { copySelection(); deleteNoteSelection(); } },
@@ -196,7 +233,7 @@ export function KeyboardShortcuts() {
       }
 
       // Tab input mode: intercept digit keys for fret entry and arrows for string nav
-      if (getEffectiveInputMode(viewConfig, useEditorStore.getState().inputState.cursor.partIndex, useEditorStore.getState().inputState.tabInputActive) === "tab") {
+      if (isCursorOnTabStave()) {
         const state = useEditorStore.getState();
         const { tabFretBuffer, tabString } = state.inputState;
 
@@ -305,9 +342,31 @@ export function KeyboardShortcuts() {
         }
       }
 
+      // Shift+A-G: add pitch to chord at/before cursor (note entry only).
+      // Outside note entry, Shift+letter falls through and does nothing (bare
+      // letter handles commands there).
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k.length === 1 && k >= "a" && k <= "g") {
+          const st = useEditorStore.getState();
+          if (st.inputState.noteEntry) {
+            const c = st.inputState.cursor;
+            const v = st.score.parts[c.partIndex]?.measures[c.measureIndex]?.voices[c.voiceIndex];
+            const candidate = v?.events[c.eventIndex] ?? (c.eventIndex > 0 ? v?.events[c.eventIndex - 1] : undefined);
+            if (candidate && (candidate.kind === "note" || candidate.kind === "chord")) {
+              e.preventDefault();
+              addPitchToChord(k.toUpperCase() as PitchClass);
+              return;
+            }
+          }
+        }
+      }
+
       const bindings = getSettings().keyBindings;
+      const noteEntry = useEditorStore.getState().inputState.noteEntry;
 
       for (const [actionId, binding] of Object.entries(bindings)) {
+        if (!actionActiveInMode(actionId, noteEntry)) continue;
         if (matchesBinding(e, binding)) {
           const handler = handlers[actionId];
           if (handler) {
@@ -323,12 +382,12 @@ export function KeyboardShortcuts() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    insertNote, insertRest, deleteNote, setDuration, toggleDot, setAccidental,
+    insertNote, addPitchToChord, cycleChordHead, insertRest, deleteNote, setDuration, toggleDot, setAccidental,
     moveCursor, changeOctave, nudgePitch, undo, redo, setVoice, insertMeasure, deleteMeasure,
     enterChordMode, enterLyricMode, textInputMode, isPlaying, play,
-    pause, stopPlayback, toggleMetronome, toggleCountIn, moveCursorPart, toggleNotation, selection,
-    copySelection, pasteAtCursor, deleteSelectedMeasures,
-    toggleArticulation, toggleStepEntry, toggleInsertMode, togglePitchBeforeDuration, toggleGraceNoteMode, toggleSlur, toggleTie, setHairpin, toggleCrossStaff, popover, setPopover,
+    pause, stopPlayback, toggleMetronome, toggleCountIn, moveCursorPart, moveCursorToMeasure, toggleNotation, selection,
+    copySelection, pasteAtCursor, deleteSelectedMeasures, clearSelectedMeasures,
+    toggleArticulation, toggleNoteEntry, toggleInsertMode, togglePitchBeforeDuration, toggleGraceNoteMode, toggleSlur, toggleTie, setHairpin, toggleCrossStaff, popover, setPopover,
     setSelection, setNoteSelection, extendSelection, extendNoteSelection,
     noteSelection, deleteNoteSelection, viewConfig, insertTabNote,
   ]);

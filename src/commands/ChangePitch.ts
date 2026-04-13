@@ -7,7 +7,8 @@ export class ChangePitch implements Command {
   constructor(
     private pitchClass: PitchClass,
     private octave: Octave,
-    private accidental: Accidental
+    private accidental: Accidental,
+    private headIndex?: number | null,
   ) {}
 
   execute(state: EditorSnapshot): EditorSnapshot {
@@ -21,21 +22,20 @@ export class ChangePitch implements Command {
     const event = voice.events[eventIndex];
     if (!event) return state;
 
+    const newPitch = {
+      pitchClass: this.pitchClass,
+      accidental: this.accidental,
+      octave: this.octave,
+    };
+
     if (event.kind === "note") {
-      event.head.pitch = {
-        pitchClass: this.pitchClass,
-        accidental: this.accidental,
-        octave: this.octave,
-      };
-    } else if (event.kind === "chord") {
-      // Change the first head's pitch
-      if (event.heads.length > 0) {
-        event.heads[0].pitch = {
-          pitchClass: this.pitchClass,
-          accidental: this.accidental,
-          octave: this.octave,
-        };
-      }
+      event.head.pitch = newPitch;
+    } else if (event.kind === "chord" && event.heads.length > 0) {
+      const targetIdx =
+        this.headIndex != null && this.headIndex >= 0 && this.headIndex < event.heads.length
+          ? this.headIndex
+          : 0;
+      event.heads[targetIdx].pitch = newPitch;
     }
     // rests: no pitch to change
 
