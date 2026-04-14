@@ -1,6 +1,6 @@
 import type { Command, EditorSnapshot } from "./Command";
 import type { Pitch, Octave } from "../model";
-import { stepUp, stepDown, pitchToMidi, midiToPitch } from "../model/pitch";
+import { stepUp, stepDown, pitchToMidi, midiToPitch, keyAccidental } from "../model/pitch";
 
 export type NudgeMode = "diatonic" | "chromatic" | "octave";
 
@@ -18,15 +18,21 @@ export class NudgePitch implements Command {
     const input = structuredClone(state.inputState);
     const { partIndex, measureIndex, voiceIndex, eventIndex } = input.cursor;
 
-    const voice = score.parts[partIndex]?.measures[measureIndex]?.voices[voiceIndex];
+    const measure = score.parts[partIndex]?.measures[measureIndex];
+    const voice = measure?.voices[voiceIndex];
     if (!voice) return state;
 
     const event = voice.events[eventIndex];
     if (!event) return state;
 
+    const fifths = measure.keySignature.fifths;
+
     const nudge = (pitch: Pitch): Pitch => {
       if (this.mode === "diatonic") {
-        return this.direction === "up" ? stepUp(pitch) : stepDown(pitch);
+        const stepped = this.direction === "up" ? stepUp(pitch) : stepDown(pitch);
+        // Apply key signature: a diatonic step should land on the note implied
+        // by the key, not a forced natural. E.g. D→E in B♭ major should be E♭.
+        return { ...stepped, accidental: keyAccidental(stepped.pitchClass, fifths) };
       }
       if (this.mode === "chromatic") {
         const midi = pitchToMidi(pitch);
