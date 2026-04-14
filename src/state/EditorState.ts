@@ -27,6 +27,7 @@ import { AddPitchToChord } from "../commands/AddPitchToChord";
 import { InsertTabNote } from "../commands/InsertTabNote";
 import { InsertModeNote } from "../commands/InsertModeNote";
 import { InsertRest } from "../commands/InsertRest";
+import { OverwriteRest } from "../commands/OverwriteRest";
 import { DeleteNote } from "../commands/DeleteNote";
 import { ChangePitch } from "../commands/ChangePitch";
 import { ChangeDuration } from "../commands/ChangeDuration";
@@ -692,7 +693,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       set({ score: result.score, inputState: result.inputState, lastEnteredPosition: null });
       return;
     }
-    const cmd = new InsertRest({ ...state.inputState.duration });
+    // Non-insert mode: if cursor is on an existing event, replace it with a rest.
+    // Mirrors insertNote's OverwriteNote behavior for consistency.
+    const cmd = cursorOnExistingEvent(state.score, state.inputState.cursor)
+      ? new OverwriteRest({ ...state.inputState.duration })
+      : new InsertRest({ ...state.inputState.duration });
     const result = history.execute(cmd, {
       score: state.score,
       inputState: state.inputState,
