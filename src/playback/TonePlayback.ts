@@ -59,6 +59,10 @@ interface MeasureBoundary {
 
 const LOOKAHEAD_SEC = 0.1;
 const SCHEDULER_INTERVAL_MS = 25;
+/** Minimum gap between onTick callbacks (ms). Throttles cursor updates to
+ *  ~30fps so heavy downstream React/canvas work doesn't run 60×/sec during
+ *  long playback. The rAF loop keeps running so motion still feels smooth. */
+const TICK_CALLBACK_MIN_INTERVAL_MS = 33;
 
 // --- State ---
 
@@ -79,6 +83,7 @@ let totalTicks = 0;
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 let animationFrame: number | null = null;
+let lastTickCallbackTime = 0;
 let eventCursor = 0;
 let metronomeCursor = 0;
 let anchorAudioTime = 0;
@@ -627,10 +632,25 @@ function updateCursor(): void {
   const elapsed = Tone.now() - anchorAudioTime;
   const currentTick = anchorTick + secToTicks(elapsed, currentBpm);
   const endAt = stopAtTick ?? totalTicks;
-  // Clamp tick to selection end so cursor/highlight don't overshoot
-  onTickCallback?.(Math.min(currentTick, endAt));
+  // Throttle onTick to ~30fps: heavy downstream work (canvas re-render + cascading
+  // Zustand updates) would otherwise run 60×/sec, building GC pressure on long loops.
+  const now = performance.now();
+  if (now - lastTickCallbackTime >= TICK_CALLBACK_MIN_INTERVAL_MS) {
+    lastTickCallbackTime = now;
+    onTickCallback?.(Math.min(currentTick, endAt));
+  }
   // Keep animation running — loop resets anchor in schedulerTick
   animationFrame = requestAnimationFrame(updateCursor);
+}
+
+/** Test-only: returns the throttle interval so tests can assert behavior. */
+export function _getTickThrottleMs(): number {
+  return TICK_CALLBACK_MIN_INTERVAL_MS;
+}
+
+/** Test-only: resets throttle state between tests. */
+export function _resetTickThrottle(): void {
+  lastTickCallbackTime = 0;
 }
 
 function resetCursorsToTick(tick: number): void {
@@ -699,6 +719,7 @@ export async function play(score: Score, startTick = 0, measureRange?: { start: 
     anchorTick = startTick;
     anchorAudioTime = now + countInSec;
     currentBpm = getBpmAtTick(startTick);
+    lastTickCallbackTime = 0;
     resetCursorsToTick(startTick);
 
     // Start scheduler after count-in finishes
@@ -715,6 +736,7 @@ export async function play(score: Score, startTick = 0, measureRange?: { start: 
     anchorTick = startTick;
     anchorAudioTime = Tone.now();
     currentBpm = getBpmAtTick(startTick);
+    lastTickCallbackTime = 0;
     resetCursorsToTick(startTick);
 
     schedulerInterval = setInterval(schedulerTick, SCHEDULER_INTERVAL_MS);

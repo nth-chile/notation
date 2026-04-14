@@ -8,6 +8,17 @@ import { getSettings, subscribeSettings, type DisplaySettings } from "../setting
 import { getMeasureIndexForTick } from "../playback/TonePlayback";
 import type { AnnotationFilter, ViewConfig } from "../views/ViewMode";
 
+/** Layout-affecting deps tracked per render to detect pure playback-tick updates. */
+type LayoutDeps = {
+  score: unknown; cursor: unknown; pendingPitch: unknown;
+  tabString: unknown; tabFretBuffer: unknown;
+  selectedHeadIndex: unknown; noteEntry: unknown;
+  viewConfig: unknown; containerWidth: number; zoom: number;
+  selection: unknown; noteSelection: unknown;
+  editingTitle: boolean; editingComposer: boolean;
+  hiddenParts: unknown; displaySettings: unknown;
+};
+
 const DISPLAY_TO_FILTER: [keyof DisplaySettings, AnnotationFilter[]][] = [
   ["showLyrics", ["lyric"]],
   ["showChordSymbols", ["chord-symbol"]],
@@ -61,6 +72,10 @@ export function ScoreCanvas() {
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const selectionStart = selection?.measureStart ?? null;
   const selectionEnd = selection?.measureEnd ?? null;
+
+  // Tracks the last set of layout-affecting deps used to push boxes into Zustand.
+  // If only playbackTick changes, we redraw the canvas but skip the box updates.
+  const layoutSigRef = useRef<LayoutDeps | null>(null);
 
   // Latest-value refs so scroll effects can read state without listing it as a dep
   // (a scroll should fire only when the thing it tracks changes — not on re-renders)
@@ -254,10 +269,27 @@ export function ScoreCanvas() {
       rawCtx.restore();
     }
 
-    setNoteBoxes(result.noteBoxes, result.hitBoxes);
-    setAnnotationBoxes(result.annotationBoxes);
-    setBreakBoxes(result.breakBoxes);
-    setMeasurePositions(result.measurePositions);
+    // Only push boxes back into Zustand when a layout-affecting dep changed.
+    // Skipping this when only playbackTick advanced avoids 4 cascading state
+    // updates per frame during playback — major win on long loop sessions.
+    const layoutSig = layoutSigRef.current;
+    const newLayoutSig: LayoutDeps = {
+      score, cursor: inputState.cursor, pendingPitch: inputState.pendingPitch,
+      tabString: inputState.tabString, tabFretBuffer: inputState.tabFretBuffer,
+      selectedHeadIndex: inputState.selectedHeadIndex, noteEntry: inputState.noteEntry,
+      viewConfig, containerWidth, zoom, selection, noteSelection,
+      editingTitle, editingComposer, hiddenParts, displaySettings,
+    };
+    const layoutChanged = !layoutSig || Object.keys(newLayoutSig).some(
+      (k) => (layoutSig as Record<string, unknown>)[k] !== (newLayoutSig as Record<string, unknown>)[k],
+    );
+    if (layoutChanged) {
+      layoutSigRef.current = newLayoutSig;
+      setNoteBoxes(result.noteBoxes, result.hitBoxes);
+      setAnnotationBoxes(result.annotationBoxes);
+      setBreakBoxes(result.breakBoxes);
+      setMeasurePositions(result.measurePositions);
+    }
   }, [score, inputState.cursor, inputState.pendingPitch, inputState.tabString, inputState.tabFretBuffer, inputState.selectedHeadIndex, inputState.noteEntry, playbackTick, viewConfig, containerWidth, zoom, selection, noteSelection, editingTitle, editingComposer, hiddenParts, displaySettings, setNoteBoxes, setAnnotationBoxes, setBreakBoxes, setMeasurePositions]);
 
   return (
