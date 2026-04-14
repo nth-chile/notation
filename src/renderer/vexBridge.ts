@@ -1212,8 +1212,8 @@ export function renderMeasure(
     }
   }
 
-  // Show overfill/underfill indicator (MuseScore-style + or −)
-  // Skip pickup measures — they're intentionally underfilled.
+  // Show overfill/underfill indicator as a big bold "+" or "−" above the
+  // top-right corner of the measure. Skip pickup measures (intentionally underfilled).
   if (!m.isPickup) {
     const capacity = measureCapacityFn(m.timeSignature.numerator, m.timeSignature.denominator);
     const maxTicks = Math.max(...m.voices.map((v) => voiceTicksUsedFn(v.events)), 0);
@@ -1222,11 +1222,10 @@ export function renderMeasure(
       if (rawCtx.save) {
         rawCtx.save();
         const isOver = maxTicks > capacity;
-        const symbol = isOver ? "+" : "\u2212";
         rawCtx.fillStyle = isOver ? "#ef4444" : "#f59e0b";
-        rawCtx.font = "bold 16px sans-serif";
+        rawCtx.font = "bold 24px sans-serif";
         rawCtx.textAlign = "right";
-        rawCtx.fillText(symbol, x + width - 4, y - 2);
+        rawCtx.fillText(isOver ? "+" : "\u2212", x + width - 4, y - 4);
         rawCtx.textAlign = "start";
         rawCtx.restore();
       }
