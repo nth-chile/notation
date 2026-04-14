@@ -62,6 +62,48 @@ describe("NudgePitch", () => {
     }
   });
 
+  it("diatonic nudge applies key-sig accidental (B♭ major: D→E should yield E♭)", () => {
+    const m = factory.measure(
+      [factory.voice([factory.note("D", 4, factory.dur("quarter"))])],
+      { keySignature: { fifths: -2 } }, // B♭ major: B♭ and E♭
+    );
+    const snap = makeSnapshot({ measures: [m], cursor: { eventIndex: 0 } });
+    const result = new NudgePitch("up", "diatonic").execute(snap);
+    const note = result.score.parts[0].measures[0].voices[0].events[0];
+    if (note.kind === "note") {
+      expect(note.head.pitch.pitchClass).toBe("E");
+      expect(note.head.pitch.accidental).toBe("flat");
+    }
+  });
+
+  it("diatonic nudge in sharp keys yields sharps (G major: E→F should yield F♯)", () => {
+    const m = factory.measure(
+      [factory.voice([factory.note("E", 4, factory.dur("quarter"))])],
+      { keySignature: { fifths: 1 } }, // G major: F♯
+    );
+    const snap = makeSnapshot({ measures: [m], cursor: { eventIndex: 0 } });
+    const result = new NudgePitch("up", "diatonic").execute(snap);
+    const note = result.score.parts[0].measures[0].voices[0].events[0];
+    if (note.kind === "note") {
+      expect(note.head.pitch.pitchClass).toBe("F");
+      expect(note.head.pitch.accidental).toBe("sharp");
+    }
+  });
+
+  it("diatonic nudge stays natural for pitches not in the key signature (B♭ major: C→D)", () => {
+    const m = factory.measure(
+      [factory.voice([factory.note("C", 4, factory.dur("quarter"))])],
+      { keySignature: { fifths: -2 } },
+    );
+    const snap = makeSnapshot({ measures: [m], cursor: { eventIndex: 0 } });
+    const result = new NudgePitch("up", "diatonic").execute(snap);
+    const note = result.score.parts[0].measures[0].voices[0].events[0];
+    if (note.kind === "note") {
+      expect(note.head.pitch.pitchClass).toBe("D");
+      expect(note.head.pitch.accidental).toBe("natural");
+    }
+  });
+
   it("nudges a note up chromatically", () => {
     const m = factory.measure([
       factory.voice([factory.note("C", 4, factory.dur("quarter"))]),
