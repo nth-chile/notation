@@ -60,13 +60,9 @@ export class InsertNote implements Command {
         nextMeasure.timeSignature.denominator
       );
       const nextTicks = voiceTicksUsed(nextVoice.events);
-      if (nextTicks + newTicks > nextCap) {
-        // Next measure also full, just move cursor
-        return { score, inputState: input };
-      }
 
-      nextVoice.events.splice(0, 0, {
-        kind: "note",
+      const newNote = {
+        kind: "note" as const,
         id: newId<NoteEventId>("evt"),
         duration: this.duration,
         head: {
@@ -76,7 +72,19 @@ export class InsertNote implements Command {
             octave: this.octave,
           },
         },
-      });
+      };
+
+      if (nextTicks + newTicks > nextCap) {
+        // Next measure is full — overwrite the first event if it exists
+        // (e.g. a whole rest from MusicXML import), otherwise just move cursor.
+        if (nextVoice.events.length > 0) {
+          nextVoice.events[0] = newNote;
+          input.cursor.eventIndex = 1;
+        }
+        return { score, inputState: input };
+      }
+
+      nextVoice.events.splice(0, 0, newNote);
       input.cursor.eventIndex = 1;
       return { score, inputState: input };
     }

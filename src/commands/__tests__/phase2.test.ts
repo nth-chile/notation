@@ -76,6 +76,65 @@ describe("Measure Capacity Enforcement", () => {
     expect(result.score.parts[0].measures[0].voices[0].events).toHaveLength(1);
   });
 
+  it("overwrites rest in next measure when both measures are full (#246)", () => {
+    // Full measure 1 (4 quarters) + full measure 2 (whole rest from MusicXML import)
+    const m1 = factory.measure([
+      factory.voice([
+        factory.note("C", 4, factory.dur("quarter")),
+        factory.note("D", 4, factory.dur("quarter")),
+        factory.note("E", 4, factory.dur("quarter")),
+        factory.note("F", 4, factory.dur("quarter")),
+      ]),
+    ]);
+    const m2 = factory.measure([
+      factory.voice([factory.rest(factory.dur("whole"))]),
+    ]);
+
+    const snap = makeSnapshot({
+      measures: [m1, m2],
+      cursor: { measureIndex: 0, eventIndex: 4 },
+    });
+
+    const cmd = new InsertNote("G", 4, "natural", factory.dur("quarter"));
+    const result = cmd.execute(snap);
+
+    // Should advance to measure 1 AND insert the note (overwriting the rest)
+    expect(result.inputState.cursor.measureIndex).toBe(1);
+    expect(result.inputState.cursor.eventIndex).toBe(1);
+
+    const voice = result.score.parts[0].measures[1].voices[0];
+    expect(voice.events).toHaveLength(1);
+    expect(voice.events[0].kind).toBe("note");
+    if (voice.events[0].kind === "note") {
+      expect(voice.events[0].head.pitch.pitchClass).toBe("G");
+    }
+  });
+
+  it("overwrites rest in next measure for rest insertion overflow (#246)", () => {
+    const m1 = factory.measure([
+      factory.voice([factory.note("C", 4, factory.dur("whole"))]),
+    ]);
+    const m2 = factory.measure([
+      factory.voice([factory.rest(factory.dur("whole"))]),
+    ]);
+
+    const snap = makeSnapshot({
+      measures: [m1, m2],
+      cursor: { measureIndex: 0, eventIndex: 1 },
+    });
+
+    const cmd = new InsertRest(factory.dur("quarter"));
+    const result = cmd.execute(snap);
+
+    expect(result.inputState.cursor.measureIndex).toBe(1);
+    expect(result.inputState.cursor.eventIndex).toBe(1);
+
+    const voice = result.score.parts[0].measures[1].voices[0];
+    expect(voice.events).toHaveLength(1);
+    expect(voice.events[0].kind).toBe("rest");
+    expect(voice.events[0].duration.type).toBe("quarter");
+  });
+
   it("auto-advances rest insertion when measure is full", () => {
     const m1 = factory.measure([
       factory.voice([

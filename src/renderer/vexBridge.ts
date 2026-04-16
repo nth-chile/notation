@@ -42,7 +42,8 @@ export interface AnnotationBox {
   height: number;
   partIndex: number;
   measureIndex: number;
-  noteEventId: NoteEventId;
+  noteEventId?: NoteEventId;
+  beatOffset?: number;
   text: string;
 }
 
@@ -1116,6 +1117,15 @@ export function renderMeasure(
 
   // Chord symbols — rendered manually at a fixed Y above the stave (not note-relative).
   // Y was reserved during the aboveY stacking phase above.
+  // Helper: calculate X from beatOffset by proportional position in stave
+  const chordXFromBeatOffset = (beatOffset: number): number => {
+    const capacity = measureCapacityFn(m.timeSignature.numerator, m.timeSignature.denominator);
+    const noteStart = stave.getNoteStartX();
+    const noteEnd = stave.getNoteEndX();
+    const noteWidth = noteEnd - noteStart;
+    const ratio = capacity > 0 ? beatOffset / capacity : 0;
+    return noteStart + ratio * noteWidth;
+  };
   if (hasChordSymbols) {
     const csCtx = ctx.context as unknown as CanvasRenderingContext2D;
     const renderedChordIds = new Set<string>();
@@ -1127,7 +1137,7 @@ export function renderMeasure(
         if (ann.kind !== "chord-symbol") continue;
         if (ann.noteEventId && renderedChordIds.has(ann.noteEventId)) continue;
         const box = ann.noteEventId ? noteBoxes.find((nb) => nb.id === ann.noteEventId) : undefined;
-        const chordX = box ? box.x : x + 4;
+        const chordX = box ? box.x : chordXFromBeatOffset(ann.beatOffset);
         csCtx.fillText(ann.text, chordX, chordSymbolY);
         if (ann.noteEventId) renderedChordIds.add(ann.noteEventId);
       }
@@ -1140,15 +1150,16 @@ export function renderMeasure(
   for (const annotation of m.annotations) {
     if (annotation.kind === "chord-symbol") {
       const box = annotation.noteEventId ? noteBoxes.find((nb) => nb.id === annotation.noteEventId) : undefined;
-      if (box) {
-        annotationBoxes.push({
-          kind: "chord-symbol",
-          x: box.x, y: chordSymbolY - 4,
-          width: box.width, height: style.chordSymbolSize + 4,
-          partIndex, measureIndex,
-          noteEventId: annotation.noteEventId, text: annotation.text,
-        });
-      }
+      const chordX = box ? box.x : chordXFromBeatOffset(annotation.beatOffset);
+      const chordW = box ? box.width : 40;
+      annotationBoxes.push({
+        kind: "chord-symbol",
+        x: chordX, y: chordSymbolY - 4,
+        width: chordW, height: style.chordSymbolSize + 4,
+        partIndex, measureIndex,
+        noteEventId: annotation.noteEventId, beatOffset: annotation.beatOffset,
+        text: annotation.text,
+      });
     }
     if (annotation.kind === "lyric") {
       const box = noteBoxes.find((nb) => nb.id === annotation.noteEventId);

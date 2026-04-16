@@ -1,4 +1,23 @@
 import type { Command, EditorSnapshot } from "./Command";
+import type { Annotation } from "../model/annotations";
+import type { NoteEventId } from "../model/ids";
+
+/** Remove annotations that reference a deleted event ID. */
+function removeAnnotationsForEvent(annotations: Annotation[], eventId: NoteEventId): Annotation[] {
+  return annotations.filter((a) => {
+    switch (a.kind) {
+      case "chord-symbol":
+      case "lyric":
+      case "dynamic":
+        return a.noteEventId !== eventId;
+      case "hairpin":
+      case "slur":
+        return a.startEventId !== eventId && a.endEventId !== eventId;
+      default:
+        return true;
+    }
+  });
+}
 
 export class DeleteNote implements Command {
   description = "Delete note";
@@ -8,8 +27,9 @@ export class DeleteNote implements Command {
     const input = structuredClone(state.inputState);
     const { partIndex, measureIndex, voiceIndex, eventIndex } = input.cursor;
 
-    const voice = score.parts[partIndex]?.measures[measureIndex]?.voices[voiceIndex];
-    if (!voice) return state;
+    const measure = score.parts[partIndex]?.measures[measureIndex];
+    const voice = measure?.voices[voiceIndex];
+    if (!voice || !measure) return state;
 
     // Delete the event at cursor, or the one before if at append position
     const deleteIndex = eventIndex < voice.events.length
@@ -44,6 +64,7 @@ export class DeleteNote implements Command {
         };
         input.selectedHeadIndex = null;
       } else if (targetEvent.heads.length === 0) {
+        measure.annotations = removeAnnotationsForEvent(measure.annotations, targetEvent.id);
         voice.events.splice(deleteIndex, 1);
         input.cursor.eventIndex = Math.min(deleteIndex, voice.events.length);
         input.selectedHeadIndex = null;
@@ -53,6 +74,9 @@ export class DeleteNote implements Command {
       }
       return { score, inputState: input };
     }
+
+    // Clean up annotations that reference this event
+    measure.annotations = removeAnnotationsForEvent(measure.annotations, targetEvent.id);
 
     voice.events.splice(deleteIndex, 1);
     input.cursor.eventIndex = Math.min(deleteIndex, voice.events.length);

@@ -210,6 +210,7 @@ export function splitEventAtTick(
 function getAnnotationEventIds(ann: Annotation): NoteEventId[] {
   switch (ann.kind) {
     case "chord-symbol":
+      return ann.noteEventId ? [ann.noteEventId] : [];
     case "lyric":
     case "dynamic":
       return [ann.noteEventId];

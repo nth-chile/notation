@@ -624,7 +624,7 @@ function exportMeasure(
   const chordSymbols = measure.annotations
     .filter((a): a is ChordSymbol => a.kind === "chord-symbol")
     .sort((a, b) => a.beatOffset - b.beatOffset);
-  const emittedChords = new Set<string>();
+  const emittedChords = new Set<string>(); // noteEventId or "beat:N" key
 
   // Export voices
   for (let vi = 0; vi < measure.voices.length; vi++) {
@@ -663,6 +663,7 @@ function exportMeasure(
     }
 
     // Determine tuplet start/stop positions for notation elements
+    let currentTick = 0;
     for (let ei = 0; ei < events.length; ei++) {
       const event = events[ei];
       const prevTuplet = ei > 0 ? events[ei - 1].tuplet : undefined;
@@ -682,12 +683,21 @@ function exportMeasure(
         }
       }
 
-      // Emit chord symbols attached to this note
+      // Emit chord symbols attached to this note (by noteEventId or beatOffset)
       for (const cs of chordSymbols) {
-        if (cs.noteEventId === event.id && !emittedChords.has(cs.noteEventId)) {
+        const key = cs.noteEventId ?? `beat:${cs.beatOffset}`;
+        if (emittedChords.has(key)) continue;
+        if (cs.noteEventId === event.id || (!cs.noteEventId && cs.beatOffset === currentTick)) {
           xml += harmonyXml([cs]);
-          emittedChords.add(cs.noteEventId);
+          emittedChords.add(key);
         }
+      }
+
+      // Advance tick position for beat-offset matching
+      {
+        let divs = durationDivisions(event.duration);
+        if (event.tuplet) divs = Math.round((divs * event.tuplet.normal) / event.tuplet.actual);
+        currentTick += divs;
       }
 
       // Check if previous note was tied (for tie stop)

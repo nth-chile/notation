@@ -8,7 +8,7 @@ export class SetChordSymbol implements Command {
   constructor(
     private text: string,
     private beatOffset: number,
-    private noteEventId: NoteEventId
+    private noteEventId?: NoteEventId
   ) {}
 
   execute(state: EditorSnapshot): EditorSnapshot {
@@ -27,8 +27,8 @@ export class SetChordSymbol implements Command {
       );
 
       if (this.text.trim()) {
-        // Find the note at this beat offset in this part's voice
-        let noteId = this.noteEventId;
+        // Find the note at this beat offset in this part's voice (if any)
+        let noteId: NoteEventId | undefined = this.noteEventId;
         const voice = measure.voices[0];
         if (voice) {
           let offset = 0;
@@ -46,7 +46,7 @@ export class SetChordSymbol implements Command {
           kind: "chord-symbol",
           text: this.text.trim(),
           beatOffset: this.beatOffset,
-          noteEventId: noteId,
+          ...(noteId ? { noteEventId: noteId } : {}),
         });
       }
     }
