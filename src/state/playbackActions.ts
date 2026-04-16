@@ -152,6 +152,55 @@ export function createPlaybackActions(get: GetState, set: SetState, history: Com
       const measure = part.measures[box.measureIndex];
       if (!measure) return;
 
+      // For chord symbols without a noteEventId, find the event at the beatOffset
+      // or use the closest event position
+      if (box.kind === "chord-symbol" && !box.noteEventId && box.beatOffset !== undefined) {
+        const voice = measure.voices[0];
+        if (voice) {
+          let offset = 0;
+          for (let ei = 0; ei < voice.events.length; ei++) {
+            const evt = voice.events[ei];
+            if (evt.kind === "grace") continue;
+            if (offset >= box.beatOffset) {
+              set({
+                inputState: {
+                  ...state.inputState,
+                  cursor: {
+                    partIndex: box.partIndex,
+                    measureIndex: box.measureIndex,
+                    voiceIndex: 0,
+                    eventIndex: ei,
+                    staveIndex: voice.staff ?? 0,
+                  },
+                  textInputMode: "chord",
+                  textInputBuffer: "",
+                  textInputInitialValue: box.text,
+                },
+              });
+              return;
+            }
+            offset += durationToTicksFn(evt.duration, evt.tuplet);
+          }
+          // beatOffset is past all events — use last event
+          set({
+            inputState: {
+              ...state.inputState,
+              cursor: {
+                partIndex: box.partIndex,
+                measureIndex: box.measureIndex,
+                voiceIndex: 0,
+                eventIndex: Math.max(0, voice.events.length - 1),
+                staveIndex: voice.staff ?? 0,
+              },
+              textInputMode: "chord",
+              textInputBuffer: "",
+              textInputInitialValue: box.text,
+            },
+          });
+          return;
+        }
+      }
+
       for (let vi = 0; vi < measure.voices.length; vi++) {
         const voice = measure.voices[vi];
         for (let ei = 0; ei < voice.events.length; ei++) {
@@ -197,19 +246,16 @@ export function createPlaybackActions(get: GetState, set: SetState, history: Com
         const voice =
           state.score.parts[partIndex]?.measures[measureIndex]?.voices[voiceIndex];
         const event = voice?.events[eventIndex];
-        if (!event) {
-          set((s: any) => ({
-            inputState: { ...s.inputState, textInputMode: null, textInputBuffer: "", textInputInitialValue: "" },
-          }));
-          return;
-        }
+        // Calculate beat offset from cursor position
         let beatOffset = 0;
         if (voice) {
           for (let i = 0; i < eventIndex && i < voice.events.length; i++) {
-            beatOffset += durationToTicksFn(voice.events[i].duration, voice.events[i].tuplet);
+            const evt = voice.events[i];
+            if (evt.kind === "grace") continue;
+            beatOffset += durationToTicksFn(evt.duration, evt.tuplet);
           }
         }
-        const cmd = new SetChordSymbol(text, beatOffset, event.id);
+        const cmd = new SetChordSymbol(text, beatOffset, event?.id);
         const result = history.execute(cmd, {
           score: state.score,
           inputState: state.inputState,

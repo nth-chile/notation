@@ -59,15 +59,24 @@ export class InsertRest implements Command {
         nextMeasure.timeSignature.denominator
       );
       const nextTicks = voiceTicksUsed(nextVoice.events);
+
+      const newRest = {
+        kind: "rest" as const,
+        id: newId<NoteEventId>("evt"),
+        duration: this.duration,
+      };
+
       if (nextTicks + newTicks > nextCap) {
+        // Next measure is full — overwrite the first event if it exists
+        // (e.g. a whole rest from MusicXML import), otherwise just move cursor.
+        if (nextVoice.events.length > 0) {
+          nextVoice.events[0] = newRest;
+          input.cursor.eventIndex = 1;
+        }
         return { score, inputState: input };
       }
 
-      nextVoice.events.splice(0, 0, {
-        kind: "rest",
-        id: newId<NoteEventId>("evt"),
-        duration: this.duration,
-      });
+      nextVoice.events.splice(0, 0, newRest);
       input.cursor.eventIndex = 1;
       return { score, inputState: input };
     }

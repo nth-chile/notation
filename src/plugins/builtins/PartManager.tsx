@@ -139,7 +139,7 @@ function PartsPanel() {
                 value={part.instrumentId}
                 onChange={(e) => { e.stopPropagation(); changeInstrument(index, e.target.value); }}
                 onClick={(e) => e.stopPropagation()}
-                className="h-5 text-[10px] rounded-sm border border-input bg-background px-1 max-w-[110px] min-w-0"
+                className="h-7 text-[11px] rounded border border-input bg-background px-1.5 min-w-0"
                 title="Change instrument"
               >
                 {INSTRUMENTS.map((inst) => (

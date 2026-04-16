@@ -26,10 +26,35 @@ const BREAK_LABEL: Record<MeasureBreak, string> = {
   section: "Section break",
 };
 
-const BREAK_ICON: Record<MeasureBreak, string> = {
-  system: "↵",
-  page: "⇲",
-  section: "§",
+const BreakIcon = ({ kind }: { kind: MeasureBreak }) => {
+  const props = { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor" } as const;
+  const sw = { strokeWidth: 1.5, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  if (kind === "system") {
+    // Return/line-break arrow
+    return (
+      <svg {...props}>
+        <polyline points="12,3 12,10 4,10" {...sw} />
+        <polyline points="7,7 4,10 7,13" {...sw} />
+      </svg>
+    );
+  }
+  if (kind === "page") {
+    // Page with corner fold and horizontal break line
+    return (
+      <svg {...props}>
+        <path d="M4,2 L10,2 L13,5 L13,14 L4,14 Z" {...sw} />
+        <polyline points="10,2 10,5 13,5" {...sw} />
+        <line x1="2" y1="9" x2="15" y2="9" {...sw} strokeDasharray="2 1.5" />
+      </svg>
+    );
+  }
+  // Section break: double vertical lines
+  return (
+    <svg {...props}>
+      <line x1="6" y1="3" x2="6" y2="13" {...sw} />
+      <line x1="10" y1="3" x2="10" y2="13" {...sw} />
+    </svg>
+  );
 };
 
 function LayoutBreaksPanel(_: { api: PluginAPI }) {
@@ -65,7 +90,7 @@ function LayoutBreaksPanel(_: { api: PluginAPI }) {
                 currentBreak === k ? "bg-accent" : "bg-background hover:bg-accent"
               }`}
             >
-              <span className="text-sm">{BREAK_ICON[k]}</span>
+              <BreakIcon kind={k} />
               <span>{BREAK_LABEL[k].replace(" break", "")}</span>
             </button>
           ))}
@@ -94,7 +119,7 @@ function LayoutBreaksPanel(_: { api: PluginAPI }) {
                 className="w-full flex items-center justify-between px-2 py-1 rounded hover:bg-accent text-xs focus:outline-none"
               >
                 <span className="flex items-center gap-2">
-                  <span className="text-sm">{BREAK_ICON[b.kind]}</span>
+                  <BreakIcon kind={b.kind} />
                   <span className="text-muted-foreground capitalize">{b.kind}</span>
                 </span>
                 <span className="text-muted-foreground">m. {b.measureIndex + 1}</span>

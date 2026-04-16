@@ -24,6 +24,20 @@ export class ClearSelectedMeasures implements Command {
     for (let m = measureStart; m <= measureEnd; m++) {
       const measure = part.measures[m];
       if (!measure) continue;
+      // Remove note-anchored annotations (chord symbols, lyrics, dynamics,
+      // hairpins, slurs) since all events are being cleared.
+      measure.annotations = measure.annotations.filter((a) => {
+        switch (a.kind) {
+          case "chord-symbol":
+          case "lyric":
+          case "dynamic":
+          case "hairpin":
+          case "slur":
+            return false;
+          default:
+            return true;
+        }
+      });
       for (const voice of measure.voices) {
         voice.events = [factory.rest({ type: "whole", dots: 0 })];
       }

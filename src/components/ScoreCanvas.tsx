@@ -62,6 +62,18 @@ export function ScoreCanvas() {
   const selectionStart = selection?.measureStart ?? null;
   const selectionEnd = selection?.measureEnd ?? null;
 
+  // Track playbackTick in a ref so the heavy render effect can read it without
+  // being triggered by every tick update.  A separate lightweight effect handles
+  // playback-only redraws (cursor line + active-note highlights) without
+  // rebuilding hit-box / measure-position maps that never change during playback.
+  const playbackTickRef = useRef(playbackTick);
+  playbackTickRef.current = playbackTick;
+
+  // Monotonic counter bumped by the layout effect — the playback effect reads it
+  // to know when the last full layout render happened so it can skip redundant redraws.
+  const layoutGenRef = useRef(0);
+  const playbackGenRef = useRef(-1);
+
   // Latest-value refs so scroll effects can read state without listing it as a dep
   // (a scroll should fire only when the thing it tracks changes — not on re-renders)
   const measurePositionsRef = useRef(measurePositions);
@@ -151,32 +163,8 @@ export function ScoreCanvas() {
     return () => ro.disconnect();
   }, []);
 
-  // Resize canvas + render in one pass
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
-
-    // Logical layout width: VexFlow lays out in this space. Display size is
-    // width * zoom (handled in initRenderer). Keeping layout logical means
-    // measurePositions stay in logical units — hit-testing and auto-scroll
-    // math below multiplies by zoom when mapping to display space.
-    const width = containerWidth / zoom;
-    const effectiveViewConfig = applyDisplaySettings(viewConfig, displaySettings);
-    const contentHeight = calculateContentHeight(score, effectiveViewConfig, width);
-    const height = Math.max(contentHeight, container.clientHeight / zoom);
-
-    const ctx = initRenderer(canvas, width, height, zoom);
-    setCanvasHeight(height);
-
-    // Fill canvas with warm off-white background (DPR scale already on context)
-    const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
-    rawCtx.save();
-    rawCtx.fillStyle = "#f0e9de";
-    rawCtx.fillRect(0, 0, width, height);
-    rawCtx.restore();
-
-    // Build per-note highlight ids from the current note selection.
+  // Helper: build selectedNoteIds / selectedHeadByEventId from current noteSelection.
+  function buildNoteSelectionSets() {
     let selectedNoteIds: Set<import("../model/ids").NoteEventId> | undefined;
     let selectedHeadByEventId: Map<import("../model/ids").NoteEventId, number> | undefined;
     if (noteSelection) {
@@ -190,7 +178,6 @@ export function ScoreCanvas() {
           selectedNoteIds.add(voice.events[i].id);
         }
       }
-      // If a specific chord head is targeted, limit the highlight to just that head.
       const selHead = inputState.selectedHeadIndex;
       if (
         selHead != null &&
@@ -206,6 +193,120 @@ export function ScoreCanvas() {
         }
       }
     }
+    return { selectedNoteIds, selectedHeadByEventId };
+  }
+
+  // Helper: draw the rectangular selection band overlay.
+  function drawSelectionBand(rawCtx: CanvasRenderingContext2D, result: ReturnType<typeof renderScore>) {
+    if (!noteSelection || !noteSelection.rangeMode) return;
+    rawCtx.save();
+    rawCtx.fillStyle = "rgba(59, 130, 246, 0.18)";
+    const selStaveIndex = inputState.cursor.staveIndex ?? 0;
+    const staveBoxes = new Map<string, (typeof result.hitBoxes)[0]>();
+    for (const hb of result.hitBoxes) {
+      if (hb.partIndex === noteSelection.partIndex && (hb.staveIndex ?? 0) === selStaveIndex) {
+        staveBoxes.set(hb.id, hb);
+      }
+    }
+    const bands = new Map<number, { minX: number; maxX: number; y: number; height: number }>();
+    for (let mi = noteSelection.startMeasure; mi <= noteSelection.endMeasure; mi++) {
+      const voice = score.parts[noteSelection.partIndex]?.measures[mi]?.voices[noteSelection.voiceIndex];
+      if (!voice) continue;
+      const mp = result.measurePositions.find(
+        (p) => p.partIndex === noteSelection.partIndex && p.measureIndex === mi && p.staveIndex === selStaveIndex
+      );
+      if (!mp) continue;
+      const startIdx = mi === noteSelection.startMeasure ? noteSelection.startEvent : 0;
+      const endIdx = mi === noteSelection.endMeasure ? noteSelection.endEvent : voice.events.length - 1;
+      for (let i = startIdx; i <= endIdx && i < voice.events.length; i++) {
+        const box = staveBoxes.get(voice.events[i].id) ?? result.noteBoxes.get(voice.events[i].id);
+        if (box) {
+          const band = bands.get(mp.y) ?? { minX: Infinity, maxX: -Infinity, y: mp.y, height: mp.height };
+          band.minX = Math.min(band.minX, box.headX - 3);
+          band.maxX = Math.max(band.maxX, box.headX + box.headWidth + 3);
+          bands.set(mp.y, band);
+        }
+      }
+    }
+    for (const band of bands.values()) {
+      if (band.minX < band.maxX) {
+        rawCtx.fillRect(band.minX, band.y, band.maxX - band.minX, band.height);
+      }
+    }
+    rawCtx.restore();
+  }
+
+  // Full layout render: triggered by score, cursor, view config, etc.
+  // Does NOT depend on playbackTick — that's handled by the lightweight effect below.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const width = containerWidth / zoom;
+    const effectiveViewConfig = applyDisplaySettings(viewConfig, displaySettings);
+    const contentHeight = calculateContentHeight(score, effectiveViewConfig, width);
+    const height = Math.max(contentHeight, container.clientHeight / zoom);
+
+    const ctx = initRenderer(canvas, width, height, zoom);
+    setCanvasHeight(height);
+
+    const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+    rawCtx.save();
+    rawCtx.fillStyle = "#f0e9de";
+    rawCtx.fillRect(0, 0, width, height);
+    rawCtx.restore();
+
+    const { selectedNoteIds, selectedHeadByEventId } = buildNoteSelectionSets();
+
+    const result = renderScore(
+      ctx, canvas, score, inputState.cursor, playbackTickRef.current, effectiveViewConfig, width,
+      noteSelection ? null : selection, inputState.pendingPitch,
+      selectedNoteIds, selectedHeadByEventId,
+    );
+
+    drawSelectionBand(rawCtx, result);
+
+    setNoteBoxes(result.noteBoxes, result.hitBoxes);
+    setAnnotationBoxes(result.annotationBoxes);
+    setBreakBoxes(result.breakBoxes);
+    setMeasurePositions(result.measurePositions);
+    layoutGenRef.current++;
+  }, [score, inputState.cursor, inputState.pendingPitch, inputState.tabString, inputState.tabFretBuffer, inputState.selectedHeadIndex, inputState.noteEntry, viewConfig, containerWidth, zoom, selection, noteSelection, editingTitle, editingComposer, hiddenParts, displaySettings, setNoteBoxes, setAnnotationBoxes, setBreakBoxes, setMeasurePositions]);
+
+  // Lightweight playback redraw: only re-renders the canvas for cursor/highlight
+  // updates without rebuilding hit-box maps or triggering cascading Zustand updates.
+  // This runs at ~30fps during playback (throttled upstream in TonePlayback).
+  useEffect(() => {
+    // Skip if the layout effect already rendered with this generation
+    // (it reads playbackTickRef.current, so it's already up to date).
+    if (playbackGenRef.current === layoutGenRef.current) {
+      // Layout didn't change — only playbackTick did, so do a cheap canvas redraw.
+    } else {
+      // Layout effect just ran and already rendered with the current tick.
+      playbackGenRef.current = layoutGenRef.current;
+      return;
+    }
+
+    if (playbackTick == null) return;
+
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const width = containerWidth / zoom;
+    const effectiveViewConfig = applyDisplaySettings(viewConfig, displaySettings);
+    const height = canvasHeight;
+
+    const ctx = initRenderer(canvas, width, height, zoom);
+
+    const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+    rawCtx.save();
+    rawCtx.fillStyle = "#f0e9de";
+    rawCtx.fillRect(0, 0, width, height);
+    rawCtx.restore();
+
+    const { selectedNoteIds, selectedHeadByEventId } = buildNoteSelectionSets();
 
     const result = renderScore(
       ctx, canvas, score, inputState.cursor, playbackTick, effectiveViewConfig, width,
@@ -213,52 +314,12 @@ export function ScoreCanvas() {
       selectedNoteIds, selectedHeadByEventId,
     );
 
-    // Draw the rectangular selection band for range selections only (alt+shift+arrow,
-    // double-click, drag, shift-click). Plain single-click skips the band so it looks
-    // like a simple cursor placement.
-    if (noteSelection && noteSelection.rangeMode) {
-      rawCtx.save();
-      rawCtx.fillStyle = "rgba(59, 130, 246, 0.18)";
-      const selStaveIndex = inputState.cursor.staveIndex ?? 0;
-      const staveBoxes = new Map<string, typeof result.hitBoxes[0]>();
-      for (const hb of result.hitBoxes) {
-        if (hb.partIndex === noteSelection.partIndex && (hb.staveIndex ?? 0) === selStaveIndex) {
-          staveBoxes.set(hb.id, hb);
-        }
-      }
-      const bands = new Map<number, { minX: number; maxX: number; y: number; height: number }>();
-      for (let mi = noteSelection.startMeasure; mi <= noteSelection.endMeasure; mi++) {
-        const voice = score.parts[noteSelection.partIndex]?.measures[mi]?.voices[noteSelection.voiceIndex];
-        if (!voice) continue;
-        const mp = result.measurePositions.find(
-          (p) => p.partIndex === noteSelection.partIndex && p.measureIndex === mi && p.staveIndex === selStaveIndex
-        );
-        if (!mp) continue;
-        const startIdx = mi === noteSelection.startMeasure ? noteSelection.startEvent : 0;
-        const endIdx = mi === noteSelection.endMeasure ? noteSelection.endEvent : voice.events.length - 1;
-        for (let i = startIdx; i <= endIdx && i < voice.events.length; i++) {
-          const box = staveBoxes.get(voice.events[i].id) ?? result.noteBoxes.get(voice.events[i].id);
-          if (box) {
-            const band = bands.get(mp.y) ?? { minX: Infinity, maxX: -Infinity, y: mp.y, height: mp.height };
-            band.minX = Math.min(band.minX, box.headX - 3);
-            band.maxX = Math.max(band.maxX, box.headX + box.headWidth + 3);
-            bands.set(mp.y, band);
-          }
-        }
-      }
-      for (const band of bands.values()) {
-        if (band.minX < band.maxX) {
-          rawCtx.fillRect(band.minX, band.y, band.maxX - band.minX, band.height);
-        }
-      }
-      rawCtx.restore();
-    }
+    drawSelectionBand(rawCtx, result);
 
-    setNoteBoxes(result.noteBoxes, result.hitBoxes);
-    setAnnotationBoxes(result.annotationBoxes);
-    setBreakBoxes(result.breakBoxes);
-    setMeasurePositions(result.measurePositions);
-  }, [score, inputState.cursor, inputState.pendingPitch, inputState.tabString, inputState.tabFretBuffer, inputState.selectedHeadIndex, inputState.noteEntry, playbackTick, viewConfig, containerWidth, zoom, selection, noteSelection, editingTitle, editingComposer, hiddenParts, displaySettings, setNoteBoxes, setAnnotationBoxes, setBreakBoxes, setMeasurePositions]);
+    // Intentionally skip setNoteBoxes/setAnnotationBoxes/setBreakBoxes/setMeasurePositions:
+    // layout hasn't changed, only the playback cursor position and active-note highlights.
+    // This eliminates 4 cascading Zustand updates per frame (~30fps) during playback.
+  }, [playbackTick]);
 
   return (
     <div
