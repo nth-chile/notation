@@ -35,14 +35,14 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "delete", label: "Delete note", category: "Notes", defaultBinding: { key: "backspace" } },
 
   // Duration (note entry sets pending; normal changes selection)
-  { id: "duration:whole", label: "Whole note", category: "Duration", defaultBinding: { key: "1" }, mode: "note-entry" },
-  { id: "duration:half", label: "Half note", category: "Duration", defaultBinding: { key: "2" }, mode: "note-entry" },
-  { id: "duration:quarter", label: "Quarter note", category: "Duration", defaultBinding: { key: "3" }, mode: "note-entry" },
-  { id: "duration:eighth", label: "Eighth note", category: "Duration", defaultBinding: { key: "4" }, mode: "note-entry" },
-  { id: "duration:16th", label: "16th note", category: "Duration", defaultBinding: { key: "5" }, mode: "note-entry" },
-  { id: "duration:32nd", label: "32nd note", category: "Duration", defaultBinding: { key: "6" }, mode: "note-entry" },
-  { id: "duration:64th", label: "64th note", category: "Duration", defaultBinding: { key: "7" }, mode: "note-entry" },
-  { id: "toggle-dot", label: "Toggle dot", category: "Duration", defaultBinding: { key: "." }, mode: "note-entry" },
+  { id: "duration:whole", label: "Whole note", category: "Duration", defaultBinding: { key: "1" } },
+  { id: "duration:half", label: "Half note", category: "Duration", defaultBinding: { key: "2" } },
+  { id: "duration:quarter", label: "Quarter note", category: "Duration", defaultBinding: { key: "3" } },
+  { id: "duration:eighth", label: "Eighth note", category: "Duration", defaultBinding: { key: "4" } },
+  { id: "duration:16th", label: "16th note", category: "Duration", defaultBinding: { key: "5" } },
+  { id: "duration:32nd", label: "32nd note", category: "Duration", defaultBinding: { key: "6" } },
+  { id: "duration:64th", label: "64th note", category: "Duration", defaultBinding: { key: "7" } },
+  { id: "toggle-dot", label: "Toggle dot", category: "Duration", defaultBinding: { key: "." } },
 
   // Mode toggles
   { id: "toggle-note-entry", label: "Note entry mode", category: "Modes", defaultBinding: { key: "n" } },
