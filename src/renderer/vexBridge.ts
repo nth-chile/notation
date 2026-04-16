@@ -880,7 +880,7 @@ export function renderMeasure(
         const voiceEvents = m.voices[data.__voiceIndex]?.events ?? [];
         data.__staveNotes.forEach((sn, idx) => {
           if (isOutOfRange(voiceEvents[idx])) {
-            sn.setStyle({ fillStyle: "#d97706", strokeStyle: "#d97706" });
+            sn.setStyle({ fillStyle: "#dc2626", strokeStyle: "#dc2626" });
           }
         });
       }
