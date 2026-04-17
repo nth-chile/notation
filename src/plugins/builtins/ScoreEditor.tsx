@@ -273,7 +273,7 @@ export function registerCoreEditor(pm: PluginManager): void {
     useEditorStore.getState().toggleTie();
   });
   pm.registerCoreCommand("nubium.toggle-mute", "Toggle mute (suppress playback)", () => {
-    useEditorStore.getState().toggleMute();
+    useEditorStore.getState().toggleNoteMute();
   });
   pm.registerCoreCommand("nubium.hairpin-crescendo", "Crescendo (start/end)", () => {
     useEditorStore.getState().setHairpin("crescendo");

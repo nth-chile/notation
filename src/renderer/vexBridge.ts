@@ -9,7 +9,7 @@ import { durationToTicks as durationToTicksFn, measureCapacity as measureCapacit
 import { keyAccidental, pitchToMidi } from "../model/pitch";
 import { getBeamGroups } from "./beaming";
 import {
-  INK, LYRIC_TEXT, OUT_OF_RANGE, MUTED_NOTE, PLAYBACK_ACTIVE,
+  INK, LYRIC_TEXT, OUT_OF_RANGE, mutedColor, PLAYBACK_ACTIVE,
   SELECTED_NOTE, OVERFILL, UNDERFILL,
 } from "./colors";
 
@@ -867,25 +867,27 @@ export function renderMeasure(
     };
 
     for (const vfVoice of vfVoices) {
-      // Mute styling: render muted notes at reduced opacity (applied first so other overlays can override)
-      {
-        const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number };
-        const voiceEvents = m.voices[data.__voiceIndex]?.events ?? [];
-        data.__staveNotes.forEach((sn, idx) => {
-          const ev = voiceEvents[idx];
-          if (ev && (ev.kind === "note" || ev.kind === "chord") && ev.muted) {
-            sn.setStyle({ fillStyle: MUTED_NOTE, strokeStyle: MUTED_NOTE });
-          }
-        });
-      }
-
-      // Color out-of-range notes (applied first so playback/selection can override)
+      // Color out-of-range notes (applied first so mute/playback/selection can override)
       if (hasRange) {
         const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number };
         const voiceEvents = m.voices[data.__voiceIndex]?.events ?? [];
         data.__staveNotes.forEach((sn, idx) => {
           if (isOutOfRange(voiceEvents[idx])) {
             sn.setStyle({ fillStyle: OUT_OF_RANGE, strokeStyle: OUT_OF_RANGE });
+          }
+        });
+      }
+
+      // Mute styling: mix note color with canvas background so overlapping stems don't double up
+      {
+        const data = vfVoice as unknown as { __staveNotes: StaveNote[]; __eventIds: NoteEventId[]; __voiceIndex: number };
+        const voiceEvents = m.voices[data.__voiceIndex]?.events ?? [];
+        data.__staveNotes.forEach((sn, idx) => {
+          const ev = voiceEvents[idx];
+          if (ev && (ev.kind === "note" || ev.kind === "chord") && ev.muted) {
+            const current = (sn.getStyle()?.fillStyle as string) ?? INK;
+            const mixed = mutedColor(current);
+            sn.setStyle({ fillStyle: mixed, strokeStyle: mixed });
           }
         });
       }

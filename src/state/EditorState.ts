@@ -137,7 +137,7 @@ interface EditorStore {
   toggleArticulation(kind: import("../model/note").ArticulationKind): void;
   toggleCrossStaff(): void;
   toggleTie(): void;
-  toggleMute(): void;
+  toggleNoteMute(): void;
   setStemDirection(direction: "up" | "down" | null): void;
 
   // Hairpin
@@ -329,7 +329,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       set({ score: result.score, inputState: result.inputState });
     },
 
-    toggleMute() {
+    toggleNoteMute() {
       const state = get();
       const cmd = new ToggleMute();
       const result = history.execute(cmd, { score: state.score, inputState: state.inputState });
