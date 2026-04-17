@@ -20,7 +20,7 @@ import {
   PLAYBACK_CURSOR, SELECTION_FILL,
 } from "./colors";
 
-export const MEASURE_NUMBER_FONT = "11px sans-serif";
+export const MEASURE_NUMBER_FONT = "13px sans-serif";
 
 /** Detect whether time/key signature changed from the previous measure. */
 function sigChanges(m: Measure, mi: number, prevMeasure: Measure | undefined, isFirstInLine: boolean) {
