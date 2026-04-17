@@ -1,87 +1,106 @@
 /**
  * Central color constants for canvas rendering.
  *
- * CSS/Tailwind colors in React components are NOT included here —
- * only colors used in the canvas rendering pipeline (ScoreRenderer,
- * vexBridge, TabRenderer, SlashRenderer, ScoreCanvas).
+ * Values are derived from the UI theme in globals.css where possible:
+ *   --color-primary: #4a6fa5    (brand blue)
+ *   --color-destructive: #ef4444 (red/error)
+ *   --color-foreground: #ebebeb
+ *   --color-muted-foreground: #a1a1a6
+ *
+ * Canvas can't read CSS variables at render time, so we duplicate the
+ * values here. If the theme changes, update these to match.
  */
 
-// ---------------------------------------------------------------------------
-// Notation defaults
-// ---------------------------------------------------------------------------
-/** Default black for notation elements (noteheads, stems, barlines, text). */
+// -- Theme-derived ----------------------------------------------------------
+
+/** Brand blue (--color-primary). Used for playback active notes, break markers. */
+export const PRIMARY = "#3b82f6";
+
+/** Destructive red (--color-destructive). Used for out-of-range notes, overfill. */
+export const DESTRUCTIVE = "#ef4444";
+
+// -- Notation ---------------------------------------------------------------
+
+/** Black for notation elements (noteheads, stems, barlines, text). */
 export const INK = "#000";
 
-/** Dark gray for part name labels on the first system. */
+/** Part name labels. */
 export const PART_LABEL = "#333";
 
-/** Medium gray for measure numbers. */
+/** Measure numbers. */
 export const MEASURE_NUMBER = "#888";
 
-/** Gray for lyrics text. */
+/** Lyrics text. */
 export const LYRIC_TEXT = "#555";
 
-// ---------------------------------------------------------------------------
-// Canvas / page background
-// ---------------------------------------------------------------------------
-/** Off-white parchment background for the score canvas. */
+// -- Canvas / page ----------------------------------------------------------
+
+/** Parchment background for the score canvas. */
 export const CANVAS_BACKGROUND = "#f0e9de";
 
 /** White page background in page-layout mode. */
 export const PAGE_BACKGROUND = "#ffffff";
 
-/** Light gray dashed line at page boundaries. */
+/** Dashed page boundary lines. */
 export const PAGE_BOUNDARY = "#cccccc";
 
-// ---------------------------------------------------------------------------
-// Cursor
-// ---------------------------------------------------------------------------
-/** Blue used for the edit caret line and ghost notehead. */
-export const CURSOR_BLUE = "#3b82f6";
+// -- Cursor -----------------------------------------------------------------
 
-/** Gray playback cursor line. */
+/** Edit caret and ghost notehead. */
+export const CURSOR_BLUE = PRIMARY;
+
+/** Playback position line. */
 export const PLAYBACK_CURSOR = "#888";
 
-// ---------------------------------------------------------------------------
-// Voice colors (voices 1–4)
-// ---------------------------------------------------------------------------
-export const VOICE_COLORS = ["#3b82f6", "#22c55e", "#f97316", "#ef4444"] as const;
+// -- Voices (1-4) -----------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Selection
-// ---------------------------------------------------------------------------
-/** Semi-transparent blue overlay for measure selection. */
+export const VOICE_COLORS = [PRIMARY, "#22c55e", "#f97316", DESTRUCTIVE] as const;
+
+// -- Selection --------------------------------------------------------------
+
+/** Measure selection overlay. */
 export const SELECTION_FILL = "rgba(66, 133, 244, 0.15)";
 
-/** Semi-transparent blue overlay for note range selection band. */
+/** Note range selection band. */
 export const NOTE_SELECTION_BAND = "rgba(59, 130, 246, 0.18)";
 
-/** Blue used for selected notes/chord heads. */
-export const SELECTED_NOTE = "#3b82f6";
+/** Selected notes/chord heads. */
+export const SELECTED_NOTE = PRIMARY;
 
-// ---------------------------------------------------------------------------
-// Note states
-// ---------------------------------------------------------------------------
-/** Red-ish tone for out-of-range notes. */
-export const OUT_OF_RANGE = "#e57373";
+// -- Note states ------------------------------------------------------------
 
-/** Semi-transparent black for muted notes. */
-export const MUTED_NOTE = "rgba(0,0,0,0.4)";
+/** Out-of-range notes. */
+export const OUT_OF_RANGE = DESTRUCTIVE;
 
-/** Primary blue for active playback notes. */
-export const PLAYBACK_ACTIVE = "#4a6fa5";
+/** Muted note mix ratio — 0.4 means 40% note color, 60% canvas background. */
+export const MUTED_MIX = 0.4;
 
-// ---------------------------------------------------------------------------
-// Layout break marker
-// ---------------------------------------------------------------------------
-/** Primary blue for break marker icon border and stroke. */
-export const BREAK_MARKER = "#4a6fa5";
+/** Mix a hex color with the canvas background at the given ratio (0–1). */
+export function mutedColor(hex: string, mix = MUTED_MIX): string {
+  const parse = (h: string) => {
+    const c = h.replace("#", "");
+    const full = c.length === 3 ? c[0]+c[0]+c[1]+c[1]+c[2]+c[2] : c;
+    return [parseInt(full.slice(0,2),16), parseInt(full.slice(2,4),16), parseInt(full.slice(4,6),16)];
+  };
+  const [fr, fg, fb] = parse(hex);
+  const [br, bg, bb] = parse(CANVAS_BACKGROUND);
+  const r = Math.round(fr * mix + br * (1 - mix));
+  const g = Math.round(fg * mix + bg * (1 - mix));
+  const b = Math.round(fb * mix + bb * (1 - mix));
+  return `rgb(${r},${g},${b})`;
+}
 
-// ---------------------------------------------------------------------------
-// Measure fill indicators
-// ---------------------------------------------------------------------------
-/** Red for overfilled measures. */
-export const OVERFILL = "#ef4444";
+/** Active playback notes. */
+export const PLAYBACK_ACTIVE = PRIMARY;
 
-/** Amber/yellow for underfilled measures. */
+// -- Break markers ----------------------------------------------------------
+
+export const BREAK_MARKER = PRIMARY;
+
+// -- Fill indicators --------------------------------------------------------
+
+/** Overfilled measure. */
+export const OVERFILL = DESTRUCTIVE;
+
+/** Underfilled measure. */
 export const UNDERFILL = "#f59e0b";
