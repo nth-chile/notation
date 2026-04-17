@@ -3,8 +3,24 @@ import { useEditorStore } from "../state";
 import type { NoteBox } from "../renderer/vexBridge";
 import { previewPitches } from "../playback/TonePlayback";
 import { pitchToMidi } from "../model/pitch";
+import { STANDARD_TUNING } from "../model/guitar";
 
 const HIT_PADDING = 8; // extra pixels around text for easier clicking
+
+// Tab stave geometry (matches ScoreRenderer/VexFlow TabStave defaults).
+const TAB_LINE_SPACING = 13;
+const TAB_HEADROOM_PX = 52; // 4 line-spacings of padding above line 0
+
+/**
+ * Compute the nearest string (1-indexed, 1 = top/high-E line) for a click at
+ * (clickY) on a tab measure with top at mpY. Clamped to [1, numStrings].
+ */
+export function nearestTabString(clickY: number, mpY: number, numStrings: number): number {
+  const relY = clickY - mpY - TAB_HEADROOM_PX;
+  const zeroBased = Math.round(relY / TAB_LINE_SPACING);
+  const clamped = Math.max(0, Math.min(numStrings - 1, zeroBased));
+  return clamped + 1;
+}
 
 interface Props {
   width: number;
@@ -285,6 +301,15 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
         staveIndex: clickedStaveIndex,
       }, clickedMp?.isTab ?? false);
 
+      // Tab-stave click: move the tab string cursor to the nearest string.
+      if (clickedMp?.isTab) {
+        const numStrings = score.parts[nb.partIndex]?.tuning?.strings.length ?? STANDARD_TUNING.strings.length;
+        const newString = nearestTabString(y, clickedMp.y, numStrings);
+        useEditorStore.setState((s) => ({
+          inputState: { ...s.inputState, tabString: newString },
+        }));
+      }
+
       // Pick which chord head (if any) was clicked — after setCursor so it isn't clobbered.
       let clickedHeadIndex: number | null = null;
       if (nb.heads && nb.heads.length > 0) {
@@ -379,6 +404,15 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
         eventIndex: 0,
         staveIndex: clickedStave,
       }, mp.isTab ?? false);
+
+      // Tab-stave click: move the tab string cursor to the nearest string.
+      if (mp.isTab) {
+        const numStrings = score.parts[mp.partIndex]?.tuning?.strings.length ?? STANDARD_TUNING.strings.length;
+        const newString = nearestTabString(y, mp.y, numStrings);
+        useEditorStore.setState((s) => ({
+          inputState: { ...s.inputState, tabString: newString },
+        }));
+      }
 
       if (e.shiftKey && anchorRef.current) {
         setSelection({
