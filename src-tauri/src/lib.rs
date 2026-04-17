@@ -49,24 +49,23 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::Opened { urls } = event {
+        .run(|_app_handle, _event| {
+            // macOS: handle file-open events (double-click .musicxml in Finder)
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &_event {
                 for url in urls {
-                    // Prefer the local file path when present; fall back to the raw URL string.
                     let path = url.to_file_path().ok()
                         .and_then(|p| p.to_str().map(|s| s.to_string()))
                         .unwrap_or_else(|| url.to_string());
 
-                    // Try to emit to the frontend. If no window is ready yet, stash it.
-                    let emitted = app_handle.emit("nubium://file-opened", path.clone()).is_ok();
+                    let emitted = _app_handle.emit("nubium://file-opened", path.clone()).is_ok();
                     if !emitted {
-                        if let Some(state) = app_handle.try_state::<PendingOpen>() {
+                        if let Some(state) = _app_handle.try_state::<PendingOpen>() {
                             if let Ok(mut g) = state.0.lock() {
                                 *g = Some(path);
                             }
                         }
-                    } else if let Some(state) = app_handle.try_state::<PendingOpen>() {
-                        // Also stash it so a late-mounting listener can still read it.
+                    } else if let Some(state) = _app_handle.try_state::<PendingOpen>() {
                         if let Ok(mut g) = state.0.lock() {
                             *g = Some(path);
                         }
