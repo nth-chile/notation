@@ -674,26 +674,58 @@ export function renderScore(
           (p) => p.measureIndex === mi && p.staveIndex === 0
         );
         if (!mp) continue;
-        const icon = br === "system" ? "↵" : br === "page" ? "⇲" : "§";
-        const size = 16;
+        const size = 18;
         const bx = mp.x + mp.width - size - 4;
         const by = mp.y - size - 2;
-        // Draw pill background
         const ctx2d = (rawCtx as unknown as { context2D?: CanvasRenderingContext2D }).context2D;
         if (ctx2d) {
           ctx2d.save();
-          ctx2d.fillStyle = "#4a6fa5";
-          ctx2d.globalAlpha = 0.85;
-          if (ctx2d.roundRect) ctx2d.beginPath(), ctx2d.roundRect(bx, by, size, size, 3), ctx2d.fill();
-          else ctx2d.fillRect(bx, by, size, size);
-          ctx2d.globalAlpha = 1;
-          ctx2d.fillStyle = "#fff";
-          ctx2d.font = "bold 12px sans-serif";
-          ctx2d.textAlign = "center";
-          ctx2d.textBaseline = "middle";
-          ctx2d.fillText(icon, bx + size / 2, by + size / 2 + 1);
-          ctx2d.textAlign = "start";
-          ctx2d.textBaseline = "alphabetic";
+          const color = "#4a6fa5";
+          // Transparent background with blue border
+          if (ctx2d.roundRect) { ctx2d.beginPath(); ctx2d.roundRect(bx, by, size, size, 3); }
+          else { ctx2d.beginPath(); ctx2d.rect(bx, by, size, size); }
+          ctx2d.strokeStyle = color;
+          ctx2d.lineWidth = 1.5;
+          ctx2d.stroke();
+          // Draw icon as blue stroked paths
+          ctx2d.strokeStyle = color;
+          ctx2d.lineWidth = 2;
+          ctx2d.lineCap = "round";
+          ctx2d.lineJoin = "round";
+          const cx = bx + size / 2;
+          const cy = by + size / 2;
+          if (br === "system") {
+            // Return arrow
+            ctx2d.beginPath();
+            ctx2d.moveTo(cx + 4, cy - 5); ctx2d.lineTo(cx + 4, cy + 1); ctx2d.lineTo(cx - 4, cy + 1);
+            ctx2d.stroke();
+            ctx2d.beginPath();
+            ctx2d.moveTo(cx - 1, cy - 2); ctx2d.lineTo(cx - 4, cy + 1); ctx2d.lineTo(cx - 1, cy + 4);
+            ctx2d.stroke();
+          } else if (br === "page") {
+            // Page with dashed line
+            ctx2d.beginPath();
+            ctx2d.moveTo(cx - 4, cy - 6); ctx2d.lineTo(cx + 1, cy - 6); ctx2d.lineTo(cx + 4, cy - 3);
+            ctx2d.lineTo(cx + 4, cy + 6); ctx2d.lineTo(cx - 4, cy + 6); ctx2d.closePath();
+            ctx2d.stroke();
+            ctx2d.beginPath();
+            ctx2d.moveTo(cx + 1, cy - 6); ctx2d.lineTo(cx + 1, cy - 3); ctx2d.lineTo(cx + 4, cy - 3);
+            ctx2d.stroke();
+            ctx2d.setLineDash([2, 1.5]);
+            ctx2d.beginPath();
+            ctx2d.moveTo(cx - 6, cy); ctx2d.lineTo(cx + 6, cy);
+            ctx2d.stroke();
+            ctx2d.setLineDash([]);
+          } else {
+            // Section: double barline with gap (like Dorico)
+            ctx2d.lineWidth = 2.5;
+            ctx2d.beginPath();
+            ctx2d.moveTo(cx - 3, cy - 5); ctx2d.lineTo(cx - 3, cy + 5);
+            ctx2d.stroke();
+            ctx2d.beginPath();
+            ctx2d.moveTo(cx + 3, cy - 5); ctx2d.lineTo(cx + 3, cy + 5);
+            ctx2d.stroke();
+          }
           ctx2d.restore();
         }
         breakBoxes.push({ measureIndex: mi, kind: br, x: bx, y: by, width: size, height: size });
