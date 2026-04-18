@@ -153,6 +153,50 @@ describe("first-system indent (partLabelWidth)", () => {
   });
 });
 
+describe("tab-only inter-system spacing", () => {
+  // Multi-system score: one guitar part, many measures
+  function multiMeasure(instrumentId: string, count: number) {
+    const score = makeScore([instrumentId]);
+    const template = score.parts[0].measures[0];
+    for (let i = 0; i < count - 1; i++) {
+      score.parts[0].measures.push({ ...template, id: `m-${i + 1}` as typeof template.id });
+    }
+    return score;
+  }
+
+  it("tab-only systems are packed tighter than standard-only systems", () => {
+    const score = multiMeasure("acoustic-guitar", 20);
+    const config = { ...DEFAULT_LAYOUT, availableWidth: 500, adaptiveWidths: true };
+    const tabOnly = configWith({ 0: { standard: false, tab: true, slash: false } });
+    const standardOnly = configWith({ 0: { standard: true, tab: false, slash: false } });
+
+    const tabSystems = computeLayout(score, config, undefined, tabOnly);
+    const stdSystems = computeLayout(score, config, undefined, standardOnly);
+
+    // Both should have multiple systems at this width
+    expect(tabSystems.length).toBeGreaterThan(1);
+    expect(stdSystems.length).toBeGreaterThan(1);
+
+    // Per-system gap — use distance between system starts minus system height
+    const tabGap = tabSystems[1].y - (tabSystems[0].y + tabSystems[0].height);
+    const stdGap = stdSystems[1].y - (stdSystems[0].y + stdSystems[0].height);
+
+    expect(tabGap).toBeLessThan(stdGap);
+  });
+
+  it("mixed (standard + tab) systems use the full staffSpacing, not the shrunk value", () => {
+    const score = multiMeasure("acoustic-guitar", 20);
+    const config = { ...DEFAULT_LAYOUT, availableWidth: 500, adaptiveWidths: true };
+    const mixed = configWith({ 0: { standard: true, tab: true, slash: false } });
+
+    const systems = computeLayout(score, config, undefined, mixed);
+    expect(systems.length).toBeGreaterThan(1);
+
+    const gap = systems[1].y - (systems[0].y + systems[0].height);
+    expect(gap).toBe(DEFAULT_LAYOUT.staffSpacing);
+  });
+});
+
 describe("systemHeight", () => {
   it("increases when slash stave is added", () => {
     const score = makeScore(["acoustic-guitar"]);

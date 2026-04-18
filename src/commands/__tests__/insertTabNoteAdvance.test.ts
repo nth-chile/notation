@@ -91,3 +91,78 @@ describe("InsertTabNote auto-advance (#261)", () => {
     expect(result.score.parts[0].measures[0].voices[0].events).toHaveLength(1);
   });
 });
+
+describe("InsertTabNote chord building (#264)", () => {
+  it("turns an existing single note into a chord when a different string is entered", () => {
+    const score = makeScore(1);
+    // Seed with a tab note on string 1, fret 3
+    let state = snapshot(score, 0);
+    state = new InsertTabNote(3, 1, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+    expect(state.inputState.cursor.eventIndex).toBe(1);
+
+    // Rewind cursor to the just-inserted note (as ArrowUp/Down would do)
+    state = { ...state, inputState: { ...state.inputState, cursor: { ...state.inputState.cursor, eventIndex: 0 } } };
+
+    // Enter fret 5 on string 2 — should add to chord, not replace
+    state = new InsertTabNote(5, 2, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+
+    const evt = state.score.parts[0].measures[0].voices[0].events[0];
+    expect(evt.kind).toBe("chord");
+    if (evt.kind === "chord") {
+      expect(evt.heads).toHaveLength(2);
+      expect(evt.heads.map((h) => h.tabInfo?.string).sort()).toEqual([1, 2]);
+    }
+    // Cursor stays on the chord so more heads can be added
+    expect(state.inputState.cursor.eventIndex).toBe(0);
+  });
+
+  it("appends a head to an existing chord for a new string", () => {
+    const score = makeScore(1);
+    let state = snapshot(score, 0);
+    state = new InsertTabNote(3, 1, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+    state = { ...state, inputState: { ...state.inputState, cursor: { ...state.inputState.cursor, eventIndex: 0 } } };
+    state = new InsertTabNote(5, 2, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+    state = new InsertTabNote(7, 3, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+
+    const evt = state.score.parts[0].measures[0].voices[0].events[0];
+    expect(evt.kind).toBe("chord");
+    if (evt.kind === "chord") {
+      expect(evt.heads).toHaveLength(3);
+      expect(evt.heads.map((h) => h.tabInfo?.string).sort()).toEqual([1, 2, 3]);
+      expect(evt.heads.find((h) => h.tabInfo?.string === 3)?.tabInfo?.fret).toBe(7);
+    }
+  });
+
+  it("replaces the same-string head within a chord (edit, not append)", () => {
+    const score = makeScore(1);
+    let state = snapshot(score, 0);
+    state = new InsertTabNote(3, 1, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+    state = { ...state, inputState: { ...state.inputState, cursor: { ...state.inputState.cursor, eventIndex: 0 } } };
+    state = new InsertTabNote(5, 2, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+    // Now replace the string-2 fret with 7
+    state = new InsertTabNote(7, 2, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+
+    const evt = state.score.parts[0].measures[0].voices[0].events[0];
+    expect(evt.kind).toBe("chord");
+    if (evt.kind === "chord") {
+      expect(evt.heads).toHaveLength(2);
+      expect(evt.heads.find((h) => h.tabInfo?.string === 2)?.tabInfo?.fret).toBe(7);
+    }
+  });
+
+  it("replaces same-string single note in place and advances", () => {
+    const score = makeScore(1);
+    let state = snapshot(score, 0);
+    state = new InsertTabNote(3, 1, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+    state = { ...state, inputState: { ...state.inputState, cursor: { ...state.inputState.cursor, eventIndex: 0 } } };
+    // Same string, different fret — should replace, not chord
+    state = new InsertTabNote(7, 1, { type: "quarter", dots: 0 }, STANDARD_TUNING, 0).execute(state);
+
+    const evt = state.score.parts[0].measures[0].voices[0].events[0];
+    expect(evt.kind).toBe("note");
+    if (evt.kind === "note") {
+      expect(evt.head.tabInfo?.fret).toBe(7);
+    }
+    expect(state.inputState.cursor.eventIndex).toBe(1);
+  });
+});

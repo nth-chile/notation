@@ -7,7 +7,41 @@ import { SetChordSymbol } from "../commands/SetChordSymbol";
 import { SetLyric } from "../commands/SetLyric";
 import type { AnnotationBox } from "../renderer/vexBridge";
 import { getGlobalPluginManager } from "../plugins/PluginManager";
+import { computePlaybackOrder } from "../playback/PlaybackOrder";
+import type { Score } from "../model";
 import type { StoreApi } from "zustand";
+
+/**
+ * Return the tick at which the first playback occurrence of the cursor's
+ * measure begins, plus the tick offset within that measure for the cursor's
+ * event. This mirrors TonePlayback's measureBoundaries (which follows repeats
+ * and D.S./D.C.), so Space plays from the caret even when earlier measures
+ * repeat.
+ */
+export function computeStartTickFromCursor(
+  score: Score,
+  cursor: { partIndex: number; measureIndex: number; voiceIndex: number; eventIndex: number },
+): number {
+  const part = score.parts[cursor.partIndex];
+  if (!part) return 0;
+
+  const order = computePlaybackOrder(score, cursor.partIndex);
+  let startTick = 0;
+  for (const mi of order) {
+    if (mi === cursor.measureIndex) break;
+    const m = part.measures[mi];
+    if (!m) continue;
+    startTick += (TICKS_PER_QUARTER * 4 * m.timeSignature.numerator) / m.timeSignature.denominator;
+  }
+
+  const voice = part.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+  if (voice) {
+    for (let ei = 0; ei < cursor.eventIndex && ei < voice.events.length; ei++) {
+      startTick += durationToTicksFn(voice.events[ei].duration, voice.events[ei].tuplet);
+    }
+  }
+  return startTick;
+}
 
 type GetState = StoreApi<any>["getState"];
 type SetState = StoreApi<any>["setState"];
@@ -46,17 +80,7 @@ export function createPlaybackActions(get: GetState, set: SetState, history: Com
       } else if (noteSel && noteSel.rangeMode) {
         measureRange = { start: noteSel.startMeasure, end: noteSel.endMeasure };
       } else if (part) {
-        // Play from cursor position
-        for (let mi = 0; mi < cursor.measureIndex && mi < part.measures.length; mi++) {
-          const ts = part.measures[mi].timeSignature;
-          startTick += (TICKS_PER_QUARTER * 4 * ts.numerator) / ts.denominator;
-        }
-        const voice = part.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
-        if (voice) {
-          for (let ei = 0; ei < cursor.eventIndex && ei < voice.events.length; ei++) {
-            startTick += durationToTicksFn(voice.events[ei].duration, voice.events[ei].tuplet);
-          }
-        }
+        startTick = computeStartTickFromCursor(state.score, cursor);
       }
 
       await service.play(state.score, startTick, measureRange);

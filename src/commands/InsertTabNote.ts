@@ -56,10 +56,53 @@ export class InsertTabNote implements Command {
     const newEvent = this.buildEvent();
     if (!newEvent) return state;
 
-    // Overwrite path: cursor is on an existing event — replace it.
+    // Cursor-on-existing-event path.
     if (eventIndex < voice.events.length) {
-      voice.events[eventIndex] = newEvent;
-      input.cursor.eventIndex = eventIndex + 1;
+      const existing = voice.events[eventIndex];
+      const newHead = newEvent.head;
+
+      // Rest / slash / grace: overwrite with a fresh tab note and advance.
+      if (existing.kind !== "note" && existing.kind !== "chord") {
+        voice.events[eventIndex] = newEvent;
+        input.cursor.eventIndex = eventIndex + 1;
+        input.tabFretBuffer = "";
+        return { score, inputState: input };
+      }
+
+      // Existing note on the same string: replace the fret and advance.
+      if (existing.kind === "note" && existing.head.tabInfo?.string === this.string) {
+        voice.events[eventIndex] = newEvent;
+        input.cursor.eventIndex = eventIndex + 1;
+        input.tabFretBuffer = "";
+        return { score, inputState: input };
+      }
+
+      // Existing note on a different string: turn it into a chord. Stay on
+      // the chord so the user can continue adding heads.
+      if (existing.kind === "note") {
+        voice.events[eventIndex] = {
+          kind: "chord" as const,
+          id: existing.id,
+          duration: existing.duration,
+          heads: [existing.head, newHead],
+          stemDirection: existing.stemDirection,
+          articulations: existing.articulations,
+          tuplet: existing.tuplet,
+          renderStaff: existing.renderStaff,
+        };
+        input.tabFretBuffer = "";
+        return { score, inputState: input };
+      }
+
+      // Existing chord: replace same-string head if present, else append.
+      const sameStringIdx = existing.heads.findIndex(
+        (h) => h.tabInfo?.string === this.string,
+      );
+      if (sameStringIdx >= 0) {
+        existing.heads[sameStringIdx] = newHead;
+      } else {
+        existing.heads.push(newHead);
+      }
       input.tabFretBuffer = "";
       return { score, inputState: input };
     }

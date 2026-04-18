@@ -4,22 +4,30 @@ import type { Articulation } from "../model/note";
 import { pitchToTab, STANDARD_TUNING, type Tuning } from "../model/guitar";
 import { durationToTicks as durationToTicksFn } from "../model/duration";
 import type { RenderContext, NoteBox } from "./vexBridge";
-import { applyBarline, applyStaveDecorations, drawStaveAnnotations } from "./vexBridge";
+import { applyBarline, applyStaveDecorations, drawStaveAnnotations, computeChordTieDirections } from "./vexBridge";
 import { TAB_STAFF_HEIGHT } from "./SystemLayout";
 import { INK } from "./colors";
 
 // Monkey-patch TabNote.tabToElement to use sans-serif for all frets.
 // VexFlow renders "X" as a double-sharp glyph (accidentalDoubleSharp) which looks wrong.
 // Override to render "X" as plain text in the same font as fret numbers.
-const TAB_FRET_FONT_SIZE = 11;
+export const TAB_FRET_FONT_SIZE = 11;
+export const TAB_FRET_FONT_WEIGHT = "600";
 
 TabNote.tabToElement = (fret: string) => {
   const el = new Element("TabNote.text");
   el.setText(fret.toUpperCase() === "X" ? "X" : fret);
-  el.setFont("Arial, sans-serif", TAB_FRET_FONT_SIZE, el.fontInfo?.weight);
+  el.setFont("Arial, sans-serif", TAB_FRET_FONT_SIZE, TAB_FRET_FONT_WEIGHT);
   el.setYShift(el.getHeight() / 2);
   return el;
 };
+
+/** Width (in canvas units) of the tab staff lines. VexFlow default is 1 — we
+ *  bump it a touch for readability without making it heavy. */
+export const TAB_LINE_WIDTH = 1.25;
+/** Extra padding inserted between the bar's clef/time-sig/key-sig and the
+ *  first note head, so fret digits don't crowd the bar start. */
+export const TAB_NOTE_START_PADDING = 14;
 
 export interface TabMeasureRenderResult {
   noteBoxes: NoteBox[];
@@ -299,18 +307,41 @@ export function renderTabMeasure(
   partIndex = 0,
   measureIndex = 0,
   capo = 0,
-  isTopStave = false
+  isTopStave = false,
+  showTimeSig = false
 ): TabMeasureRenderResult {
   const stave = new TabStave(x, y, width);
   if (showClef) {
     stave.addClef("tab");
+  }
+  if (showTimeSig) {
+    stave.addTimeSignature(`${m.timeSignature.numerator}/${m.timeSignature.denominator}`);
+    // VexFlow's TimeSignature defaults to topLine=1, bottomLine=3 — centered
+    // on line 2 (the middle of a 5-line staff). Shift so the two glyphs
+    // straddle line 2.5, the visual center of our 6-line tab staff.
+    // draw() uses (topLine - lineShift) and (bottomLine + lineShift) as the
+    // actual y-lines; set topLine/bottomLine compensating for the internal
+    // lineShift so the result is always lines 1.5 and 3.5.
+    for (const mod of stave.getModifiers()) {
+      if (mod.getCategory?.() === "TimeSignature") {
+        const ts = mod as unknown as { topLine: number; bottomLine: number; lineShift: number };
+        ts.topLine = 1.5 + ts.lineShift;
+        ts.bottomLine = 3.5 - ts.lineShift;
+        break;
+      }
+    }
   }
 
   // Barlines always show (structural); volta/segno only on topmost stave
   applyBarline(stave, m.barlineEnd);
   if (isTopStave) applyStaveDecorations(stave, m);
 
-  // Show capo indicator on first measure
+  // Extra left padding before the first note so fret digits don't crowd the
+  // clef / time-sig / barline at the bar start.
+  stave.setNoteStartX(stave.getNoteStartX() + TAB_NOTE_START_PADDING);
+
+  // Draw the stave first at default line width, then re-stroke the 6 string
+  // lines slightly thicker for better visual weight.
   if (capo > 0 && showClef) {
     stave.setContext(ctx.context);
     stave.draw();
@@ -321,6 +352,24 @@ export function renderTabMeasure(
     rawCtx.font = prevFont;
   } else {
     stave.setContext(ctx.context).draw();
+  }
+  {
+    const rawCtx = ctx.context as unknown as CanvasRenderingContext2D;
+    const prevLineWidth = rawCtx.lineWidth;
+    const prevStroke = rawCtx.strokeStyle;
+    rawCtx.lineWidth = TAB_LINE_WIDTH;
+    rawCtx.strokeStyle = INK;
+    const lineX0 = stave.getX();
+    const lineX1 = lineX0 + stave.getWidth();
+    for (let i = 0; i < 6; i++) {
+      const yL = stave.getYForLine(i);
+      rawCtx.beginPath();
+      rawCtx.moveTo(lineX0, yL);
+      rawCtx.lineTo(lineX1, yL);
+      rawCtx.stroke();
+    }
+    rawCtx.lineWidth = prevLineWidth;
+    rawCtx.strokeStyle = prevStroke;
   }
 
   // Draw coda, navigation text, tempo, rehearsal marks above stave
@@ -387,9 +436,23 @@ export function renderTabMeasure(
           const tn1 = allTabNotes[i];
           const tn2 = allTabNotes[i + 1];
           if (tn1 instanceof TabNote && tn2 instanceof TabNote) {
-            try {
-              new TabTie({ firstNote: tn1, lastNote: tn2 }).setContext(ctx.context).draw();
-            } catch { /* skip if VexFlow rejects */ }
+            // Draw a separate TabTie for each tied string. Without per-index
+            // ties VexFlow only draws one arc for the whole chord — so the
+            // user couldn't tell each string was tied.
+            const dirByIdx = computeChordTieDirections(ev.heads, tiedIndices);
+            for (const headIdx of tiedIndices) {
+              try {
+                const tie = new TabTie({
+                  firstNote: tn1,
+                  lastNote: tn2,
+                  firstIndexes: [headIdx],
+                  lastIndexes: [headIdx],
+                });
+                const dir = dirByIdx.get(headIdx);
+                if (dir !== undefined) tie.setDirection(dir);
+                tie.setContext(ctx.context).draw();
+              } catch { /* skip if VexFlow rejects */ }
+            }
           }
         }
       }

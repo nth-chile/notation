@@ -87,6 +87,7 @@ export function KeyboardShortcuts() {
 
   const viewConfig = useEditorStore((s) => s.viewConfig);
   const insertTabNote = useEditorStore((s) => s.insertTabNote);
+  const addTabPitchToChord = useEditorStore((s) => s.addTabPitchToChord);
 
   useEffect(() => {
     // Action handlers — keyed by shortcut action id
@@ -288,6 +289,18 @@ export function KeyboardShortcuts() {
           return;
         }
 
+        // Shift+Digit → add fret to chord at the just-entered note
+        // (mirrors Shift+A-G for standard notation). Detected via e.code
+        // because shift+digit produces symbol chars in e.key.
+        if (state.inputState.noteEntry && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          const m = /^Digit(\d)$/.exec(e.code);
+          if (m) {
+            e.preventDefault();
+            addTabPitchToChord(parseInt(m[1], 10), tabString);
+            return;
+          }
+        }
+
         // Up/Down arrows → navigate strings (without ctrl/alt modifiers)
         if (e.key === "ArrowUp" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
           e.preventDefault();
@@ -395,7 +408,7 @@ export function KeyboardShortcuts() {
     copySelection, pasteAtCursor, deleteSelectedMeasures, clearSelectedMeasures,
     toggleArticulation, toggleNoteEntry, toggleInsertMode, togglePitchBeforeDuration, toggleGraceNoteMode, toggleSlur, toggleTie, toggleNoteMute, setHairpin, toggleCrossStaff, popover, setPopover,
     setSelection, setNoteSelection, extendSelection, extendNoteSelection,
-    noteSelection, deleteNoteSelection, viewConfig, insertTabNote,
+    noteSelection, deleteNoteSelection, viewConfig, insertTabNote, addTabPitchToChord,
   ]);
 
   return null;

@@ -147,3 +147,48 @@ describe("insertTabNote with capo", () => {
     }
   });
 });
+
+describe("addTabPitchToChord — Shift+Digit chord build (#264)", () => {
+  beforeEach(() => setupTabScore());
+
+  it("turns the just-entered note into a chord without moving the cursor", () => {
+    // Enter fret 3 on string 1 — replaces the initial whole rest
+    useEditorStore.getState().insertTabNote(3, 1);
+    const cursorAfterInsert = useEditorStore.getState().inputState.cursor.eventIndex;
+    expect(cursorAfterInsert).toBe(1);
+
+    // Shift+5 on string 2 — should add to the chord at index 0
+    useEditorStore.setState((s) => ({ inputState: { ...s.inputState, tabString: 2 } }));
+    useEditorStore.getState().addTabPitchToChord(5, 2);
+
+    const evt = useEditorStore.getState().score.parts[0].measures[0].voices[0].events[0];
+    expect(evt.kind).toBe("chord");
+    if (evt.kind === "chord") {
+      expect(evt.heads).toHaveLength(2);
+      expect(evt.heads.map((h) => h.tabInfo?.string).sort()).toEqual([1, 2]);
+    }
+    // Cursor is unchanged — user can keep chord-adding or press ArrowRight to move on.
+    expect(useEditorStore.getState().inputState.cursor.eventIndex).toBe(1);
+  });
+
+  it("appends a third head when called again", () => {
+    useEditorStore.getState().insertTabNote(3, 1);
+    useEditorStore.getState().addTabPitchToChord(5, 2);
+    useEditorStore.getState().addTabPitchToChord(7, 3);
+
+    const evt = useEditorStore.getState().score.parts[0].measures[0].voices[0].events[0];
+    expect(evt.kind).toBe("chord");
+    if (evt.kind === "chord") {
+      expect(evt.heads).toHaveLength(3);
+      expect(evt.heads.map((h) => h.tabInfo?.string).sort()).toEqual([1, 2, 3]);
+    }
+  });
+
+  it("no-ops when there is no note/chord to add to", () => {
+    // Fresh measure has only a whole rest at index 0, cursor at 0
+    const before = useEditorStore.getState().score.parts[0].measures[0].voices[0].events[0];
+    useEditorStore.getState().addTabPitchToChord(5, 2);
+    const after = useEditorStore.getState().score.parts[0].measures[0].voices[0].events[0];
+    expect(after).toBe(before);
+  });
+});

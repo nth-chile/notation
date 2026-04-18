@@ -216,6 +216,38 @@ export function createNoteEntryActions(get: GetState, set: SetState, history: Co
       previewEventAt(result.score, cursor);
     },
 
+    addTabPitchToChord(fret: number, string: number) {
+      const state = get();
+      // Target the event at cursor, or the one just before it (common after
+      // a step-entry insert that advanced the cursor past the note).
+      const { cursor } = state.inputState;
+      const voice = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex]?.voices[cursor.voiceIndex];
+      if (!voice) return;
+      let targetIndex = cursor.eventIndex;
+      let target = voice.events[targetIndex];
+      if ((!target || (target.kind !== "note" && target.kind !== "chord")) && targetIndex > 0) {
+        targetIndex = targetIndex - 1;
+        target = voice.events[targetIndex];
+      }
+      if (!target || (target.kind !== "note" && target.kind !== "chord")) return;
+
+      const part = state.score.parts[cursor.partIndex];
+      if (!part) return;
+      const tuning = part.tuning;
+      const capo = part.capo ?? 0;
+
+      // Run InsertTabNote with a temporary cursor on the target event so its
+      // chord-add path fires. Preserve the original cursor after execution.
+      const tempInput = { ...state.inputState, cursor: { ...cursor, eventIndex: targetIndex } };
+      const cmd = new InsertTabNote(fret, string, { ...target.duration }, tuning, capo);
+      const result = history.execute(cmd, { score: state.score, inputState: tempInput });
+      set({
+        score: result.score,
+        inputState: { ...result.inputState, cursor: { ...cursor } },
+      });
+      previewEventAt(result.score, { ...cursor, eventIndex: targetIndex });
+    },
+
     insertRest() {
       const state = get();
       if (state.inputState.insertMode) {
