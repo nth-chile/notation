@@ -1,7 +1,7 @@
 import type { Score, NoteEventId } from "../model";
 import { TICKS_PER_QUARTER, durationToTicks } from "../model/duration";
 import { StaveTie, TabTie, type StaveNote } from "vexflow";
-import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, renderBrace, clearCanvas, createVexStave, drawFillIndicator, type RenderContext, type NoteBox, type AnnotationBox, type MeasureRenderResult } from "./vexBridge";
+import { renderMeasure, renderMultiMeasureRest, renderSystemBarline, renderBrace, clearCanvas, createVexStave, drawFillIndicator, computeChordTieDirections, type RenderContext, type NoteBox, type AnnotationBox, type MeasureRenderResult } from "./vexBridge";
 import { getMeasureIndexForTick } from "../playback/TonePlayback";
 import { renderTabMeasure, type TabMeasureRenderResult } from "./TabRenderer";
 import { renderSlashMeasure } from "./SlashRenderer";
@@ -478,6 +478,8 @@ export function renderScore(
           let result: MeasureRenderResult | TabMeasureRenderResult;
           if (isTabStave) {
             // Render as tab staff
+            const prevMeasure = mi > 0 ? part.measures[mi - 1] : undefined;
+            const { timeSigChanged } = sigChanges(m, mi, prevMeasure, isFirstInLine);
             result = renderTabMeasure(
               ctx,
               measureToRender,
@@ -489,7 +491,8 @@ export function renderScore(
               originalPi,
               mi,
               part.capo ?? 0,
-              standardStaves === 0 && slashStaveIdx === -1
+              standardStaves === 0 && slashStaveIdx === -1,
+              timeSigChanged,
             );
           } else if (si === slashStaveIdx) {
             // Slash stave: render rhythm slashes on a standard staff
@@ -1271,12 +1274,22 @@ function drawCrossMeasureTabTies(
     return systems.find((s) => mi >= s.startMeasure && mi < s.endMeasure);
   }
 
-  function drawTabTie(firstNote: import("vexflow").TabNote | null, lastNote: import("vexflow").TabNote | null) {
+  function drawTabTie(
+    firstNote: import("vexflow").TabNote | null,
+    lastNote: import("vexflow").TabNote | null,
+    firstIndexes?: number[],
+    lastIndexes?: number[],
+    direction?: -1 | 1,
+  ) {
     try {
-      new TabTie({
+      const tie = new TabTie({
         firstNote: firstNote ?? undefined,
         lastNote: lastNote ?? undefined,
-      }).setContext(ctx.context).draw();
+        firstIndexes,
+        lastIndexes,
+      });
+      if (direction !== undefined) tie.setDirection(direction);
+      tie.setContext(ctx.context).draw();
     } catch { /* skip */ }
   }
 
@@ -1304,10 +1317,23 @@ function drawCrossMeasureTabTies(
         const endSys = systemForMeasure(mi + 1);
         if (!startSys || !endSys) continue;
 
-        if (startSys.lineIndex === endSys.lineIndex) {
+        if (lastEvent.kind === "chord") {
+          const tiedIndexes = lastEvent.heads
+            .map((h, idx) => (h.tied ? idx : -1))
+            .filter((idx) => idx >= 0);
+          const dirByIdx = computeChordTieDirections(lastEvent.heads, tiedIndexes);
+          for (const headIdx of tiedIndexes) {
+            const dir = dirByIdx.get(headIdx);
+            if (startSys.lineIndex === endSys.lineIndex) {
+              drawTabTie(tn1, tn2, [headIdx], [headIdx], dir);
+            } else {
+              if (tn1) drawTabTie(tn1, null, [headIdx], [headIdx], dir);
+              if (tn2) drawTabTie(null, tn2, [headIdx], [headIdx], dir);
+            }
+          }
+        } else if (startSys.lineIndex === endSys.lineIndex) {
           drawTabTie(tn1, tn2);
         } else {
-          // Cross-system: two partial ties
           if (tn1) drawTabTie(tn1, null);
           if (tn2) drawTabTie(null, tn2);
         }
@@ -1333,14 +1359,22 @@ function drawCrossSystemSlursAndTies(
     return systems.find((s) => mi >= s.startMeasure && mi < s.endMeasure);
   }
 
-  function drawTie(firstNote: StaveNote | null, lastNote: StaveNote | null, firstIndexes?: number[], lastIndexes?: number[]) {
+  function drawTie(
+    firstNote: StaveNote | null,
+    lastNote: StaveNote | null,
+    firstIndexes?: number[],
+    lastIndexes?: number[],
+    direction?: -1 | 1,
+  ) {
     try {
-      new StaveTie({
+      const tie = new StaveTie({
         firstNote: firstNote ?? undefined,
         lastNote: lastNote ?? undefined,
         firstIndexes,
         lastIndexes,
-      }).setContext(ctx.context).draw();
+      });
+      if (direction !== undefined) tie.setDirection(direction);
+      tie.setContext(ctx.context).draw();
     } catch { /* VexFlow may reject partial ties in edge cases */ }
   }
 
@@ -1410,12 +1444,18 @@ function drawCrossSystemSlursAndTies(
           const endSys = systemForMeasure(mi + 1);
           if (!startSys || !endSys) continue;
 
+          // Split ties so top half curves up, bottom half curves down —
+          // otherwise adjacent arcs collapse into one visually (see
+          // computeChordTieDirections in vexBridge.ts).
+          const dirByIdx = computeChordTieDirections(lastEvent.heads, tiedIndexes);
+
           for (const headIdx of tiedIndexes) {
+            const dir = dirByIdx.get(headIdx);
             if (startSys.lineIndex === endSys.lineIndex) {
-              if (startSN && endSN) drawTie(startSN, endSN, [headIdx], [headIdx]);
+              if (startSN && endSN) drawTie(startSN, endSN, [headIdx], [headIdx], dir);
             } else {
-              if (startSN) drawTie(startSN, null, [headIdx], [headIdx]);
-              if (endSN) drawTie(null, endSN, [headIdx], [headIdx]);
+              if (startSN) drawTie(startSN, null, [headIdx], [headIdx], dir);
+              if (endSN) drawTie(null, endSN, [headIdx], [headIdx], dir);
             }
           }
         }

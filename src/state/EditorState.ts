@@ -90,6 +90,7 @@ interface EditorStore {
   insertNote(pitchClass: PitchClass): void;
   addPitchToChord(pitchClass: PitchClass): void;
   insertTabNote(fret: number, string: number): void;
+  addTabPitchToChord(fret: number, string: number): void;
   insertRest(): void;
   deleteNote(): void;
   setDuration(type: DurationType): void;

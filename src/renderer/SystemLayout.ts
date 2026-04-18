@@ -372,7 +372,18 @@ export function computeLayout(
     }
 
     const systemHeight = yOffset - lineY;
-    const systemSpacing = config.staffSpacing + belowStaffExtra;
+    // Tab-only systems don't use the below-stave band (no lyrics/dynamics/hairpins
+    // render there) and the next system's 52px of headroom already provides
+    // plenty of breathing room. Shrink the inter-system gap so tab scores don't
+    // feel airy between lines.
+    const isTabOnlySystem = score.parts.every((_, pi) => {
+      const sStaves = viewConfig ? partStandardStaveCount(score, pi, viewConfig) : (tabParts?.has(pi) ? 0 : 1);
+      const slash = viewConfig ? partHasSlash(pi, viewConfig) : false;
+      const tab = viewConfig ? partHasTab(pi, viewConfig) : (tabParts?.has(pi) ?? false);
+      return sStaves === 0 && !slash && tab;
+    });
+    const interSystemGap = isTabOnlySystem ? Math.max(20, config.staffSpacing - 40) : config.staffSpacing;
+    const systemSpacing = interSystemGap + belowStaffExtra;
     pageY += systemHeight + systemSpacing;
     absoluteY += systemHeight + systemSpacing;
 

@@ -257,6 +257,14 @@ function BarlineContent() {
     setTimesValue(String(currentTimes));
   }, [currentTimes]);
 
+  // When a repeat-end is set, focus the count input so the user can type + Enter.
+  useEffect(() => {
+    if (isRepeatEnd) {
+      timesInputRef.current?.focus();
+      timesInputRef.current?.select();
+    }
+  }, [isRepeatEnd]);
+
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (document.activeElement === timesInputRef.current) return;
@@ -264,8 +272,10 @@ function BarlineContent() {
       if (n >= 1 && n <= BARLINES.length) {
         e.preventDefault();
         e.stopPropagation();
-        setRepeatBarline(BARLINES[n - 1].type);
-        setPopover(null);
+        const type = BARLINES[n - 1].type;
+        setRepeatBarline(type);
+        // Keep open when selecting a repeat-end so the count input appears.
+        if (type !== "repeat-end" && type !== "repeat-both") setPopover(null);
       }
     }
     window.addEventListener("keydown", handleKey);
@@ -275,6 +285,7 @@ function BarlineContent() {
   const submitTimes = () => {
     const n = parseInt(timesValue, 10);
     if (!isNaN(n) && n >= 2) setRepeatCount(n);
+    setPopover(null);
   };
 
   return (
@@ -283,7 +294,10 @@ function BarlineContent() {
         {BARLINES.map((b, i) => (
           <button
             key={b.type}
-            onClick={() => { setRepeatBarline(b.type); setPopover(null); }}
+            onClick={() => {
+              setRepeatBarline(b.type);
+              if (b.type !== "repeat-end" && b.type !== "repeat-both") setPopover(null);
+            }}
             className="px-2 py-1 text-sm hover:bg-accent rounded relative"
             title={`${b.label} (${i + 1})`}
           >

@@ -18,6 +18,31 @@ export interface RenderContext {
   context: ReturnType<Renderer["getContext"]>;
 }
 
+/**
+ * Pick a tie direction for each tied head of a chord so the arcs don't merge.
+ * Top half of the tied heads curve up (-1), bottom half curve down (1).
+ * With all ties curving the same way, adjacent arcs peak within ~10px of
+ * each other and visually collapse into a single curve — for a 3-note chord
+ * that made it look like only one tie had been added.
+ */
+export function computeChordTieDirections(
+  heads: { pitch: Parameters<typeof pitchToMidi>[0] }[],
+  tiedIndices: number[],
+): Map<number, -1 | 1> {
+  const result = new Map<number, -1 | 1>();
+  if (tiedIndices.length <= 1) return result;
+
+  const sorted = tiedIndices
+    .map((idx) => ({ idx, midi: pitchToMidi(heads[idx].pitch) }))
+    .sort((a, b) => b.midi - a.midi); // highest pitch first
+
+  const topHalfCount = Math.ceil(sorted.length / 2);
+  sorted.forEach((item, i) => {
+    result.set(item.idx, i < topHalfCount ? -1 : 1);
+  });
+  return result;
+}
+
 export interface NoteBox {
   id: NoteEventId;
   x: number;
@@ -440,15 +465,16 @@ export function drawStaveAnnotations(
     rawCtx.restore();
   }
 
-  // Repeat-count label ("×N") above the right barline when times > 2
+  // Repeat-count label ("×N") just above the right barline when times > 2
   const hasRepeatEnd = m.barlineEnd === "repeat-end" || m.barlineEnd === "repeat-both";
   if (hasRepeatEnd && m.repeatTimes && m.repeatTimes > 2) {
     rawCtx.save();
-    rawCtx.font = "italic bold 11px serif";
+    rawCtx.font = "italic bold 16px serif";
+    rawCtx.textBaseline = "bottom";
     rawCtx.fillStyle = INK;
     const label = `\u00D7${m.repeatTimes}`;
     const tw = rawCtx.measureText(label).width;
-    rawCtx.fillText(label, x + width - tw - 6, y - 4);
+    rawCtx.fillText(label, x + width - tw - 4, y + 14);
     rawCtx.restore();
   }
 }
@@ -666,6 +692,19 @@ export function renderMeasure(
     aboveStaveCtx.stroke();
     aboveStaveCtx.fillStyle = INK;
     aboveStaveCtx.fillText(ann.text, rehX + (boxSize - pad * 2 - tw) / 2, aboveY + boxSize / 2 + 7);
+    aboveStaveCtx.restore();
+  }
+
+  // Repeat-count label ("×N") just above the right barline when times > 2
+  const hasRepeatEndStd = (m.barlineEnd === "repeat-end" || m.barlineEnd === "repeat-both") && !isSecondaryStaveLocal;
+  if (hasRepeatEndStd && m.repeatTimes && m.repeatTimes > 2 && aboveStaveCtx.save) {
+    aboveStaveCtx.save();
+    aboveStaveCtx.font = "italic bold 16px serif";
+    aboveStaveCtx.textBaseline = "bottom";
+    aboveStaveCtx.fillStyle = INK;
+    const label = `\u00D7${m.repeatTimes}`;
+    const tw = aboveStaveCtx.measureText(label).width;
+    aboveStaveCtx.fillText(label, x + width - tw - 4, y + 14);
     aboveStaveCtx.restore();
   }
 
@@ -1067,13 +1106,21 @@ export function renderMeasure(
             .map((h, idx) => (h.tied ? idx : -1))
             .filter((idx) => idx >= 0);
           if (tiedIndices.length > 0) {
+            // Split ties by pitch: top half of tied heads curve up, bottom
+            // half curve down. If all tied ties curve the same way the arcs
+            // stack within ~10px of each other and merge visually — looked
+            // like only one tie for a 3-note chord.
+            const dirByIdx = computeChordTieDirections(ev.heads, tiedIndices);
             for (const headIdx of tiedIndices) {
-              new StaveTie({
+              const tie = new StaveTie({
                 firstNote: staveNotes[i],
                 lastNote: staveNotes[i + 1],
                 firstIndexes: [headIdx],
                 lastIndexes: [headIdx],
-              }).setContext(ctx.context).draw();
+              });
+              const dir = dirByIdx.get(headIdx);
+              if (dir !== undefined) tie.setDirection(dir);
+              tie.setContext(ctx.context).draw();
             }
           }
         }
