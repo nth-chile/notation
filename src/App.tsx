@@ -6,6 +6,7 @@ import { TextInput } from "./components/TextInput";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { PluginPanel } from "./components/PluginPanel";
 import { CheatSheet } from "./components/CheatSheet";
+import { WhatsNew, shouldShowWhatsNew } from "./components/WhatsNew";
 import { CommandPalette } from "./components/CommandPalette";
 import { HistoryModal, showHistoryModal } from "./components/HistoryModal";
 import { ToastContainer, showToast } from "./components/Toast";
@@ -48,6 +49,12 @@ export function App() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [pluginsVisible, setPluginsVisible] = useState(false);
   const [cheatSheetVisible, setCheatSheetVisible] = useState(false);
+  const [whatsNewVisible, setWhatsNewVisible] = useState(() => shouldShowWhatsNew());
+  const [whatsNewManual, setWhatsNewManual] = useState(false);
+  const openWhatsNew = useCallback(() => {
+    setWhatsNewManual(true);
+    setWhatsNewVisible(true);
+  }, []);
   const [helpSeen, setHelpSeen] = useState(() => {
     try { return localStorage.getItem("nubium.helpSeen") === "true"; } catch { return true; }
   });
@@ -309,23 +316,27 @@ export function App() {
     return () => { if (unlisten) unlisten(); };
   }, [handleOpen]);
 
-  // OS Help menu → open Getting Started.
+  // OS Help menu → open Getting Started or What's New.
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlistenGS: (() => void) | undefined;
+    let unlistenWN: (() => void) | undefined;
     (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        unlisten = await listen("nubium://show-getting-started", () => {
+        unlistenGS = await listen("nubium://show-getting-started", () => {
           setCheatSheetVisible(true);
           try { localStorage.setItem("nubium.helpSeen", "true"); } catch { /* ignore */ }
           setHelpSeen(true);
+        });
+        unlistenWN = await listen("nubium://show-whats-new", () => {
+          openWhatsNew();
         });
       } catch {
         // Not running under Tauri.
       }
     })();
-    return () => { if (unlisten) unlisten(); };
-  }, []);
+    return () => { if (unlistenGS) unlistenGS(); if (unlistenWN) unlistenWN(); };
+  }, [openWhatsNew]);
 
   return (
     <TooltipProvider delayDuration={600} skipDelayDuration={400}>
@@ -360,6 +371,12 @@ export function App() {
       <CheatSheet
         visible={cheatSheetVisible}
         onClose={() => setCheatSheetVisible(false)}
+        onOpenWhatsNew={() => { setCheatSheetVisible(false); openWhatsNew(); }}
+      />
+      <WhatsNew
+        visible={whatsNewVisible}
+        manual={whatsNewManual}
+        onClose={() => { setWhatsNewVisible(false); setWhatsNewManual(false); }}
       />
       <CommandPalette pluginManager={pluginManagerRef.current} />
       <HistoryModal />
