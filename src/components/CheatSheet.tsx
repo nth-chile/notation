@@ -6,6 +6,7 @@ import { openExternal } from "../utils/openExternal";
 interface CheatSheetProps {
   visible: boolean;
   onClose: () => void;
+  onOpenWhatsNew?: () => void;
 }
 
 const HELP_BASE = "https://nubium.rocks/help";
@@ -135,7 +136,7 @@ function TopicGrid() {
   );
 }
 
-export function CheatSheet({ visible, onClose }: CheatSheetProps) {
+export function CheatSheet({ visible, onClose, onOpenWhatsNew }: CheatSheetProps) {
   const paletteBinding = getSettings().keyBindings["command-palette"];
   const paletteParts = paletteBinding ? getBindingParts(paletteBinding) : [];
 
@@ -165,6 +166,17 @@ export function CheatSheet({ visible, onClose }: CheatSheetProps) {
         <AnnotationsSection />
         <ArticulationsSection />
         <TopicGrid />
+
+        {onOpenWhatsNew && (
+          <div className="mt-6 pt-4 border-t border-border text-sm text-muted-foreground">
+            <button
+              onClick={onOpenWhatsNew}
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              See what's new in this version
+            </button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

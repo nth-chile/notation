@@ -12,11 +12,17 @@ The user may provide a version number as an argument (e.g. `/release 0.2.0`). If
 
 3a. **Sync help docs**: Run `npm run sync-docs`. This regenerates the keyboard shortcut tables in `../nubium-website/src/pages/help.astro` from `src/settings/keybindings.ts`. If it modified the website file (run `git -C ../nubium-website status --short src/pages/help.astro`), tell the user to review and push the website repo before continuing. Don't block — just surface it.
 
+3b. **Auto-fill `## Unreleased` from commits**: Run `npm run sync-changelog`. This appends commit subjects since the last release tag (skipping chore/refactor/test/ci/build/docs and merges) into the Unreleased section, deduped against existing items. Idempotent — safe to run multiple times.
+
+3c. **Review and clean Unreleased**: Read `CHANGELOG.md`. The auto-filled entries are commit subjects, not user prose. Rewrite them in plain user language, merge duplicates with hand-written entries, drop anything purely internal that slipped through. Stop and tell the user if Unreleased ends up empty — every release needs at least one user-facing line.
+
+3d. **Promote `## Unreleased`**: Rename the heading to `## {VERSION} — {YYYY-MM}` (use the current month) and insert a fresh empty `## Unreleased` section above it.
+
 4. **Bump version**: Update `"version"` in `src-tauri/tauri.conf.json`
 
 5. **Commit, tag, push**:
    ```
-   git add src-tauri/tauri.conf.json
+   git add src-tauri/tauri.conf.json CHANGELOG.md
    git commit -m "Release v{VERSION}"
    git tag v{VERSION}
    git push origin main v{VERSION}
@@ -36,3 +42,4 @@ The user may provide a version number as an argument (e.g. `/release 0.2.0`). If
 - The `updater` CI job signs artifacts and generates `latest.json` automatically.
 - If CI fails on macOS/Linux, check the logs with `gh run view {ID} --log-failed` and diagnose.
 - Don't create a second release to "test" anything — one release per invocation.
+- The CHANGELOG entry surfaces in two places: the in-app "What's new" modal on first launch after update, and the website `/changelog` page. Write user-facing language, not commit messages.

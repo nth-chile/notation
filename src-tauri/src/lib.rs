@@ -32,14 +32,17 @@ pub fn run() {
             {
                 let getting_started = MenuItemBuilder::with_id("getting-started", "Getting Started")
                     .build(app)?;
+                let whats_new = MenuItemBuilder::with_id("whats-new", "What's New")
+                    .build(app)?;
                 let menu = Menu::default(app.handle())?;
 
                 // Tauri's default macOS menu already includes a Help submenu.
-                // Find it and add our item, rather than appending a second Help.
+                // Find it and add our items, rather than appending a second Help.
                 let mut added = false;
                 for item in menu.items()? {
                     if let tauri::menu::MenuItemKind::Submenu(submenu) = item {
                         if submenu.text().ok().as_deref() == Some("Help") {
+                            submenu.prepend(&whats_new)?;
                             submenu.prepend(&getting_started)?;
                             added = true;
                             break;
@@ -49,6 +52,7 @@ pub fn run() {
                 if !added {
                     let help_menu = SubmenuBuilder::new(app, "Help")
                         .item(&getting_started)
+                        .item(&whats_new)
                         .build()?;
                     menu.append(&help_menu)?;
                 }
@@ -73,6 +77,8 @@ pub fn run() {
         .on_menu_event(|app, event| {
             if event.id() == "getting-started" {
                 let _ = app.emit("nubium://show-getting-started", ());
+            } else if event.id() == "whats-new" {
+                let _ = app.emit("nubium://show-whats-new", ());
             }
         })
         .invoke_handler(tauri::generate_handler![

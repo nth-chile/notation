@@ -35,7 +35,11 @@ Comment on the GitHub issue with:
 
 Format: `gh issue comment <number> --body "..."`
 
-## Step 6: Commit
+## Step 6: Update Changelog
+
+If the fix is user-visible, add a one-line entry under `## Unreleased` in `CHANGELOG.md`. Use plain user language, not commit-speak. Skip if the fix is purely internal.
+
+## Step 7: Commit
 
 Stage and commit the changes with a message referencing the issue number.
 

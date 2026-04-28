@@ -45,6 +45,7 @@ Fix the real bugs:
 2. Make the minimal correct fix
 3. Run `npm run test` after each fix
 4. Comment on each issue with what was fixed and clear test steps
+5. Add a one-line, user-facing entry under `## Unreleased` in `CHANGELOG.md` for any user-visible fix. Skip purely internal/test-only changes.
 
 ## Step 6: Write Tests
 
