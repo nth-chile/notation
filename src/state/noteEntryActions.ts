@@ -451,6 +451,7 @@ export function createNoteEntryActions(get: GetState, set: SetState, history: Co
       // only to that head instead of the whole chord.
       if (state.noteSelection) {
         const ns = state.noteSelection;
+        history.pushSnapshot({ score: state.score, inputState: state.inputState });
         const score = structuredClone(state.score);
         const singleEvent =
           ns.startMeasure === ns.endMeasure && ns.startEvent === ns.endEvent;
@@ -490,6 +491,7 @@ export function createNoteEntryActions(get: GetState, set: SetState, history: Co
       // Bar-level selection: apply accidental to all pitched events
       if (state.selection && !state.inputState.noteEntry) {
         const { partIndex, measureStart, measureEnd } = state.selection;
+        history.pushSnapshot({ score: state.score, inputState: state.inputState });
         const score = structuredClone(state.score);
         const part = score.parts[partIndex];
         if (part) {

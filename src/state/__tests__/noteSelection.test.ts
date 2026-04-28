@@ -147,6 +147,36 @@ describe("Note-level selection", () => {
     expect(useEditorStore.getState().score.parts[0].measures[0].voices[0].events).toHaveLength(4);
   });
 
+  it("toggleArticulation with noteSelection is undoable", () => {
+    useEditorStore.getState().setNoteSelection({
+      partIndex: 0, voiceIndex: 0, startMeasure: 0, startEvent: 0, endMeasure: 0, endEvent: 1, anchorMeasure: 0, anchorEvent: 0,
+    });
+    useEditorStore.getState().toggleArticulation("staccato");
+
+    const events = useEditorStore.getState().score.parts[0].measures[0].voices[0].events;
+    if (events[0].kind === "note") expect(events[0].articulations?.some((a: { kind: string }) => a.kind === "staccato")).toBe(true);
+    if (events[1].kind === "note") expect(events[1].articulations?.some((a: { kind: string }) => a.kind === "staccato")).toBe(true);
+
+    useEditorStore.getState().undo();
+    const undone = useEditorStore.getState().score.parts[0].measures[0].voices[0].events;
+    if (undone[0].kind === "note") expect(undone[0].articulations).toBeUndefined();
+    if (undone[1].kind === "note") expect(undone[1].articulations).toBeUndefined();
+  });
+
+  it("setAccidental with noteSelection is undoable", () => {
+    useEditorStore.getState().setNoteSelection({
+      partIndex: 0, voiceIndex: 0, startMeasure: 0, startEvent: 0, endMeasure: 0, endEvent: 1, anchorMeasure: 0, anchorEvent: 0,
+    });
+    useEditorStore.getState().setAccidental("sharp");
+
+    const events = useEditorStore.getState().score.parts[0].measures[0].voices[0].events;
+    if (events[0].kind === "note") expect(events[0].head.pitch.accidental).toBe("sharp");
+
+    useEditorStore.getState().undo();
+    const undone = useEditorStore.getState().score.parts[0].measures[0].voices[0].events;
+    if (undone[0].kind === "note") expect(undone[0].head.pitch.accidental).toBe("natural");
+  });
+
   it("setDuration with noteSelection changes selected event durations", () => {
     useEditorStore.getState().setNoteSelection({
       partIndex: 0, voiceIndex: 0, startMeasure: 0, startEvent: 0, endMeasure: 0, endEvent: 1, anchorMeasure: 0, anchorEvent: 0,

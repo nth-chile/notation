@@ -112,6 +112,7 @@ export function createArticulationActions(get: GetState, set: SetState, history:
       // Note-level selection
       if (state.noteSelection) {
         const ns = state.noteSelection;
+        history.pushSnapshot({ score: state.score, inputState: state.inputState });
         const score = structuredClone(state.score);
         for (let mi = ns.startMeasure; mi <= ns.endMeasure; mi++) {
           const voice = score.parts[ns.partIndex]?.measures[mi]?.voices[ns.voiceIndex];
@@ -130,6 +131,7 @@ export function createArticulationActions(get: GetState, set: SetState, history:
       // Bar-level selection
       if (state.selection && !state.inputState.noteEntry) {
         const { partIndex, measureStart, measureEnd } = state.selection;
+        history.pushSnapshot({ score: state.score, inputState: state.inputState });
         const score = structuredClone(state.score);
         const part = score.parts[partIndex];
         if (part) {
@@ -181,6 +183,7 @@ export function createArticulationActions(get: GetState, set: SetState, history:
 
       if (state.noteSelection) {
         const ns = state.noteSelection;
+        history.pushSnapshot({ score: state.score, inputState: state.inputState });
         const score = structuredClone(state.score);
         for (let mi = ns.startMeasure; mi <= ns.endMeasure; mi++) {
           const voice = score.parts[ns.partIndex]?.measures[mi]?.voices[ns.voiceIndex];
@@ -198,6 +201,7 @@ export function createArticulationActions(get: GetState, set: SetState, history:
 
       if (state.selection && !state.inputState.noteEntry) {
         const { partIndex: pi, measureStart, measureEnd } = state.selection;
+        history.pushSnapshot({ score: state.score, inputState: state.inputState });
         const score = structuredClone(state.score);
         const p = score.parts[pi];
         if (p) {
