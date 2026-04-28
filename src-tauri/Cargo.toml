@@ -1,6 +1,6 @@
 [package]
 name = "nubium"
-version = "0.1.0"
+version = "0.1.1"
 description = "AI-native music notation editor"
 authors = ["Nubium Contributors"]
 edition = "2021"
