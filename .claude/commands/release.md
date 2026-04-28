@@ -10,6 +10,8 @@ The user may provide a version number as an argument (e.g. `/release 0.2.0`). If
 
 3. **Check for uncommitted changes**: Run `git status`. If there are uncommitted changes, stop and tell the user to commit first.
 
+3a. **Sync help docs**: Run `npm run sync-docs`. This regenerates the keyboard shortcut tables in `../nubium-website/src/pages/help.astro` from `src/settings/keybindings.ts`. If it modified the website file (run `git -C ../nubium-website status --short src/pages/help.astro`), tell the user to review and push the website repo before continuing. Don't block — just surface it.
+
 4. **Bump version**: Update `"version"` in `src-tauri/tauri.conf.json`
 
 5. **Commit, tag, push**:
