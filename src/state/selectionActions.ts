@@ -148,6 +148,7 @@ export function createSelectionActions(get: GetState, set: SetState, history: Co
         }
       }
 
+      history.pushSnapshot({ score: state.score, inputState: state.inputState });
       const score = structuredClone(state.score);
       // Delete selected events across measures (reverse order to preserve indices)
       for (let mi = ns.endMeasure; mi >= ns.startMeasure; mi--) {
