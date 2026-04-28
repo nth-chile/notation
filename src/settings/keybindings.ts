@@ -147,6 +147,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: "toggle-right-sidebar", label: "Toggle right sidebar", category: "UI", defaultBinding: { key: "b", ctrl: true, shift: true } },
   { id: "command-palette", label: "Command palette", category: "UI", defaultBinding: { key: "p", ctrl: true, shift: true } },
   { id: "toggle-plugins", label: "Toggle plugins", category: "UI", defaultBinding: { key: "e", ctrl: true, shift: true } },
+  { id: "cheat-sheet", label: "Keyboard shortcuts", category: "UI", defaultBinding: { key: "?", shift: true } },
   { id: "file-history", label: "File history", category: "File", defaultBinding: { key: "h", ctrl: true, shift: true } },
   { id: "go-to-measure", label: "Go to measure", category: "Navigation", defaultBinding: { key: "g", ctrl: true } },
 
@@ -283,8 +284,8 @@ const CODE_TO_KEY: Record<string, string> = {
 /** Check if a keyboard event matches a binding. ctrl maps to metaKey on Mac. */
 export function matchesBinding(e: KeyboardEvent, binding: KeyBinding): boolean {
   const key = e.key.toLowerCase();
-  // For shifted keys like > < ^, compare against e.key directly
-  if (binding.key === ">" || binding.key === "<" || binding.key === "^") {
+  // For shifted keys like > < ^ ?, compare against e.key directly
+  if (binding.key === ">" || binding.key === "<" || binding.key === "^" || binding.key === "?") {
     if (e.key !== binding.key) return false;
   } else if (key !== binding.key) {
     // Shift changes e.key for digits (e.g., Shift+2 → "@"), so fall back to e.code

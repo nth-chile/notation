@@ -4,6 +4,7 @@ import { initRenderer } from "../renderer";
 import { renderScore, calculateContentHeight } from "../renderer";
 import { ScoreOverlay } from "./ScoreOverlay";
 import { AnnotationPopover } from "./DynamicsPopover";
+import { EmptyScoreHint } from "./EmptyScoreHint";
 import { getSettings, subscribeSettings, type DisplaySettings } from "../settings";
 import { getMeasureIndexForTick } from "../playback/TonePlayback";
 import type { AnnotationFilter, ViewConfig } from "../views/ViewMode";
@@ -331,6 +332,7 @@ export function ScoreCanvas() {
       <canvas ref={canvasRef} style={{ display: "block" }} />
       <ScoreOverlay width={containerWidth / zoom} height={canvasHeight} zoom={zoom} />
       <AnnotationPopover />
+      <EmptyScoreHint />
     </div>
   );
 }
