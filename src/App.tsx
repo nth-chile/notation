@@ -285,6 +285,7 @@ export function App() {
   // Launch tasks: telemetry ping + update check
   useEffect(() => {
     import("./telemetry").then((m) => m.sendLaunchPing());
+    import("./playback/jackTransport").then((m) => m.tryAutoConnect());
     checkForUpdates();
   }, []);
 

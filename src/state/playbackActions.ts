@@ -8,6 +8,7 @@ import { SetLyric } from "../commands/SetLyric";
 import type { AnnotationBox } from "../renderer/vexBridge";
 import { getGlobalPluginManager } from "../plugins/PluginManager";
 import { computePlaybackOrder } from "../playback/PlaybackOrder";
+import * as jack from "../playback/jackTransport";
 import type { Score } from "../model";
 import type { StoreApi } from "zustand";
 
@@ -85,6 +86,14 @@ export function createPlaybackActions(get: GetState, set: SetState, history: Com
 
       await service.play(state.score, startTick, measureRange);
       set({ isPlaying: true });
+
+      if (jack.isJackConnected()) {
+        const seekTick = measureRange ? 0 : startTick;
+        jack
+          .locateTick(seekTick, state.score.tempo)
+          .then(() => jack.start())
+          .catch((e) => console.warn("JACK transport sync failed:", e));
+      }
     },
 
     pause() {
@@ -92,6 +101,10 @@ export function createPlaybackActions(get: GetState, set: SetState, history: Com
       if (!service) return;
       service.pause();
       set({ isPlaying: false, playbackTick: null });
+
+      if (jack.isJackConnected()) {
+        jack.stop().catch(() => {});
+      }
     },
 
     stopPlayback() {
@@ -107,6 +120,10 @@ export function createPlaybackActions(get: GetState, set: SetState, history: Com
           cursor: { ...state.inputState.cursor, measureIndex: 0, eventIndex: 0 },
         },
       });
+
+      if (jack.isJackConnected()) {
+        jack.stop().then(() => jack.locate(0)).catch(() => {});
+      }
     },
 
     setTempo(bpm: number) {
