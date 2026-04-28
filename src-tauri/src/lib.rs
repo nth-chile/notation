@@ -1,7 +1,9 @@
 mod commands;
+mod jack_transport;
 mod midi;
 
 use tauri::{Emitter, Manager};
+use tauri::menu::{Menu, MenuItemBuilder, SubmenuBuilder};
 use std::sync::Mutex;
 
 /// Holds the path of a file requested before the frontend was ready to receive events.
@@ -25,6 +27,35 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
 
+            // Native Help menu — adds "Help → Getting Started" to the OS menu bar.
+            #[cfg(desktop)]
+            {
+                let getting_started = MenuItemBuilder::with_id("getting-started", "Getting Started")
+                    .build(app)?;
+                let menu = Menu::default(app.handle())?;
+
+                // Tauri's default macOS menu already includes a Help submenu.
+                // Find it and add our item, rather than appending a second Help.
+                let mut added = false;
+                for item in menu.items()? {
+                    if let tauri::menu::MenuItemKind::Submenu(submenu) = item {
+                        if submenu.text().ok().as_deref() == Some("Help") {
+                            submenu.prepend(&getting_started)?;
+                            added = true;
+                            break;
+                        }
+                    }
+                }
+                if !added {
+                    let help_menu = SubmenuBuilder::new(app, "Help")
+                        .item(&getting_started)
+                        .build()?;
+                    menu.append(&help_menu)?;
+                }
+
+                app.set_menu(menu)?;
+            }
+
             // Handle file path passed as CLI arg (Windows/Linux double-click).
             #[cfg(not(target_os = "macos"))]
             {
@@ -39,6 +70,11 @@ pub fn run() {
             }
             Ok(())
         })
+        .on_menu_event(|app, event| {
+            if event.id() == "getting-started" {
+                let _ = app.emit("nubium://show-getting-started", ());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::save_file,
             commands::load_file,
@@ -46,6 +82,12 @@ pub fn run() {
             midi::midi_list_inputs,
             midi::midi_connect,
             midi::midi_disconnect,
+            jack_transport::jack_connect,
+            jack_transport::jack_disconnect,
+            jack_transport::jack_transport_start,
+            jack_transport::jack_transport_stop,
+            jack_transport::jack_transport_locate,
+            jack_transport::jack_transport_query,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

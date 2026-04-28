@@ -5,6 +5,7 @@ import { KeyboardShortcuts, emitFlash } from "./components/KeyboardShortcuts";
 import { TextInput } from "./components/TextInput";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { PluginPanel } from "./components/PluginPanel";
+import { CheatSheet } from "./components/CheatSheet";
 import { CommandPalette } from "./components/CommandPalette";
 import { HistoryModal, showHistoryModal } from "./components/HistoryModal";
 import { ToastContainer, showToast } from "./components/Toast";
@@ -46,6 +47,19 @@ export function App() {
   const setFilePath = useEditorStore((s) => s.setFilePath);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [pluginsVisible, setPluginsVisible] = useState(false);
+  const [cheatSheetVisible, setCheatSheetVisible] = useState(false);
+  const [helpSeen, setHelpSeen] = useState(() => {
+    try { return localStorage.getItem("nubium.helpSeen") === "true"; } catch { return true; }
+  });
+  const toggleCheatSheet = useCallback(() => {
+    setCheatSheetVisible((v) => {
+      if (!v) {
+        try { localStorage.setItem("nubium.helpSeen", "true"); } catch { /* ignore */ }
+        setHelpSeen(true);
+      }
+      return !v;
+    });
+  }, []);
   const [nagVisible, setNagVisible] = useState(false);
 
   // Plugin manager singleton
@@ -238,6 +252,7 @@ export function App() {
       "toggle-left-sidebar": () => useLayoutStore.getState().toggleSidebar("left"),
       "toggle-right-sidebar": () => useLayoutStore.getState().toggleSidebar("right"),
       "toggle-plugins": () => setPluginsVisible((v) => !v),
+      "cheat-sheet": toggleCheatSheet,
       "file-history": () => showHistoryModal(),
       "zoom:in": () => {
         const next = Math.min(3, Math.round((getSettings().scoreZoom + 0.1) * 10) / 10);
@@ -293,6 +308,24 @@ export function App() {
     return () => { if (unlisten) unlisten(); };
   }, [handleOpen]);
 
+  // OS Help menu → open Getting Started.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen("nubium://show-getting-started", () => {
+          setCheatSheetVisible(true);
+          try { localStorage.setItem("nubium.helpSeen", "true"); } catch { /* ignore */ }
+          setHelpSeen(true);
+        });
+      } catch {
+        // Not running under Tauri.
+      }
+    })();
+    return () => { if (unlisten) unlisten(); };
+  }, []);
+
   return (
     <TooltipProvider delayDuration={600} skipDelayDuration={400}>
     <div className="flex flex-col h-screen w-screen overflow-hidden">
@@ -300,6 +333,8 @@ export function App() {
       <Toolbar
         onToggleSettings={() => setSettingsVisible((v) => !v)}
         onTogglePlugins={() => setPluginsVisible((v) => !v)}
+        onToggleCheatSheet={toggleCheatSheet}
+        helpSeen={helpSeen}
         onNew={handleNew}
         onOpen={handleOpen}
         onSave={handleSave}
@@ -320,6 +355,10 @@ export function App() {
         visible={pluginsVisible}
         onClose={() => setPluginsVisible(false)}
         pluginManager={pluginManagerRef.current}
+      />
+      <CheatSheet
+        visible={cheatSheetVisible}
+        onClose={() => setCheatSheetVisible(false)}
       />
       <CommandPalette pluginManager={pluginManagerRef.current} />
       <HistoryModal />

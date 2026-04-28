@@ -143,7 +143,11 @@
       "Bash(TAURI_SIGNING_PRIVATE_KEY=$\\(cat src-tauri/keys/nubium.key\\) TAURI_SIGNING_PRIVATE_KEY_PASSWORD=\"\" npx tauri signer sign /tmp/nubium-b6/Nubium_x64.app.tar.gz)",
       "Bash(npx wrangler:*)",
       "Bash(xargs -I {} git show {}:src/components/SettingsPanel.tsx)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Read(//private/tmp/doc-icon.iconset/**)",
+      "Bash(/Users/jared/work/nubium/src-tauri/icons/generate-doc-icon.sh:*)",
+      "Bash(git -C /Users/jared/work/nubium log --oneline -p -- src/commands/DeleteNote.ts src/state/noteEntryActions.ts src/commands/CommandHistory.ts)",
+      "Bash(git -C /Users/jared/work/nubium show --stat d61fa26)"
     ]
   }
 }

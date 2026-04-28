@@ -20,7 +20,7 @@ import { useLayoutStore } from "../state/LayoutState";
 import { useHotkey } from "../hooks/useHotkey";
 import { TooltipButton } from "./ui/tooltip-button";
 import { Separator } from "./ui/separator";
-import { PanelLeft, PanelRight, Undo2, Redo2, Settings, Puzzle } from "lucide-react";
+import { PanelLeft, PanelRight, Undo2, Redo2, Settings, Puzzle, HelpCircle } from "lucide-react";
 import { ContextMenu, ContextMenuCheckbox, ContextMenuSeparator, ContextMenuItem, ContextMenuLabel } from "./ui/context-menu";
 import { cn } from "@/lib/utils";
 import type { PanelRegistration } from "../plugins/PluginManager";
@@ -36,6 +36,8 @@ export interface ToolbarGroup {
 interface ToolbarProps {
   onToggleSettings?: () => void;
   onTogglePlugins?: () => void;
+  onToggleCheatSheet?: () => void;
+  helpSeen?: boolean;
   onNew?: () => void;
   onOpen?: () => void;
   onSave?: () => void;
@@ -149,7 +151,7 @@ function useToolbarRow(
   }, [row, allGroups, toolbarOrder, toolbarHidden]);
 }
 
-export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSave, toolbarPanels = [] }: ToolbarProps) {
+export function Toolbar({ onToggleSettings, onTogglePlugins, onToggleCheatSheet, helpSeen = true, onNew, onOpen, onSave, toolbarPanels = [] }: ToolbarProps) {
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
   const hotkey = useHotkey();
@@ -349,8 +351,22 @@ export function Toolbar({ onToggleSettings, onTogglePlugins, onNew, onOpen, onSa
               </SortableContext>
             </ScrollFade>
 
-            {/* Right: plugins + settings */}
+            {/* Right: shortcuts + plugins + settings */}
             <div className="flex items-center gap-1 justify-end">
+              {onToggleCheatSheet && (
+                <div className="relative">
+                  <TooltipButton variant="ghost" size="icon" onClick={onToggleCheatSheet} tooltip="Getting started (?)" actionId="cheat-sheet">
+                    <HelpCircle className="h-4 w-4" />
+                  </TooltipButton>
+                  {!helpSeen && (
+                    <span className="pointer-events-none absolute top-1 right-1 flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 animate-ping" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                    </span>
+                  )}
+                </div>
+              )}
+
               {onTogglePlugins && (
                 <TooltipButton variant="ghost" size="icon" onClick={onTogglePlugins} tooltip={`Plugins (${hotkey("toggle-plugins")})`} actionId="toggle-plugins">
                   <Puzzle className="h-4 w-4" />
