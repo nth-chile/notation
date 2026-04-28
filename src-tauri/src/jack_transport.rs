@@ -7,7 +7,7 @@ pub struct JackQuery {
     pub sample_rate: u32,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 mod imp {
     use super::JackQuery;
     use jack::{AsyncClient, Client, ClientOptions, Control, ProcessHandler, ProcessScope};
@@ -101,7 +101,7 @@ mod imp {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(target_os = "linux"))]
 mod imp {
     use super::JackQuery;
     fn unsupported<T>() -> Result<T, String> {
