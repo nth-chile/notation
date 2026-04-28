@@ -123,6 +123,30 @@ describe("Note-level selection", () => {
     expect(useEditorStore.getState().inputState.cursor.eventIndex).toBe(2);
   });
 
+  it("deleteNoteSelection is undoable", () => {
+    useEditorStore.getState().setNoteSelection({
+      partIndex: 0, voiceIndex: 0, startMeasure: 0, startEvent: 1, endMeasure: 0, endEvent: 1, anchorMeasure: 0, anchorEvent: 1,
+    });
+    useEditorStore.getState().deleteNoteSelection();
+    expect(useEditorStore.getState().score.parts[0].measures[0].voices[0].events).toHaveLength(3);
+
+    useEditorStore.getState().undo();
+    const events = useEditorStore.getState().score.parts[0].measures[0].voices[0].events;
+    expect(events).toHaveLength(4);
+    if (events[1].kind === "note") expect(events[1].head.pitch.pitchClass).toBe("D");
+  });
+
+  it("deleteNoteSelection across multiple events is undoable", () => {
+    useEditorStore.getState().setNoteSelection({
+      partIndex: 0, voiceIndex: 0, startMeasure: 0, startEvent: 1, endMeasure: 0, endEvent: 2, anchorMeasure: 0, anchorEvent: 1,
+    });
+    useEditorStore.getState().deleteNoteSelection();
+    expect(useEditorStore.getState().score.parts[0].measures[0].voices[0].events).toHaveLength(2);
+
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().score.parts[0].measures[0].voices[0].events).toHaveLength(4);
+  });
+
   it("setDuration with noteSelection changes selected event durations", () => {
     useEditorStore.getState().setNoteSelection({
       partIndex: 0, voiceIndex: 0, startMeasure: 0, startEvent: 0, endMeasure: 0, endEvent: 1, anchorMeasure: 0, anchorEvent: 0,
