@@ -39,8 +39,7 @@
         "ext": ["musicxml", "mxl", "xml"],
         "name": "MusicXML",
         "description": "MusicXML score",
-        "role": "Editor",
-        "icon": "icons/doc-icon.icns"
+        "role": "Editor"
       }
     ]
   },
