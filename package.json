@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "sync-docs": "tsx scripts/sync-help-docs.ts",
     "prepare": "husky"
   },
   "dependencies": {
@@ -61,6 +62,7 @@
     "jsdom": "^29.0.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.1",
     "vitest": "^3.1.1"
