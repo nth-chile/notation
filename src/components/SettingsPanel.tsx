@@ -73,6 +73,7 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
   const [settings, setSettings] = useState<AppSettings>(getSettings());
   const [tab, setTab] = useState<SettingsTab>("settings");
   const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackEmail, setFeedbackEmail] = useState("");
   const [feedbackSent, setFeedbackSent] = useState(false);
 
   useEffect(() => {
@@ -158,26 +159,41 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
                   rows={5}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
                 />
+                <input
+                  type="email"
+                  value={feedbackEmail}
+                  onChange={(e) => setFeedbackEmail(e.target.value)}
+                  placeholder="Email (optional, if you want a reply)"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
                 <Button
                   disabled={!feedbackText.trim()}
                   className="w-full"
                   onClick={async () => {
+                    const payload: Record<string, string> = { message: feedbackText };
+                    if (feedbackEmail.trim()) payload.email = feedbackEmail.trim();
                     try {
                       const res = await fetch("https://formspree.io/f/xgopavpe", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ message: feedbackText }),
+                        body: JSON.stringify(payload),
                       });
                       if (res.ok) {
                         setFeedbackText("");
+                        setFeedbackEmail("");
                         setFeedbackSent(true);
                       }
                     } catch {
                       // Fallback to mailto if fetch fails
                       const subject = encodeURIComponent("Nubium Feedback");
-                      const body = encodeURIComponent(feedbackText);
+                      const body = encodeURIComponent(
+                        feedbackEmail.trim()
+                          ? `${feedbackText}\n\nReply to: ${feedbackEmail.trim()}`
+                          : feedbackText,
+                      );
                       window.open(`mailto:feedback@nubium.app?subject=${subject}&body=${body}`, "_blank");
                       setFeedbackText("");
+                      setFeedbackEmail("");
                       setFeedbackSent(true);
                     }
                   }}
