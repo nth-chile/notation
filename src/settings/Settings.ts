@@ -22,6 +22,7 @@ export interface AppSettings {
   startInInsertMode: boolean;
   followPlaybackCursor: boolean;
   scoreZoom: number;
+  jackAutoConnect: boolean;
 }
 
 const STORAGE_KEY = "nubium-settings";
@@ -55,6 +56,7 @@ function defaultSettings(): AppSettings {
     startInInsertMode: false,
     followPlaybackCursor: true,
     scoreZoom: 1,
+    jackAutoConnect: false,
   };
 }
 

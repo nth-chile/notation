@@ -12,6 +12,7 @@ import { Soundfont } from "smplr";
 import * as Tone from "tone";
 import * as Transport from "../../playback/TonePlayback";
 import type { NotePlayer } from "../../playback/TonePlayback";
+import * as jack from "../../playback/jackTransport";
 
 // --- SoundFont instrument player ---
 
@@ -256,6 +257,12 @@ export function registerCoreTransport(pm: PluginManager): void {
   pm.registerCoreCommand("nubium.play", "Play", () => { useEditorStore.getState().play(); });
   pm.registerCoreCommand("nubium.pause", "Pause", () => { useEditorStore.getState().pause(); });
   pm.registerCoreCommand("nubium.stop", "Stop Playback", () => { useEditorStore.getState().stopPlayback(); });
+  pm.registerCoreCommand("nubium.jack-connect", "JACK: Connect Transport", () => {
+    jack.connect().catch((e) => console.warn("JACK connect failed:", e));
+  });
+  pm.registerCoreCommand("nubium.jack-disconnect", "JACK: Disconnect Transport", () => {
+    jack.disconnect().catch(() => {});
+  });
 }
 
 // --- Built-in Instruments plugin ---
