@@ -4,11 +4,14 @@ All notable changes to Nubium are listed here. Newest first.
 
 ## Unreleased
 
+## 0.1.2 — 2026-04
+
 - Getting Started help modal and onboarding affordances for new users.
 - Undo snapshots now cover selection-based articulation, accidental, and delete edits.
 - Optional email field on the in-app feedback form so we can reply.
 - "What's new" modal pops on first launch after an update; also accessible from Help menu.
 - Public changelog page on the website.
+- Outbound JACK transport sync: Nubium's playback now drives connected JACK clients on macOS and Linux.
 
 ## 0.1.1 — 2026-04
 
