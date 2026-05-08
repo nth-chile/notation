@@ -4,6 +4,8 @@ import type { NoteBox } from "../renderer/vexBridge";
 import { previewPitches } from "../playback/TonePlayback";
 import { pitchToMidi } from "../model/pitch";
 import { STANDARD_TUNING } from "../model/guitar";
+import { pitchToStaffY, staffYToPitch } from "../renderer";
+import { measureCapacity, voiceTicksUsed } from "../model/duration";
 
 const HIT_PADDING = 8; // extra pixels around text for easier clicking
 
@@ -48,11 +50,16 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
   const editAnnotation = useEditorStore((s) => s.editAnnotation);
   const setTitle = useEditorStore((s) => s.setTitle);
   const setComposer = useEditorStore((s) => s.setComposer);
+  const insertNote = useEditorStore((s) => s.insertNote);
+  const noteEntry = useEditorStore((s) => s.inputState.noteEntry);
 
   const [titleValue, setTitleValue] = useState("");
   const [composerValue, setComposerValue] = useState("");
   const titleRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLInputElement>(null);
+
+  // Hover preview shown in note entry mode over a non-tab measure.
+  const [hoverGhost, setHoverGhost] = useState<{ x: number; y: number } | null>(null);
 
   // Selection anchors
   const anchorRef = useRef<{ partIndex: number; measureIndex: number } | null>(null);
@@ -126,6 +133,97 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
     return null;
   }, [measurePositions]);
 
+  /**
+   * Resolve the click into the actual insertion target — the event index that
+   * insertNote would write to, and the x where that note would be drawn.
+   * The same resolver is used for the hover ghost so the preview lines up with
+   * the note that will appear on click.
+   *
+   * "Append past the last event" only applies when the voice has remaining
+   * capacity. A measure already filled (e.g. a whole rest in 4/4) snaps to
+   * the existing event so the click overwrites it — otherwise InsertNote
+   * would auto-advance to the next measure.
+   */
+  const resolveInsertionTarget = useCallback(
+    (x: number, mp: typeof measurePositions[number], voiceIndex: number) => {
+      const partIndex = mp.partIndex;
+      const measureIndex = mp.measureIndex;
+      const measure = score.parts[partIndex]?.measures[measureIndex];
+      const voice = measure?.voices[voiceIndex];
+      const events = voice?.events ?? [];
+      const staveIndex = mp.staveIndex ?? 0;
+
+      const voiceBoxes: { eventIndex: number; box: NoteBox }[] = [];
+      for (const nb of hitBoxes) {
+        if (
+          nb.partIndex === partIndex &&
+          nb.measureIndex === measureIndex &&
+          nb.voiceIndex === voiceIndex &&
+          (nb.staveIndex ?? 0) === staveIndex
+        ) {
+          voiceBoxes.push({ eventIndex: nb.eventIndex, box: nb });
+        }
+      }
+      voiceBoxes.sort((a, b) => a.box.headX - b.box.headX);
+
+      if (voiceBoxes.length === 0) {
+        // No rendered events — fresh empty voice.
+        return { eventIndex: 0, ghostX: mp.noteStartX + 12 };
+      }
+
+      const hasRoom = measure
+        ? voiceTicksUsed(events) < measureCapacity(measure.timeSignature.numerator, measure.timeSignature.denominator)
+        : false;
+
+      const last = voiceBoxes[voiceBoxes.length - 1].box;
+      const lastRight = last.headX + last.headWidth;
+      if (x > lastRight + 4 && hasRoom) {
+        // Past the last event AND voice has remaining ticks → append.
+        return { eventIndex: events.length, ghostX: lastRight + 16 };
+      }
+
+      // Snap to nearest event center (covers rests, full measures, and
+      // clicks before/between events).
+      let best = voiceBoxes[0];
+      let bestDist = Infinity;
+      for (const entry of voiceBoxes) {
+        const cx = entry.box.headX + entry.box.headWidth / 2;
+        const dist = Math.abs(x - cx);
+        if (dist < bestDist) { bestDist = dist; best = entry; }
+      }
+      return {
+        eventIndex: best.eventIndex,
+        ghostX: best.box.headX + best.box.headWidth / 2,
+      };
+    },
+    [hitBoxes, score],
+  );
+
+  /**
+   * Resolve the clef that's actually drawn on the clicked stave. Grand-staff
+   * parts (piano, harp, organ) draw a synthetic bass clef on staff index 1
+   * even though the underlying measure's clef is treble — this mirrors the
+   * renderer (ScoreRenderer applies the same override before rendering).
+   */
+  const clefForStave = useCallback((mp: typeof measurePositions[number]): string => {
+    const measure = score.parts[mp.partIndex]?.measures[mp.measureIndex];
+    const baseClef = measure?.clef?.type ?? "treble";
+    return (mp.staveIndex ?? 0) === 1 ? "bass" : baseClef;
+  }, [score]);
+
+  /** Pick the voice on the clicked stave (preferring the cursor's voice). */
+  const voiceOnStave = useCallback((mp: typeof measurePositions[number]) => {
+    const partIndex = mp.partIndex;
+    const measureIndex = mp.measureIndex;
+    const staveIndex = mp.staveIndex ?? 0;
+    const measure = score.parts[partIndex]?.measures[measureIndex];
+    if (!measure) return 0;
+    const cursorVoice = useEditorStore.getState().inputState.cursor.voiceIndex;
+    if ((measure.voices[cursorVoice]?.staff ?? 0) === staveIndex) return cursorVoice;
+    const idx = measure.voices.findIndex((v) => (v.staff ?? 0) === staveIndex);
+    return idx >= 0 ? idx : 0;
+  }, [score]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return; // left button only
     const { x, y } = toCanvasCoords(e);
@@ -161,10 +259,29 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
   }, [toCanvasCoords, hitTestNote, hitTestMeasure, findNearestNote]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-
     const { x, y } = toCanvasCoords(e);
+    const drag = dragRef.current;
+
+    // Note-entry hover preview: show a ghost notehead at the pitch under the
+    // cursor when not currently dragging a selection. The ghost x snaps to
+    // wherever the inserted note would actually be drawn.
+    if (noteEntry && (!drag || !drag.active)) {
+      const mp = hitTestMeasure(x, y);
+      if (mp && !mp.isTab) {
+        const clefType = clefForStave(mp);
+        const { pitchClass, octave } = staffYToPitch(y, clefType, mp.y);
+        const yPos = pitchToStaffY(pitchClass, octave, clefType, mp.y);
+        const voiceIndex = voiceOnStave(mp);
+        const { ghostX } = resolveInsertionTarget(x, mp, voiceIndex);
+        setHoverGhost({ x: ghostX, y: yPos });
+      } else if (hoverGhost) {
+        setHoverGhost(null);
+      }
+    } else if (hoverGhost) {
+      setHoverGhost(null);
+    }
+
+    if (!drag) return;
 
     // Check if we've exceeded the drag threshold
     if (!drag.active) {
@@ -193,7 +310,11 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
       anchorEvent: drag.anchor.eventIndex,
       rangeMode: true,
     });
-  }, [toCanvasCoords, findNearestNote, setNoteSelection]);
+  }, [toCanvasCoords, findNearestNote, setNoteSelection, noteEntry, hitTestMeasure, score, hoverGhost, resolveInsertionTarget, voiceOnStave, clefForStave]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverGhost) setHoverGhost(null);
+  }, [hoverGhost]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
@@ -280,6 +401,32 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
       if (x >= ab.x - HIT_PADDING && x <= ab.x + ab.width + HIT_PADDING &&
           y >= ab.y - HIT_PADDING && y <= ab.y + ab.height + HIT_PADDING) {
         editAnnotation(ab);
+        return;
+      }
+    }
+
+    // Note-entry mode: click on a non-tab staff inserts the pitch under the
+    // mouse. The same resolver that drives the hover ghost decides whether
+    // this overwrites an existing note or appends.
+    const noteEntryActive = useEditorStore.getState().inputState.noteEntry;
+    if (noteEntryActive) {
+      const targetMp = hitTestMeasure(x, y);
+      if (targetMp && !targetMp.isTab) {
+        const clefType = clefForStave(targetMp);
+        const { pitchClass, octave } = staffYToPitch(y, clefType, targetMp.y);
+        const partIndex = targetMp.partIndex;
+        const measureIndex = targetMp.measureIndex;
+        const staveIndex = targetMp.staveIndex ?? 0;
+        const voiceIndex = voiceOnStave(targetMp);
+        const { eventIndex } = resolveInsertionTarget(x, targetMp, voiceIndex);
+        setCursorDirect({ partIndex, measureIndex, voiceIndex, eventIndex, staveIndex }, false);
+        setSelectedHeadIndex(null);
+        setNoteSelection(null);
+        setSelection(null);
+        insertNote(pitchClass, octave);
+        anchorRef.current = { partIndex, measureIndex };
+        noteAnchorRef.current = { partIndex, measureIndex, voiceIndex, eventIndex };
+        setHoverGhost(null);
         return;
       }
     }
@@ -428,7 +575,7 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
         setNoteSelection(null);
       }
     }
-  }, [noteBoxes, annotationBoxes, measurePositions, score, width, titleRect, composerRect, toCanvasCoords, hitTestNote, hitTestMeasure, setCursorDirect, setSelection, setNoteSelection, editAnnotation, setEditingTitle, setEditingComposer]);
+  }, [noteBoxes, annotationBoxes, measurePositions, score, width, titleRect, composerRect, toCanvasCoords, hitTestNote, hitTestMeasure, setCursorDirect, setSelection, setNoteSelection, setSelectedHeadIndex, editAnnotation, setEditingTitle, setEditingComposer, insertNote, breakBoxes, setMeasureBreak, resolveInsertionTarget, voiceOnStave, clefForStave]);
 
   const commitTitle = useCallback(() => {
     setTitle(titleValue);
@@ -446,6 +593,7 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
       style={{
         position: "absolute",
         top: 0,
@@ -458,6 +606,24 @@ export function ScoreOverlay({ width, height, zoom }: Props) {
         transformOrigin: "top left",
       }}
     >
+      {hoverGhost && noteEntry && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: hoverGhost.x - 7,
+            top: hoverGhost.y - 5,
+            width: 14,
+            height: 10,
+            pointerEvents: "none",
+            opacity: 0.4,
+            background: "currentColor",
+            borderRadius: "50%",
+            transform: "rotate(-20deg)",
+            color: "#1f6feb",
+          }}
+        />
+      )}
       {titleRect && (
         editingTitle ? (
           <input

@@ -5,6 +5,7 @@ import type {
   DurationType,
   Accidental,
   PitchClass,
+  Octave,
   NoteEventId,
   Clef,
   TimeSignature,
@@ -87,7 +88,7 @@ interface EditorStore {
   lastEnteredPosition: CursorPosition | null;
 
   // Actions
-  insertNote(pitchClass: PitchClass): void;
+  insertNote(pitchClass: PitchClass, explicitOctave?: Octave): void;
   addPitchToChord(pitchClass: PitchClass): void;
   insertTabNote(fret: number, string: number): void;
   addTabPitchToChord(fret: number, string: number): void;

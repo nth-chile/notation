@@ -34,10 +34,10 @@ type SetState = StoreApi<any>["setState"];
 
 export function createNoteEntryActions(get: GetState, set: SetState, history: CommandHistory) {
   return {
-    insertNote(pitchClass: PitchClass) {
+    insertNote(pitchClass: PitchClass, explicitOctave?: Octave) {
       const state = get();
       const { cursor } = state.inputState;
-      const octave = smartOctave(state.score, cursor, pitchClass);
+      const octave = explicitOctave ?? smartOctave(state.score, cursor, pitchClass);
 
       // Resolve accidental: if user hasn't explicitly set one, use key signature default
       const measure = state.score.parts[cursor.partIndex]?.measures[cursor.measureIndex];
