@@ -144,6 +144,17 @@ export const INSTRUMENTS: InstrumentDef[] = [
     transposition: 0,
     staves: 1,
   },
+  {
+    id: "voice",
+    name: "Voice",
+    abbreviation: "Vox.",
+    clef: "treble",
+    midiProgram: 52, // GM 53 = Choir Aahs (0-indexed in our list)
+    transposition: 0,
+    staves: 1,
+    minPitch: 48,  // C3 (low alto/tenor range)
+    maxPitch: 84,  // C6 (high soprano range)
+  },
 ];
 
 export function getInstrument(id: string): InstrumentDef | undefined {

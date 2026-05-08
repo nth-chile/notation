@@ -8,6 +8,7 @@ All notable changes to Nubium are listed here. Newest first.
 - Settings → Feedback now also offers a link to open an issue on GitHub.
 - Mouse note entry: in note entry mode the staff shows a transparent ghost notehead at the pitch under the cursor, and clicking inserts that note.
 - Imported MusicXML lyrics now appear on grand-staff parts (e.g. piano-instrument vocal scores) instead of being silently dropped.
+- Voice instrument: vocal MusicXML parts now import as a single-staff Voice instrument (matching by part-name "Voice"/"Vocal"/"Soprano"/"Alto"/"Tenor" or MIDI program 53) instead of being misread as a piano grand staff.
 
 ## 0.1.3 — 2026-04
 

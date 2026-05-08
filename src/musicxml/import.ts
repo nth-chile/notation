@@ -40,6 +40,8 @@ function detectInstrument(
   // Common aliases
   if (lower.includes("gtr") || lower.includes("guit")) return "guitar";
   if (lower.includes("pno") || lower.includes("keys") || lower.includes("keyboard")) return "piano";
+  if (lower.includes("vocal") || lower.includes("vox") || lower.includes("soprano")
+    || lower.includes("alto") || lower.includes("tenor")) return "voice";
   if (lower.includes("vln") || lower.includes("fiddle")) return "violin";
   if (lower.includes("vla")) return "viola";
   if (lower.includes("vc.") || lower.includes("vlc")) return "cello";
