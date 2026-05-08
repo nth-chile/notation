@@ -69,6 +69,11 @@ interface SettingsPanelProps {
 
 type SettingsTab = "settings" | "hotkeys" | "license" | "feedback";
 
+/** Open the settings panel (optionally on a specific tab) from anywhere. */
+export function openSettings(tab?: SettingsTab): void {
+  window.dispatchEvent(new CustomEvent("nubium:open-settings", { detail: { tab } }));
+}
+
 export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
   const [settings, setSettings] = useState<AppSettings>(getSettings());
   const [tab, setTab] = useState<SettingsTab>("settings");
@@ -79,6 +84,18 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
   useEffect(() => {
     const unsub = subscribeSettings((s) => setSettings({ ...s }));
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ tab?: SettingsTab }>).detail;
+      if (detail?.tab) {
+        setTab(detail.tab);
+        if (detail.tab === "feedback") setFeedbackSent(false);
+      }
+    };
+    window.addEventListener("nubium:open-settings", handler);
+    return () => window.removeEventListener("nubium:open-settings", handler);
   }, []);
 
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
@@ -145,6 +162,15 @@ export function SettingsPanel({ visible, onClose }: SettingsPanelProps) {
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               Bug report, feature request, or just venting — all welcome.
+              {" "}Or{" "}
+              <button
+                type="button"
+                onClick={() => openExternal("https://github.com/nth-chile/nubium/issues/new")}
+                className="underline hover:text-foreground transition-colors"
+              >
+                open an issue on GitHub
+              </button>
+              .
             </p>
             {feedbackSent ? (
               <div className="text-sm text-green-500 py-4 text-center">

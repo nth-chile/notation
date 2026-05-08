@@ -69,6 +69,12 @@ export function App() {
   }, []);
   const [nagVisible, setNagVisible] = useState(false);
 
+  useEffect(() => {
+    const handler = () => setSettingsVisible(true);
+    window.addEventListener("nubium:open-settings", handler);
+    return () => window.removeEventListener("nubium:open-settings", handler);
+  }, []);
+
   // Plugin manager singleton
   const pluginManagerRef = useRef<PluginManager | null>(null);
   if (!pluginManagerRef.current) {
