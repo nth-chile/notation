@@ -8,6 +8,7 @@ target/
 test-results/
 playwright-report/
 .playwright-mcp/
+.claude/settings.local.json
 test-fixtures/
 *.musicxml
 src-tauri/keys/nubium.key
