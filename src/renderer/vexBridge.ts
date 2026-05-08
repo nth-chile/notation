@@ -548,6 +548,10 @@ export interface RenderMeasureOptions {
   /** Instrument range (MIDI). Notes outside are highlighted as out-of-range. */
   instrumentMinPitch?: number;
   instrumentMaxPitch?: number;
+  /** True when this is the bottommost stave of a multi-stave part (or the only stave). Lyrics render here. */
+  isBottomStave?: boolean;
+  /** Note boxes from prior staves of this measure, used to position lyrics whose target note lives on a higher stave. */
+  prevStaveNoteBoxes?: Map<NoteEventId, NoteBox>;
 }
 
 export function renderMeasure(
@@ -566,6 +570,7 @@ export function renderMeasure(
     selectedNoteIds, selectedHeadByEventId,
     prevMeasure, voiceFilter, staveIndex = 0, crossStaffStave, crossStaffClef,
     instrumentMinPitch, instrumentMaxPitch,
+    isBottomStave = true, prevStaveNoteBoxes,
   } = opts;
   const style = resolveStylesheet(stylesheet);
 
@@ -1226,12 +1231,13 @@ export function renderMeasure(
         text: annotation.text,
       });
     }
-    if (annotation.kind === "lyric") {
-      const box = noteBoxes.find((nb) => nb.id === annotation.noteEventId);
+    if (annotation.kind === "lyric" && isBottomStave) {
+      const box = noteBoxes.find((nb) => nb.id === annotation.noteEventId)
+        ?? prevStaveNoteBoxes?.get(annotation.noteEventId);
       if (box) {
         annotationBoxes.push({
           kind: "lyric",
-          x: box.x, y: stave.getBottomY() + 10,
+          x: box.x, y: Math.min(stave.getBottomY() - 10, stave.getYForLine(4) + 15),
           width: box.width, height: style.lyricSize + 4,
           partIndex, measureIndex,
           noteEventId: annotation.noteEventId, text: annotation.text,
@@ -1242,20 +1248,19 @@ export function renderMeasure(
 
   // Lyrics — drawn manually at stave-relative Y for consistent positioning.
   // Dynamics are VexFlow Annotations (note-relative, which is correct for dynamics).
-  // Lyrics go below dynamics at a fixed distance from stave bottom.
-  {
-    // For grand staff: render lyrics only on the bass (bottom) stave.
-    // For single staff: render lyrics normally.
-    const hasMultipleStaves = voiceFilter != null && voiceFilter.length > 0;
-    const isPrimaryStave = hasMultipleStaves && voiceFilter.some(i => (m.voices[i]?.staff ?? 0) === 0);
-    const suppressLyrics = hasMultipleStaves && isPrimaryStave; // suppress on treble, show on bass
-    const lyricAnnotations = suppressLyrics ? [] : m.annotations.filter((a) => a.kind === "lyric");
+  // Lyrics render on the bottom stave only (clean placement under the part), with
+  // note positions resolved from this stave first, then from prior staves of the
+  // same part — so lyrics whose target note lives on the treble of a grand staff
+  // still render below the bass.
+  if (isBottomStave) {
+    const lyricAnnotations = m.annotations.filter((a) => a.kind === "lyric");
     if (lyricAnnotations.length > 0) {
       const lCtx = ctx.context as unknown as CanvasRenderingContext2D;
       if (lCtx.save) {
-        // Fixed offset from stave bottom — consistent across all measures.
-        // Always reserve space for dynamics and hairpins so lyrics align globally.
-        const lyricBaseY = stave.getBottomY() + 40;
+        // getBottomY accounts for dynamics/hairpin space on single-stave parts.
+        // Cap with getYForLine(4)+60 so on grand-staff parts we don't drift too
+        // far into the next part's vertical space.
+        const lyricBaseY = Math.min(stave.getBottomY() + 20, stave.getYForLine(4) + 60);
 
         lCtx.save();
         lCtx.font = `italic ${style.lyricSize}px ${style.fontFamily}`;
@@ -1263,7 +1268,8 @@ export function renderMeasure(
         lCtx.textAlign = "center";
         for (const ann of lyricAnnotations) {
           if (ann.kind !== "lyric") continue;
-          const box = noteBoxes.find((nb) => nb.id === ann.noteEventId);
+          const box = noteBoxes.find((nb) => nb.id === ann.noteEventId)
+            ?? prevStaveNoteBoxes?.get(ann.noteEventId);
           if (!box) continue;
           const lyricText = ann.syllableType === "begin" || ann.syllableType === "middle"
             ? ann.text + "-" : ann.text;

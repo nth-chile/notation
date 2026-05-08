@@ -349,6 +349,11 @@ export function renderScore(
       // Detect consecutive rest measure runs for multi-measure rest rendering
       const restRuns = detectRestRuns(part.measures, system.startMeasure, system.endMeasure);
 
+      // Per-measure note boxes accumulated across stave passes — used to position
+      // lyrics on the bottom stave when the target note lives on a higher stave
+      // (e.g. piano grand staff with vocals on the treble).
+      const partMeasureNoteBoxes = new Map<number, Map<NoteEventId, NoteBox>>();
+
       // For grand staff: collect VexFlow Stave objects per measure/staveIndex for cross-staff rendering.
       // Pre-create bass stave (si=1) so treble (si=0) can use it for cross-staff notes.
       const grandStaffStaves = new Map<string, import("vexflow").Stave>();
@@ -534,12 +539,23 @@ export function renderScore(
                 crossStaffClef: crossClef,
                 instrumentMinPitch: instDef?.minPitch,
                 instrumentMaxPitch: instDef?.maxPitch,
+                isBottomStave: si === standardStaves - 1,
+                prevStaveNoteBoxes: partMeasureNoteBoxes.get(mi),
               },
             );
 
             // Store stave for cross-staff use by the other stave index
             if (standardStaves >= 2 && 'vexStave' in result && result.vexStave) {
               grandStaffStaves.set(`${mi}:${si}`, result.vexStave);
+            }
+
+            // Accumulate this stave's note boxes for the next stave's lyric lookups
+            if (si < standardStaves - 1) {
+              if (!partMeasureNoteBoxes.has(mi)) partMeasureNoteBoxes.set(mi, new Map());
+              const map = partMeasureNoteBoxes.get(mi)!;
+              for (const nb of result.noteBoxes) {
+                if (!map.has(nb.id)) map.set(nb.id, nb);
+              }
             }
           }
 
@@ -997,44 +1013,58 @@ function drawCursor(
   rawCtx.restore();
 }
 
+// Diatonic step constants shared by pitch↔Y conversion.
+const DIATONIC_STEP: Record<string, number> = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+const PITCH_CLASS_BY_STEP: import("../model").PitchClass[] = ["C", "D", "E", "F", "G", "A", "B"];
+// Bottom-line diatonic step (octave*7 + step) per clef.
+const REF_BOTTOM_STEP: Record<string, number> = {
+  treble: 4 * 7 + 2, // E4 = 30
+  bass: 2 * 7 + 4,   // G2 = 18
+  alto: 3 * 7 + 1,   // D3 = 22
+  tenor: 2 * 7 + 6,  // B2 = 20
+};
+// VexFlow stave: 4 line-spacings of headroom above, then 5 lines spanning 4 spacings.
+const VEX_LINE_SPACING = 10;
+const VEX_HEADROOM = 4;
+
 /** Convert a pitch to a Y position on the staff.
  *  Returns the Y coordinate where the notehead should be placed.
  *  Uses diatonic steps from the clef's reference point. */
-function pitchToStaffY(
+export function pitchToStaffY(
   pitchClass: import("../model").PitchClass,
   octave: number,
   clefType: string,
   staffTop: number,
-  _staffHeight: number,
+  _staffHeight?: number,
 ): number {
-  // Diatonic step number (C=0, D=1, E=2, F=3, G=4, A=5, B=6)
-  const DIATONIC: Record<string, number> = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
-  const step = DIATONIC[pitchClass] ?? 0;
+  const step = DIATONIC_STEP[pitchClass] ?? 0;
   const totalSteps = octave * 7 + step;
-
-  // Reference: treble clef bottom line = E4 (step 30), top line = F5 (step 38)
-  // Bass clef bottom line = G2 (step 18), top line = A3 (step 26)
-  // Alto clef bottom line = D3 (step 22), top line = E4 (step 30)
-  // Tenor clef bottom line = B2 (step 20), top line = C4 (step 28)
-  const REF_BOTTOM: Record<string, number> = {
-    treble: 4 * 7 + 2, // E4 = 30
-    bass: 2 * 7 + 4,   // G2 = 18
-    alto: 3 * 7 + 1,   // D3 = 22
-    tenor: 2 * 7 + 6,  // B2 = 20
-  };
-  const bottomStep = REF_BOTTOM[clefType] ?? REF_BOTTOM.treble;
-
-  // VexFlow stave: 4 line-spacings of headroom above, then 5 lines spanning 4 spacings.
-  // Line spacing = 10px (Tables.STAVE_LINE_DISTANCE). staffHeight includes headroom.
-  const VEX_LINE_SPACING = 10;
-  const VEX_HEADROOM = 4; // in line-spacings
-  const topLineY = staffTop + VEX_HEADROOM * VEX_LINE_SPACING; // line 0 (top)
-  const bottomLineY = topLineY + 4 * VEX_LINE_SPACING; // line 4 (bottom)
-  const halfLine = VEX_LINE_SPACING / 2; // each diatonic step = half a line spacing
-
-  // Steps above the bottom line → move up from bottomLineY
+  const bottomStep = REF_BOTTOM_STEP[clefType] ?? REF_BOTTOM_STEP.treble;
+  const topLineY = staffTop + VEX_HEADROOM * VEX_LINE_SPACING;
+  const bottomLineY = topLineY + 4 * VEX_LINE_SPACING;
+  const halfLine = VEX_LINE_SPACING / 2;
   const stepsAbove = totalSteps - bottomStep;
   return bottomLineY - stepsAbove * halfLine;
+}
+
+/** Inverse of {@link pitchToStaffY}: returns the natural pitch (no accidental)
+ *  whose staff Y is closest to the given Y coordinate. Used for mouse-driven
+ *  note entry, where the user clicks at a vertical position on the staff. */
+export function staffYToPitch(
+  y: number,
+  clefType: string,
+  staffTop: number,
+): { pitchClass: import("../model").PitchClass; octave: import("../model").Octave } {
+  const topLineY = staffTop + VEX_HEADROOM * VEX_LINE_SPACING;
+  const bottomLineY = topLineY + 4 * VEX_LINE_SPACING;
+  const halfLine = VEX_LINE_SPACING / 2;
+  const bottomStep = REF_BOTTOM_STEP[clefType] ?? REF_BOTTOM_STEP.treble;
+  const stepsAbove = Math.round((bottomLineY - y) / halfLine);
+  const totalSteps = bottomStep + stepsAbove;
+  const rawOctave = Math.floor(totalSteps / 7);
+  const octave = Math.max(0, Math.min(9, rawOctave)) as import("../model").Octave;
+  const stepInOctave = ((totalSteps % 7) + 7) % 7;
+  return { pitchClass: PITCH_CLASS_BY_STEP[stepInOctave], octave };
 }
 
 function getActiveNoteIds(score: Score, playbackTick: number): Set<NoteEventId> {

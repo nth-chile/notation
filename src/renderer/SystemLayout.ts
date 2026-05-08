@@ -344,7 +344,22 @@ export function computeLayout(
       }
 
       if (pi < score.parts.length - 1) {
-        yOffset += config.staffSpacing;
+        // Add extra room when this part has lyrics in any measure of the system,
+        // so lyric text doesn't crash into the next part's high ledger notes.
+        let lyricExtra = 0;
+        const part = score.parts[pi];
+        if (part) {
+          for (let mi = startMeasure; mi < endMeasure; mi++) {
+            const measure = part.measures[mi];
+            if (!measure) continue;
+            const lyrics = measure.annotations.filter((a) => a.kind === "lyric");
+            if (lyrics.length > 0) {
+              const maxVerse = Math.max(...lyrics.map((a) => a.kind === "lyric" ? (a.verseNumber || 1) : 1), 1);
+              lyricExtra = Math.max(lyricExtra, 30 + (maxVerse - 1) * 18);
+            }
+          }
+        }
+        yOffset += config.staffSpacing + lyricExtra;
       }
     }
 
