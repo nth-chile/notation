@@ -27,10 +27,12 @@ VITE_CLEAN_SETTINGS=1 npm run tauri dev
 
 ### Claude Code Skills
 
+- `/fix` — Fix a user-reported problem. Files a GitHub issue, fixes it with tests, and responds in chat with steps for the user to verify in the app.
 - `/fix-issues` — Triages all open issues (links related, splits compound, deduplicates), presents groups, then fixes the chosen group with tests.
 - `/test-changes` — After a feature or bug fix, finds untested changes, writes unit tests, and creates/updates GitHub issues (label: `manual-test`) for anything requiring manual verification.
 - `/test-matrix` — Comprehensive scan of all features vs test coverage. Writes missing unit tests and creates GitHub issues for manual-only items.
 - `/convo-review` — End-of-conversation review. Saves important context to memory, surfaces loose ends that got ignored, suggests new skills for repeated workflows, and keeps the README up to date.
+- `/release [version]` — Ship a new version. Syncs docs, promotes the Unreleased changelog section, bumps version, commits, tags, pushes, waits for CI, publishes the draft release, and verifies `latest.json`. Auto-increments patch if no version given.
 
 ## Telemetry
 
